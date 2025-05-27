@@ -5,8 +5,7 @@ from PySide6.QtWidgets import *
 
 from PySide6.QtGui import QStandardItemModel
 from PySide6.QtWidgets import QHBoxLayout, QTreeView
-from graphview import GraphView, GraphDataRole
-
+from graphview import GraphView, GraphDataRole, RowType
 
 
 class LinkTableDelegate(QStyledItemDelegate):
@@ -28,8 +27,6 @@ class LinkTableDelegate(QStyledItemDelegate):
             case _:
                 return super().displayText(value, locale)
         
-
-
 class MainWindow(QMainWindow):
     def __init__(self, parent:QWidget|None=None):
         super().__init__(parent=parent)
@@ -76,8 +73,8 @@ class MainWindow(QMainWindow):
         # access roles in QML by name
         self.nodes.setItemRoleNames({
             Qt.ItemDataRole.DisplayRole: b'name',
-            GraphDataRole.NodeType: b'node_type',
-            GraphDataRole.LinkSource: b'link_source'
+            GraphDataRole.TypeRole: b'node_type',
+            GraphDataRole.SourceRole: b'link_source'
         })
 
         # populate with initial nodes
@@ -122,21 +119,21 @@ class MainWindow(QMainWindow):
     @Slot(str, str)
     def addNode(self, name:str, content:str):
         item = QStandardItem(name)
-        item.setData(GraphView.NodeType.NODE, GraphDataRole.NodeType)
+        item.setData(RowType.NODE, GraphDataRole.TypeRole)
         self.nodes.appendRow([item, QStandardItem(content)])
         return item
     
     @Slot(QStandardItem, str)
     def addInlet(self, node:QStandardItem, name:str):
         item = QStandardItem(name)
-        item.setData(GraphView.NodeType.INLET, GraphDataRole.NodeType)
+        item.setData(RowType.INLET, GraphDataRole.TypeRole)
         node.appendRow(item)
         return item
     
     @Slot(QStandardItem, str)
     def addOutlet(self, node:QStandardItem, name:str):
         item = QStandardItem(name)
-        item.setData(GraphView.NodeType.OUTLET, GraphDataRole.NodeType)
+        item.setData(RowType.OUTLET, GraphDataRole.TypeRole)
         node.appendRow(item)
         return item
     
@@ -144,11 +141,11 @@ class MainWindow(QMainWindow):
     def addLink(self, source:QStandardItem, target:QStandardItem):
         # add link to inlet, store as the children of the inlet
         assert source.index().isValid(), "Source must be a valid index"
-        assert source.data(GraphDataRole.NodeType) == GraphView.NodeType.OUTLET, "Source must be an outlet"
+        assert source.data(GraphDataRole.TypeRole) == RowType.OUTLET, "Source must be an outlet"
         item = QStandardItem()
-        item.setData(GraphView.NodeType.LINK, GraphDataRole.NodeType)
+        item.setData(RowType.LINK, GraphDataRole.TypeRole)
         item.setData(f"{source.index().parent().data(Qt.ItemDataRole.DisplayRole)}.{source.data(Qt.ItemDataRole.DisplayRole)}", Qt.ItemDataRole.DisplayRole)
-        item.setData(QPersistentModelIndex(source.index()), GraphDataRole.LinkSource)
+        item.setData(QPersistentModelIndex(source.index()), GraphDataRole.SourceRole)
         target.appendRow(item)
 # 
     def sizeHint(self):
@@ -209,7 +206,7 @@ class MainWindow(QMainWindow):
             index = index.parent()
             
         item = self.nodes.itemFromIndex(index)
-        if item.data(GraphDataRole.NodeType) == GraphView.NodeType.NODE:
+        if item.data(GraphDataRole.TypeRole) == GraphView.RowKind.NODE:
             self.addInlet(item, f"in{item.rowCount()}")
 
     def addOutletToSelected(self):
@@ -225,7 +222,7 @@ class MainWindow(QMainWindow):
             index = index.parent()
             
         item = self.nodes.itemFromIndex(index)
-        if item.data(GraphDataRole.NodeType) == GraphView.NodeType.NODE:
+        if item.data(GraphDataRole.TypeRole) == GraphView.RowKind.NODE:
             self.addOutlet(item, f"out{item.rowCount()}")
 
     def deleteSelected(self):
