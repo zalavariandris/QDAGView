@@ -189,67 +189,149 @@ class GraphView(QWidget):
             node_widget.resize(node_widget.layout().sizeHint(Qt.SizeHint.PreferredSize))
             # node_widget.updateGeometry()
 
-    def get_row_kind(self, index: QModelIndex) -> 'NodeType' | None:
-        item_type = index.data(GraphDataRole.NodeType)
-        if item_type is None:
-            if index.parent().isValid() and index.parent().parent() == QModelIndex():
-                # if the parent is the root item, this is an inlet
-                return self.NodeType.INLET
-            elif index.parent().isValid():
-                ...
-        match item_type:
-            case self.NodeType.INLET | None:
-                return self.NodeType.INLET
-            case self.NodeType.OUTLET:
-                return self.NodeType.OUTLET
-            case self.NodeType.NODE:
-                return self.NodeType.NODE
-            case self.NodeType.LINK:
-                return self.NodeType.LINK
-            case _:
-                raise ValueError(f"Unknown NodeType: {item_type}")
+    def defaultRowKind(self, index: QModelIndex) -> 'NodeType' | None:
+        """
+        Determine the kind of row based on the index.
+        This is used to determine whether to create a Node, Inlet, Outlet or Link widget.
+        Args:
+            index (QModelIndex): The index of the row.
+        """
+        if not index.isValid():
+            return None
+        elif index.parent() == QModelIndex():
+            # if the parent is QModelIndex(), this is a root item
+            # we create a NodeWidget for it
+            return self.NodeType.NODE
+        elif index.parent().isValid() and index.parent().parent() == QModelIndex():
+            return self.NodeType.INLET
+        elif index.parent().isValid() and index.parent().parent().isValid() and index.parent().parent().parent() == QModelIndex():
+            return self.NodeType.LINK
+        else:
+            raise ValueError(
+                f"Invalid index: {index}. "
+                "Index must be a valid QModelIndex with a valid parent."
+            )
+        
+    def validateRowKind(self, index, row_kind: 'NodeType') -> bool:
+        """
+        Validate the row kind based on the index.
+        This is used to ensure that the row kind matches the expected kind
+        Args:   
+
+            index (QModelIndex): The index of the row.
+            row_kind (NodeType | None): The kind of row to validate.
+        Returns:
+            bool: True if the row kind is valid, False otherwise.
+        """
+        if not index.isValid():
+            return False
+        if row_kind is None:
+            return True  # No specific row kind, so always valid
+        if row_kind == self.NodeType.NODE:
+            return index.parent() == QModelIndex()
+        elif row_kind == self.NodeType.INLET:
+            return index.parent().isValid() and index.parent().parent() == QModelIndex()
+        elif row_kind == self.NodeType.OUTLET:
+            return index.parent().isValid() and index.parent().parent() == QModelIndex()
+        elif row_kind == self.NodeType.LINK:
+            return index.parent().isValid() and index.parent().parent().isValid() and index.parent().parent().parent() == QModelIndex()
+
 
     def onRowsInserted(self, parent:QModelIndex, first:int, last:int):
         assert self._model
 
-        for row in range(first, last + 1):
-            # create a new index for the new row
-            # this will trigger the model to create a new item
-            # and the view to update the scene
-            # we use QPersistentModelIndex to ensure the index remains valid
-            # even if the model changes
-            index = self._model.index(row, 0, parent=parent)
-
-            
-
-        # create new widgets for the new rows
-        # if root index is QModelIndex, we create NodeWidgets
-        RowKind:'NodeType'|None = None
-
-        def get_row_kind(index: QModelIndex) -> 'NodeType' | None:
-
-        if parent == QModelIndex() or parent is None:
-            # create a new NodeWidget for each new row
-            for row in range(first, last + 1):
-                node_index = self._model.index(row, 0, parent=parent)
-                node_widget = NodeWidget()
-                self.graphicsview.scene().addItem(node_widget)
-                self._row_widgets[QPersistentModelIndex(node_index)] = node_widget
-
-        elif parent.isValid() and parent.parent() is None or parent.parent()==QModelIndex(): # create inlets if parent is root item
-            # create a new InletWidget for each new row
-
-
         # populate the new rows
         for row in range(first, last + 1):
-            node_index = self._model.index(row, 0, parent=parent)
-            node_widget = NodeWidget()
-            self.graphicsview.scene().addItem(node_widget)
-            self._row_widgets[QPersistentModelIndex(node_index)] = node_widget
+            index = self._model.index(row, 0, parent=parent)
+            row_kind = index.data(GraphDataRole.NodeType)
+            if not row_kind:
+                row_kind = self.defaultRowKind(index)
+            assert self.validateRowKind(index, row_kind), f"Invalid row kind {row_kind} for index {index}!"
+
+            match row_kind:
+                case self.NodeType.NODE:
+                    # create a new NodeWidget for each new row
+                    self._add_node_widget(index)
+                case self.NodeType.INLET:
+                    self._add_inlet_widget(index)
+
+
+        # if parent == QModelIndex() or parent is None:
+        #     # create a new NodeWidget for each new row
+        #     for row in range(first, last + 1):
+        #         node_index = self._model.index(row, 0, parent=parent)
+        #         node_widget = NodeWidget()
+        #         self.graphicsview.scene().addItem(node_widget)
+        #         self._row_widgets[QPersistentModelIndex(node_index)] = node_widget
+
+        # elif parent.isValid() and parent.parent() is None or parent.parent()==QModelIndex(): # create inlets if parent is root item
+        #     # create a new InletWidget for each new row
 
 
     def model(self) -> QAbstractItemModel | None:
         return self._model
+    
+    ## populate
+    def add_cell_widgets(self, index: QModelIndex):
+        assert index.column() == 0
+        
+        # create labels from cells
+        for col in range(index.model().columnCount(parent=index.parent())):
+            cell_index = index.siblingAtColumn(col)
+            text = cell_index.data(Qt.ItemDataRole.DisplayRole)
+            label = QLabel(f"cell: {text}")
+            proxy = QGraphicsProxyWidget()
+            proxy.setWidget(label)
+
+            row_widget = self._row_widgets[QPersistentModelIndex(cell_index.siblingAtColumn(0))]
+            row_widget.layout().addItem(proxy)
+            self._cell_widgets[QPersistentModelIndex(cell_index)] = proxy
+
+    def _add_node_widget(self, index: QModelIndex):
+        node_widget = NodeWidget()
+        self.graphicsview.scene().addItem(node_widget)
+        self._row_widgets[QPersistentModelIndex(index)] = node_widget
+        self.add_cell_widgets(index)
+        return node_widget
+
+    def _add_inlet_widget(self, index: QModelIndex):
+        node_index = index.parent()
+        node_widget = self._row_widgets[QPersistentModelIndex(node_index)]
+        inlet_widget = InletWidget()
+        self._row_widgets[QPersistentModelIndex(index)] = inlet_widget
+        node_widget.layout().addItem(inlet_widget)
+        self.add_cell_widgets(index)
+        return inlet_widget
+
+    def _add_outlet_widget(self, index: QModelIndex):
+        node_index = index.parent()
+        node_widget = self._row_widgets[QPersistentModelIndex(node_index)]
+        outlet_widget = OutletWidget()
+        self._row_widgets[QPersistentModelIndex(index)] = outlet_widget
+        node_widget.layout().addItem(outlet_widget)
+        self.add_cell_widgets(index)
+        return outlet_widget
+
+    def _add_link_widget(self, index: QModelIndex):
+        source_index = index.data(GraphDataRole.LinkSource)
+        assert isinstance(source_index, QPersistentModelIndex), f"Source index mus be a QPersistentIndex, got: {source_index}!"
+        assert source_index in self._row_widgets, f"Warning: link({index}) source({source_index}) not found in _row_widgets!"
+        target_index = QPersistentModelIndex(index.parent())
+
+        source_widget = self._row_widgets[source_index]
+        target_widget = self._row_widgets[target_index]
+
+        link_widget = LinkWidget()
+        self._row_widgets[QPersistentModelIndex(index)] = link_widget
+        self.graphicsview.scene().addItem(link_widget)
+
+        # store widget references
+        source_widget._links.append(link_widget)
+        target_widget._links.append(link_widget)
+        link_widget._source_widget = source_widget
+        link_widget._target_widget = target_widget
+
+        link_widget.updateLine()
     #
     ### Handle Model Signals
     def populate(self):
@@ -259,63 +341,9 @@ class GraphView(QWidget):
         self._row_widgets.clear()
         self._cell_widgets.clear()
 
-        def add_cell_widgets(index: QModelIndex):
-            assert index.column() == 0
-            
-            # create labels from cells
-            for col in range(index.model().columnCount(parent=index.parent())):
-                cell_index = index.siblingAtColumn(col)
-                text = cell_index.data(Qt.ItemDataRole.DisplayRole)
-                label = QLabel(f"cell: {text}")
-                proxy = QGraphicsProxyWidget()
-                proxy.setWidget(label)
+        
 
-                row_widget = self._row_widgets[QPersistentModelIndex(cell_index.siblingAtColumn(0))]
-                row_widget.layout().addItem(proxy)
-                self._cell_widgets[QPersistentModelIndex(cell_index)] = proxy
 
-        ## populate
-        def add_node_widget(index: QModelIndex):
-            node_widget = NodeWidget()
-            self.graphicsview.scene().addItem(node_widget)
-            self._row_widgets[QPersistentModelIndex(index)] = node_widget
-            add_cell_widgets(node_index)
-            return node_widget
-
-        def add_inlet_widget(index: QModelIndex, node_widget: NodeWidget):
-            inlet_widget = InletWidget()
-            self._row_widgets[QPersistentModelIndex(index)] = inlet_widget
-            node_widget.layout().addItem(inlet_widget)
-            add_cell_widgets(port_index)
-            return inlet_widget
-
-        def add_outlet_widget(index: QModelIndex, node_widget: NodeWidget):
-            outlet_widget = OutletWidget()
-            self._row_widgets[QPersistentModelIndex(index)] = outlet_widget
-            node_widget.layout().addItem(outlet_widget)
-            add_cell_widgets(port_index)
-            return outlet_widget
-
-        def add_link_widget(index: QModelIndex):
-            source_index = index.data(GraphDataRole.LinkSource)
-            assert isinstance(source_index, QPersistentModelIndex), f"Source index mus be a QPersistentIndex, got: {source_index}!"
-            assert source_index in self._row_widgets, f"Warning: link({index}) source({source_index}) not found in _row_widgets!"
-            target_index = QPersistentModelIndex(index.parent())
-
-            source_widget = self._row_widgets[source_index]
-            target_widget = self._row_widgets[target_index]
-
-            link_widget = LinkWidget()
-            self._row_widgets[QPersistentModelIndex(index)] = link_widget
-            self.graphicsview.scene().addItem(link_widget)
-
-            # store widget references
-            source_widget._links.append(link_widget)
-            target_widget._links.append(link_widget)
-            link_widget._source_widget = source_widget
-            link_widget._target_widget = target_widget
-
-            link_widget.updateLine()
 
         # create node_items from rows
         for row in range(self._model.rowCount(parent=QModelIndex())):
