@@ -1,0 +1,52 @@
+{
+    "folders":
+    [
+        {
+            "path": ".",
+        },
+    ],
+
+    "settings": {
+        "python_interpreter": "./.venv/Scripts/python.exe",
+        "env": {
+            "PYTHONPATH": "${folder}/",
+        },
+    },
+
+    "build_systems": [
+        {
+            "name": "Python: Run File (CrossPlatform)",
+            "windows": {
+                "cmd": ["${project_path}/.venv/Scripts/python.exe", "-u", "$file"],
+                "env": { "PYTHONIOENCODING": "utf-8" }
+            },
+            "osx": {
+                "cmd": ["${project_path}/.venv/bin/python3", "-u", "$file"],
+            },
+            "linux": {
+                "cmd": ["${project_path}/.venv/bin/python", "-u", "$file"],
+            },
+            "file_regex": "^[ ]*File \"(...*?)\", line ([0-9]*)",
+            "selector": "source.python",
+        },
+        {
+            "name": "Python: Run File (Windows)",
+            "cmd": [
+                "${project_path}/.venv/Scripts/python.exe",
+                "-u",
+                "$file"
+            ],
+            "file_regex": "^[ ]*File \"(...*?)\", line ([0-9]*)",
+            "selector": "source.python",
+        }
+    ],
+    "debugger_configurations":
+    [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}"
+        },
+	],
+}

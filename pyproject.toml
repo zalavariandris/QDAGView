@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["qgraphview"]
+
+
+[project]
+name = "QDAGView"
+version = "0.1.0"
+description = "Direct Acyclic Graph View, following the QT's Model-View architecture."
+authors = [
+    {name = "Andras Zalavari", email = "zalavariandris@gmail.com.com"}
+]
+readme = "README.md"
+keywords = ["python", "livecode", "livecoding"]
+requires-python = ">=3.8"
+
+dependencies = [
+    "PySide6",
+    "numpy ~= 2.1.0",
+    "humanize ~= 4.11.0",
+
+    "PyOpenGL ~= 3.1",
+    "moderngl == 5.12.0",
+    "pyglm == 2.7.3",
+
+    "networkx == 3.4.2",
+    "colour-science",
+    "bidict",
+    "pyyaml"
+]
