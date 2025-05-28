@@ -35,33 +35,31 @@ class MainWindow(QMainWindow):
 
         ### Setup Menu Bar
         menubar = self.menuBar()
-        edit_menu = menubar.addMenu("&Edit")
 
         # Add Node action
         add_node_action = QAction("Add Node", self)
         add_node_action.setShortcut(QKeySequence("Ctrl+N"))
         add_node_action.triggered.connect(lambda: self.addNode("new_node", ""))
-        edit_menu.addAction(add_node_action)
+        menubar.addAction(add_node_action)
 
         # Add submenu for selected node
-        node_menu = edit_menu.addMenu("Selected Node")
         
         add_inlet_action = QAction("Add Inlet", self)
         add_inlet_action.setShortcut(QKeySequence("Ctrl+I"))
         add_inlet_action.triggered.connect(self.addInletToSelected)
-        node_menu.addAction(add_inlet_action)
+        menubar.addAction(add_inlet_action)
 
         add_outlet_action = QAction("Add Outlet", self)
         add_outlet_action.setShortcut(QKeySequence("Ctrl+O"))
         add_outlet_action.triggered.connect(self.addOutletToSelected)
-        node_menu.addAction(add_outlet_action)
+        menubar.addAction(add_outlet_action)
 
         # Delete action
-        edit_menu.addSeparator()
+        menubar.addSeparator()
         delete_action = QAction("Delete Selected", self)
         delete_action.setShortcut(QKeySequence.Delete)
         delete_action.triggered.connect(self.deleteSelected)
-        edit_menu.addAction(delete_action)
+        menubar.addAction(delete_action)
 
         # Create central widget
         central_widget = QWidget()
@@ -92,7 +90,7 @@ class MainWindow(QMainWindow):
         outlet = self.addOutlet(process_node, "out")
 
         link = self.addLink(
-            outlet, inlet
+            outlet, inlet, "link"
         )
 
         ### Setup selection models
@@ -138,7 +136,7 @@ class MainWindow(QMainWindow):
         return item
     
     @Slot(QStandardItem, QStandardItem)
-    def addLink(self, source:QStandardItem, target:QStandardItem):
+    def addLink(self, source:QStandardItem, target:QStandardItem, data:str):
         # add link to inlet, store as the children of the inlet
         assert source.index().isValid(), "Source must be a valid index"
         assert source.data(GraphDataRole.TypeRole) == RowType.OUTLET, "Source must be an outlet"
@@ -146,7 +144,7 @@ class MainWindow(QMainWindow):
         item.setData(RowType.LINK, GraphDataRole.TypeRole)
         item.setData(f"{source.index().parent().data(Qt.ItemDataRole.DisplayRole)}.{source.data(Qt.ItemDataRole.DisplayRole)}", Qt.ItemDataRole.DisplayRole)
         item.setData(QPersistentModelIndex(source.index()), GraphDataRole.SourceRole)
-        target.appendRow(item)
+        target.appendRow([item, QStandardItem(data)])
 # 
     def sizeHint(self):
         return QSize(2048, 900) 
