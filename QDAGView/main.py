@@ -36,30 +36,36 @@ class MainWindow(QMainWindow):
         ### Setup Menu Bar
         menubar = self.menuBar()
 
+        edit_menu = menubar.addMenu("Edit")
+
         # Add Node action
         add_node_action = QAction("Add Node", self)
         add_node_action.setShortcut(QKeySequence("Ctrl+N"))
         add_node_action.triggered.connect(lambda: self.addNode("new_node", ""))
-        menubar.addAction(add_node_action)
+        edit_menu.addAction(add_node_action)
 
         # Add submenu for selected node
-        
         add_inlet_action = QAction("Add Inlet", self)
         add_inlet_action.setShortcut(QKeySequence("Ctrl+I"))
         add_inlet_action.triggered.connect(self.addInletToSelected)
-        menubar.addAction(add_inlet_action)
+        edit_menu.addAction(add_inlet_action)
 
         add_outlet_action = QAction("Add Outlet", self)
         add_outlet_action.setShortcut(QKeySequence("Ctrl+O"))
         add_outlet_action.triggered.connect(self.addOutletToSelected)
-        menubar.addAction(add_outlet_action)
+        edit_menu.addAction(add_outlet_action)
+
+        add_link_action = QAction("Link Selected", self)
+        add_link_action.setShortcut(QKeySequence("Ctrl+L"))
+        add_link_action.triggered.connect(self.linkSelected)
+        edit_menu.addAction(add_link_action)
 
         # Delete action
         menubar.addSeparator()
         delete_action = QAction("Delete Selected", self)
-        delete_action.setShortcut(QKeySequence.Delete)
+        delete_action.setShortcut(QKeySequence.StandardKey.Backspace)
         delete_action.triggered.connect(self.deleteSelected)
-        menubar.addAction(delete_action)
+        edit_menu.addAction(delete_action)
 
         # Create central widget
         central_widget = QWidget()
@@ -204,7 +210,7 @@ class MainWindow(QMainWindow):
             index = index.parent()
             
         item = self.nodes.itemFromIndex(index)
-        if item.data(GraphDataRole.TypeRole) == GraphView.RowKind.NODE:
+        if item.data(GraphDataRole.TypeRole) == RowType.NODE:
             self.addInlet(item, f"in{item.rowCount()}")
 
     def addOutletToSelected(self):
@@ -220,7 +226,7 @@ class MainWindow(QMainWindow):
             index = index.parent()
             
         item = self.nodes.itemFromIndex(index)
-        if item.data(GraphDataRole.TypeRole) == GraphView.RowKind.NODE:
+        if item.data(GraphDataRole.TypeRole) == RowType.NODE:
             self.addOutlet(item, f"out{item.rowCount()}")
 
     def deleteSelected(self):
@@ -228,23 +234,100 @@ class MainWindow(QMainWindow):
         if not self.selection.hasSelection():
             return
 
-        indexes = self.selection.selectedIndexes()
-        # Group by parent to handle children properly
-        to_delete = {}
-        for index in indexes:
-            if index.column() == 0:  # Only process first column to avoid duplicates
-                parent = index.parent()
-                if parent not in to_delete:
-                    to_delete[parent] = []
-                to_delete[parent].append(index.row())
+        def index_depth(idx: QModelIndex) -> int:
+            depth = 0
+            while idx.parent().isValid():
+                idx = idx.parent()
+                depth += 1
+            return depth
 
-        # Delete from bottom up to maintain valid indices
-        for parent, rows in to_delete.items():
-            for row in sorted(rows, reverse=True):
-                if parent.isValid():
-                    self.nodes.itemFromIndex(parent).removeRow(row)
-                else:
-                    self.nodes.removeRow(row)
+        # Only keep one index per row (e.g., column 0)
+        unique_indexes = {}
+        for idx in self.selection.selectedIndexes():
+            key = (idx.model(), idx.parent(), idx.row())
+            # Only keep the first index for each row (usually column 0)
+            if key not in unique_indexes or idx.column() == 0:
+                unique_indexes[key] = idx
+
+        # Sort by depth (deepest first)
+        indexes = sorted(
+            unique_indexes.values(),
+            key=index_depth,
+            reverse=True
+        )
+        seen = set()
+
+        for index in indexes:
+            if index in seen:
+                continue
+            item = self.nodes.itemFromIndex(index)
+            rowtype = item.data(GraphDataRole.TypeRole)
+            parent = item.parent() or self.nodes.invisibleRootItem()
+            row = item.row()
+            seen.add(index)
+
+            if rowtype == RowType.LINK:
+                parent.removeRow(row)
+            elif rowtype in (RowType.INLET, RowType.OUTLET):
+                parent.removeRow(row)
+            elif rowtype == RowType.NODE:
+                self.nodes.removeRow(row)
+    
+    def linkSelected(self):
+        """
+        Link the first selected outlet to the first selected inlet, if both are selected and on different nodes.
+        If nodes are selected, use their first inlet/outlet.
+        """
+        indexes = self.selection.selectedIndexes()
+        if not indexes:
+            return
+
+        # Only process one index per row (column 0)
+        unique_indexes = {}
+        for idx in indexes:
+            key = (idx.model(), idx.parent(), idx.row())
+            if key not in unique_indexes or idx.column() == 0:
+                unique_indexes[key] = idx
+
+        outlet_item = None
+        inlet_item = None
+        outlet_node = None
+        inlet_node = None
+
+        # Helper to find first child of a given type
+        def find_first_child_of_type(parent_item, rowtype):
+            for i in range(parent_item.rowCount()):
+                child = parent_item.child(i)
+                if child.data(GraphDataRole.TypeRole) == rowtype:
+                    return child
+            return None
+
+        for idx in unique_indexes.values():
+            item = self.nodes.itemFromIndex(idx)
+            rowtype = item.data(GraphDataRole.TypeRole)
+            parent = item.parent()
+            if rowtype == RowType.OUTLET and outlet_item is None:
+                outlet_item = item
+                outlet_node = parent
+            elif rowtype == RowType.INLET and inlet_item is None:
+                inlet_item = item
+                inlet_node = parent
+            elif rowtype == RowType.NODE:
+                # Try to find first outlet/inlet under this node
+                if outlet_item is None:
+                    candidate = find_first_child_of_type(item, RowType.OUTLET)
+                    if candidate:
+                        outlet_item = candidate
+                        outlet_node = item
+                if inlet_item is None:
+                    candidate = find_first_child_of_type(item, RowType.INLET)
+                    if candidate:
+                        inlet_item = candidate
+                        inlet_node = item
+
+        # Only link if both are found and are on different nodes
+        if outlet_item and inlet_item and outlet_node and inlet_node and outlet_node != inlet_node:
+            self.addLink(outlet_item, inlet_item, "link")
 
 if __name__ == "__main__":
     import sys
