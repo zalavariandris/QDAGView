@@ -53,6 +53,7 @@ class GraphView(QWidget):
         # map item index to widgets
         self._row_widgets: bidict[QPersistentModelIndex, BaseRowWidget] = bidict()
         self._cell_widgets: bidict[QPersistentModelIndex, CellWidget] = bidict()
+        self._pending_links:Dict[QPersistentModelIndex, QPersistentModelIndex] = dict() # map link source, to a dangling link
         # self._link_widgets: bidict[tuple[QPersistentModelIndex, QPersistentModelIndex], LinkItem] = bidict()
         self._draft_link: QGraphicsLineItem | None = None
         self.setupUI()
@@ -147,7 +148,12 @@ class GraphView(QWidget):
         self._model = model
 
         # populate initial scene
-        self.populate()
+        ## clear
+        self.graphicsview.scene().clear()
+        self._row_widgets.clear()
+        self._cell_widgets.clear()
+        self._pending_links = {}
+        self.populate(QModelIndex())
 
     def model(self) -> QAbstractItemModel | None:
         return self._model
@@ -183,15 +189,8 @@ class GraphView(QWidget):
         """
         return self._selection
     
-        ### Handle Model Signals    def populate(self):
-        assert self._model
-        ## clear
-        self.graphicsview.scene().clear()
-        self._row_widgets.clear()
-        self._cell_widgets.clear()
-        self._pending_links = {}
 
-    def populate(self):
+    def populate(self, *root:QModelIndex):
         # First pass: Create all non-link widgets
 
         # first pass: collect each row recursively
@@ -200,7 +199,7 @@ class GraphView(QWidget):
                 yield self._model.index(row, 0, index) 
 
         # Breadth-first search
-        queue:List[QModelIndex] = [QModelIndex()]
+        queue:List[QModelIndex] = [*root]
         indexes = list()
         while queue:
             index = queue.pop()
@@ -221,6 +220,13 @@ class GraphView(QWidget):
                     self._add_inlet_widget(row, parent)
                 case RowType.OUTLET:
                     self._add_outlet_widget(row, parent)
+                    index = self._model.index(row, 0, parent)
+                    link = self._pending_links.get(QPersistentModelIndex(index))
+                    if link:
+                        link_widget = cast(LinkWidget, self._row_widgets[link])
+                        link_widget._source_widget = self._row_widgets[QPersistentModelIndex(index)]
+                        link_widget.updateLine()
+                        
                 case RowType.LINK:
                     pass
                 case _:
@@ -244,7 +250,6 @@ class GraphView(QWidget):
                 case _:
                     raise NotImplementedError(f"Row kind {row_kind} is not implemented!")
             
-    
     ## populate
     def _add_cell_widgets(self, row:int, parent: QModelIndex): 
         """Add all cell widgets associated with a row."""       
@@ -493,9 +498,8 @@ class GraphView(QWidget):
         assert self._model
 
         # populate the new rows
-        for row in range(first, last + 1):
-            self._add_rows_recursive(row, parent)
-    
+        self.populate(*[self._model.index(row, 0, parent) for row in range(first, last + 1)])
+
     def _remove_row_recursive(self, row:int, parent:QModelIndex):
         """
         Recursively remove a row and all its children from bottom up.
@@ -508,7 +512,7 @@ class GraphView(QWidget):
         row_count = self._model.rowCount(parent=index)
         for child_row in reversed(range(row_count)):
             child_index = self._model.index(child_row, 0, index)
-            self._remove_row_recursive(child_index)
+            self._remove_row_recursive(child_row, index)
 
         # Now handle this row itself
         persistent_index = QPersistentModelIndex(index)
@@ -543,8 +547,8 @@ class GraphView(QWidget):
 
         # Remove rows in reverse order to handle siblings properly
         for row in reversed(range(first, last + 1)):
-            index = self._model.index(row, 0, parent=parent)
-            self._remove_row_recursive(index)
+            # index = self._model.index(row, 0, parent=parent)
+            self._remove_row_recursive(row, parent)
 
     @Slot(QModelIndex, QModelIndex, list)
     def onDataChanged(self, topLeft:QModelIndex , bottomRight:QModelIndex , roles=[]):
@@ -559,7 +563,7 @@ class GraphView(QWidget):
                 label.setText(cell_index.data(Qt.ItemDataRole.DisplayRole))
             node_index = self._model.index(row, 0)
             node_widget = cast(NodeWidget, self._cell_widgets[QPersistentModelIndex(node_index)])
-            node_widget.resize(node_widget.layout().sizeHint(Qt.SizeHint.PreferredSize))
+            # node_widget.resize(node_widget.layout().sizeHint(Qt.SizeHint.PreferredSize))
             # node_widget.updateGeometry()
 
 
