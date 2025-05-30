@@ -39,7 +39,6 @@ class RowType(StrEnum):
     NODE = "NODE"
     LINK = "LINK"
 
-
 class GraphView(QWidget):
     nodesLinked = Signal(QModelIndex, QModelIndex, str, str)
     def __init__(self, parent: QWidget | None = None):
@@ -53,7 +52,9 @@ class GraphView(QWidget):
         # map item index to widgets
         self._row_widgets: bidict[QPersistentModelIndex, BaseRowWidget] = bidict()
         self._cell_widgets: bidict[QPersistentModelIndex, CellWidget] = bidict()
-        self._pending_links:Dict[QPersistentModelIndex, QPersistentModelIndex] = dict() # map link source, to a dangling link
+
+        self._out_links: dict[QPersistentModelIndex, List[QPersistentModelIndex]] = defaultdict()
+        
         # self._link_widgets: bidict[tuple[QPersistentModelIndex, QPersistentModelIndex], LinkItem] = bidict()
         self._draft_link: QGraphicsLineItem | None = None
         self.setupUI()
@@ -152,8 +153,34 @@ class GraphView(QWidget):
         self.graphicsview.scene().clear()
         self._row_widgets.clear()
         self._cell_widgets.clear()
-        self._pending_links = {}
-        self.populate(QModelIndex())
+        self._out_links.clear()
+        self.addRowWidgets(QModelIndex())
+
+    def onWidgetPositionChanged(self, widget:QGraphicsItem):
+        """handle widget position change, and update connected links"""
+        if index := self._row_widgets.inverse.get(widget, None):
+            # incoming links
+            for child_row in range(self._model.rowCount(index)):
+                if self.rowType(child_row, index) == RowType.LINK:
+                    link_index = self._model.index(child_row, 0, index)
+                    self.updateLink(link_index)
+
+            # outgoing links
+            if links:=self._out_links.get(index):
+                for link_index in links:
+                    self.updateLink(link_index)
+
+    def updateLink(self, link:QModelIndex):
+        """update link widget position associated with the qmodelindex"""
+        source = self._model.data(link, GraphDataRole.SourceRole)
+        target = link.parent()
+
+        link_widget =   self._row_widgets.inverse.get(QPersistentModelIndex(link))
+        source_widget = self._row_widgets.inverse.get(QPersistentModelIndex(source))
+        target_widget = self._row_widgets.inverse.get(QPersistentModelIndex(target))
+        if link_widget:
+            link_widget = cast(LinkWidget, link_widget)
+            link_widget.updateLine(source_widget, target_widget)
 
     def model(self) -> QAbstractItemModel | None:
         return self._model
@@ -189,10 +216,7 @@ class GraphView(QWidget):
         """
         return self._selection
     
-
-    def populate(self, *root:QModelIndex):
-        # First pass: Create all non-link widgets
-
+    def addRowWidgets(self, *root:QModelIndex):
         # first pass: collect each row recursively
         def children(index:QModelIndex):
             for row in range(self._model.rowCount(parent=index)):
@@ -212,21 +236,14 @@ class GraphView(QWidget):
             if not index.isValid():
                 continue
             row, parent = index.row(), index.parent()
-            row_kind = self.rowKind(row, parent)
+            row_kind = self.rowType(row, parent)
             match row_kind:
                 case RowType.NODE:
                     self._add_node_widget(row, parent)
                 case RowType.INLET:
                     self._add_inlet_widget(row, parent)
                 case RowType.OUTLET:
-                    self._add_outlet_widget(row, parent)
-                    index = self._model.index(row, 0, parent)
-                    link = self._pending_links.get(QPersistentModelIndex(index))
-                    if link:
-                        link_widget = cast(LinkWidget, self._row_widgets[link])
-                        link_widget._source_widget = self._row_widgets[QPersistentModelIndex(index)]
-                        link_widget.updateLine()
-                        
+                    self._add_outlet_widget(row, parent)                        
                 case RowType.LINK:
                     pass
                 case _:
@@ -237,8 +254,10 @@ class GraphView(QWidget):
             if not index.isValid():
                 continue
             row, parent = index.row(), index.parent()
-            row_kind = self.rowKind(row, parent)
+            row_kind = self.rowType(row, parent)
             match row_kind:
+                case None:
+                    pass
                 case RowType.NODE:
                     pass
                 case RowType.INLET:
@@ -249,7 +268,45 @@ class GraphView(QWidget):
                     self._add_link_widget(row, parent)
                 case _:
                     raise NotImplementedError(f"Row kind {row_kind} is not implemented!")
-            
+
+    def removeRowWidgets(self, *root:QModelIndex):
+        # first pass: collect each row recursively
+        def children(index:QModelIndex):
+            for row in range(self._model.rowCount(parent=index)):
+                yield self._model.index(row, 0, index) 
+
+        # Breadth-first search
+        queue:List[QModelIndex] = [*root]
+        bfs_indexes = list()
+        while queue:
+            index = queue.pop()
+            bfs_indexes.append(index)
+            for child in children(index):
+                queue.append(child)
+
+        # remove links first
+        for index in filter(lambda idx: self.rowType(idx.row(), idx.parent()) == RowType.LINK, bfs_indexes):
+            self._remove_link_widget(index.row(), index.parent())
+
+        # remove widgets reversed depth order
+        for index in filter(lambda idx: self.rowType(idx.row(), idx.parent()) != RowType.LINK, reversed(bfs_indexes) ):
+            row, parent = index.row(), index.parent()
+            row_kind = self.rowType(row, parent)
+            match row_kind:
+
+                case None:
+                    pass
+                case RowType.NODE:
+                    pass
+                    self._remove_node_widget(row, parent)
+                case RowType.INLET:
+                    self._remove_inlet_widget(row, parent)
+                case RowType.OUTLET:
+                    pass
+                    self._remove_outlet_widget(row, parent)
+                case _:
+                    raise NotImplementedError(f"Row kind {row_kind} is not implemented!")
+        
     ## populate
     def _add_cell_widgets(self, row:int, parent: QModelIndex): 
         """Add all cell widgets associated with a row."""       
@@ -317,36 +374,26 @@ class GraphView(QWidget):
     def _add_link_widget(self, row:int, parent: QModelIndex):
         """Create a link widget. Returns None if source widget doesn't exist yet."""
         index = self._model.index(row, 0, parent)
-        source_index = index.data(GraphDataRole.SourceRole)
-        target_index = QPersistentModelIndex(parent)
-
+        persistent_link_index = QPersistentModelIndex(index)
+        persistent_source_index = index.data(GraphDataRole.SourceRole)
+        
         # Validate source index
-        if not isinstance(source_index, QPersistentModelIndex):
-            logger.warning(f"Link {index} has invalid source index type: {type(source_index)}")
+        if not persistent_source_index or not persistent_source_index.isValid() or not isinstance(persistent_source_index, QPersistentModelIndex):
+            # dont add widget when source does not exist, not valid or not the right type
             return None
         
-        # Check if source exists
-        if source_index not in self._row_widgets:
-            # Store for later creation when source becomes available
-            self._pending_links[QPersistentModelIndex(index)] = (source_index, parent)
-            logger.debug(f"Link {index} source {source_index} not found, storing as pending")
-            return None
-
+        if self._row_widgets.get(QPersistentModelIndex(index)):
+            # dont add existing widgets
+            return
+        
         # Create and setup widget
         widget = LinkWidget()
-        self._row_widgets[QPersistentModelIndex(index)] = widget
+        persistent_link_index = QPersistentModelIndex(index)
+        self._row_widgets[persistent_link_index] = widget
+        self._out_links[persistent_source_index].append(persistent_link_index)
         self._add_cell_widgets(row, parent)
         self.graphicsview.scene().addItem(widget)
 
-        # Setup source and target references
-        source_widget = self._row_widgets[source_index]
-        target_widget = self._row_widgets[target_index]
-        source_widget._links.append(widget)
-        target_widget._links.append(widget)
-        widget._source_widget = source_widget
-        widget._target_widget = target_widget
-
-        widget.updateLine()
         return widget
 
     def _remove_cell_widgets(self, row:int, parent: QModelIndex):
@@ -358,7 +405,7 @@ class GraphView(QWidget):
             persistent_cell_index = QPersistentModelIndex(cell_index)
             assert persistent_cell_index in self._cell_widgets
             cell_widget = self._cell_widgets[persistent_cell_index]
-            row_widget = self._row_widgets[QPersistentModelIndex(self._model.index(row, col, parent))]
+            row_widget = self._row_widgets[QPersistentModelIndex(self._model.index(row, 0, parent))]
             row_widget.removeCell(cell_widget)
             del self._cell_widgets[persistent_cell_index]
 
@@ -415,27 +462,33 @@ class GraphView(QWidget):
             raise NotImplementedError("support inlets attached to the root graph")
         
     def _remove_link_widget(self, row:int, parent: QModelIndex):
-        # Remove all cell widgets for this outlet
-        self._remove_cell_widgets(row, parent)
-
-        # remove widget from graphview
         index = self._model.index(row, 0, parent)
-        widget = self._row_widgets[QPersistentModelIndex(index)]
-        del self._row_widgets[QPersistentModelIndex(index)]
+        persistent_link_index = QPersistentModelIndex(index)
+        link_widget = self._row_widgets.get(persistent_link_index)
 
-        # detach widget from scene (or parent widget)
-        if parent.isValid():
-            self.graphicsview.scene().removeItem(widget)
-            source_index = index.data(GraphDataRole.SourceRole)
-            assert isinstance(source_index, QPersistentModelIndex), f"Source index mus be a QPersistentIndex, got: {source_index}!"
-            assert source_index in self._row_widgets, f"Warning: link({index}) source({source_index}) not found in _row_widgets!"
-            target_index = QPersistentModelIndex(parent)
-            source_widget = self._row_widgets[source_index]
-            target_widget = self._row_widgets[target_index]
-            source_widget._links.remove(widget)
-            target_widget._links.remove(widget)
-        else:
-            raise ValueError("Edges Must have an inlet parent!")
+        if link_widget:
+            # Remove all cell widgets for this outlet
+            self._remove_cell_widgets(row, parent)
+
+            # remove widget from graphview
+            widget = self._row_widgets[persistent_link_index]
+            del self._row_widgets[persistent_link_index]
+            persistent_source_index = index.data(GraphDataRole.SourceRole)
+            del self._out_links[persistent_source_index]
+
+            # detach widget from scene (or parent widget)
+            if parent.isValid():
+                self.graphicsview.scene().removeItem(widget)
+                source_index = index.data(GraphDataRole.SourceRole)
+                assert isinstance(source_index, QPersistentModelIndex), f"Source index mus be a QPersistentIndex, got: {source_index}!"
+                assert source_index in self._row_widgets, f"Warning: link({index}) source({source_index}) not found in _row_widgets!"
+                target_index = QPersistentModelIndex(parent)
+                source_widget = self._row_widgets[source_index]
+                target_widget = self._row_widgets[target_index]
+                source_widget._links.remove(widget)
+                target_widget._links.remove(widget)
+            else:
+                raise ValueError("Edges Must have an inlet parent!")
 
     def _defaultRowKind(self, row:int, parent:QModelIndex) -> RowType | None:
         """
@@ -484,7 +537,7 @@ class GraphView(QWidget):
         elif row_kind == RowType.LINK:
             return index.parent().isValid() and index.parent().parent().isValid() and index.parent().parent().parent() == QModelIndex()
 
-    def rowKind(self, row:int, parent:QModelIndex):
+    def rowType(self, row:int, parent:QModelIndex):
         index = self._model.index(row, 0, parent)
         row_kind = index.data(GraphDataRole.TypeRole)
         if not row_kind:
@@ -492,49 +545,12 @@ class GraphView(QWidget):
         assert self._validateRowKind(row, parent, row_kind), f"Invalid row kind {row_kind} for index {index}!"
         return row_kind
     
-
     @Slot(QModelIndex, QModelIndex, int, int)
     def onRowsInserted(self, parent:QModelIndex, first:int, last:int):
         assert self._model
 
         # populate the new rows
-        self.populate(*[self._model.index(row, 0, parent) for row in range(first, last + 1)])
-
-    def _remove_row_recursive(self, row:int, parent:QModelIndex):
-        """
-        Recursively remove a row and all its children from bottom up.
-        This ensures proper cleanup of widget hierarchies.
-        """
-        assert self._model
-
-        # First handle all children of this row
-        index = self._model.index(row, 0, parent)
-        row_count = self._model.rowCount(parent=index)
-        for child_row in reversed(range(row_count)):
-            child_index = self._model.index(child_row, 0, index)
-            self._remove_row_recursive(child_row, index)
-
-        # Now handle this row itself
-        persistent_index = QPersistentModelIndex(index)
-        if persistent_index not in self._row_widgets:
-            return
-
-        row_widget = self._row_widgets[persistent_index]
-        row_type = index.data(GraphDataRole.TypeRole)
-        if not row_type:
-            row_type = self._defaultRowKind(index)
-
-        match row_type:
-            case RowType.NODE:
-                self._remove_node_widget(index, row_widget)
-            case RowType.INLET:
-                self._remove_inlet_widget(index, row_widget)
-            case RowType.OUTLET:
-                self._remove_outlet_widget(index, row_widget)
-            case RowType.LINK:
-                self._remove_link_widget(index, row_widget)
-            case _:
-                raise ValueError()
+        self.addRowWidgets(*[self._model.index(row, 0, parent) for row in range(first, last + 1)])
 
     @Slot(QModelIndex, QModelIndex, int, int)
     def onRowsAboutToBeRemoved(self, parent: QModelIndex, first: int, last: int):
@@ -545,24 +561,42 @@ class GraphView(QWidget):
         """
         assert self._model
 
-        # Remove rows in reverse order to handle siblings properly
-        for row in reversed(range(first, last + 1)):
-            # index = self._model.index(row, 0, parent=parent)
-            self._remove_row_recursive(row, parent)
+        self.removeRowWidgets(*[self._model.index(row, 0, parent) for row in range(first, last + 1)])
+
+        # # Remove rows in reverse order to handle siblings properly
+        # for row in reversed(range(first, last + 1)):
+        #     # index = self._model.index(row, 0, parent=parent)
+        #     self._remove_row_recursive(row, parent)
 
     @Slot(QModelIndex, QModelIndex, list)
     def onDataChanged(self, topLeft:QModelIndex , bottomRight:QModelIndex , roles=[]):
         assert self._model
+
+        ## Update data cells
         for row in range(topLeft.row(), bottomRight.row()+1):
-            for col in range(topLeft.column(), bottomRight.column()+1):
-                cell_index = self._model.index(row, col)
+            for col in range(topLeft.column(), bottomRight.column()+1):  
+                cell_index = topLeft.sibling(row, col)
                 widget = self._cell_widgets[QPersistentModelIndex(cell_index)]
                 proxy = cast(QGraphicsProxyWidget, widget)
                 label = proxy.widget()
                 assert isinstance(label, QLabel)
                 label.setText(cell_index.data(Qt.ItemDataRole.DisplayRole))
-            node_index = self._model.index(row, 0)
-            node_widget = cast(NodeWidget, self._cell_widgets[QPersistentModelIndex(node_index)])
+
+        ## check if link source has changed
+        if GraphDataRole.SourceRole in roles or roles == []:
+            for row in range(topLeft.row(), bottomRight.row()+1):
+                if self.rowType(row, topLeft.parent()) == RowType.LINK:
+                    link_index = topLeft.siblingAtRow(row)
+                    self._link_sources
+                    new_source_index = link_index.data(GraphDataRole.SourceRole)
+
+
+                if source_index and isinstance(source_index, QPersistentModelIndex):
+                    node_widget = cast(NodeWidget, self._row_widgets[QPersistentModelIndex(row_index)])
+                else:
+                    if QPersistentModelIndex(source_index) in self._out_links:
+                        ...
+                        # remove 
             # node_widget.resize(node_widget.layout().sizeHint(Qt.SizeHint.PreferredSize))
             # node_widget.updateGeometry()
 
@@ -709,13 +743,12 @@ class LinkWidget(BaseRowWidget):
         shape = self.shape()
         painter.drawPath(shape)
 
-    def updateLine(self):
+    def updateLine(self, source:QGraphicsItem, target:QGraphicsItem):
         self.prepareGeometryChange()
-        if self._source_widget and self._target_widget:
-            source_pos = self._source_widget.scenePos()
-            target_pos = self._target_widget.scenePos()
+        if source and target:
+            source_pos = source.scenePos()
+            target_pos = target.scenePos()
             self._line = QLineF(source_pos, target_pos)
 
         self.update()
-        self._data_column.setPos(self._line.center())
 

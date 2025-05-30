@@ -63,7 +63,7 @@ class MainWindow(QMainWindow):
         # Delete action
         menubar.addSeparator()
         delete_action = QAction("Delete Selected", self)
-        delete_action.setShortcut(QKeySequence.StandardKey.Backspace)
+        delete_action.setShortcut(QKeySequence.StandardKey.Delete)
         delete_action.triggered.connect(self.deleteSelected)
         edit_menu.addAction(delete_action)
 
