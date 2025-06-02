@@ -53,7 +53,8 @@ class GraphView(QWidget):
         self._row_widgets: bidict[QPersistentModelIndex, BaseRowWidget] = bidict()
         self._cell_widgets: bidict[QPersistentModelIndex, CellWidget] = bidict()
 
-        self._out_links: dict[QPersistentModelIndex, List[QPersistentModelIndex]] = defaultdict()
+        self._link_source: dict[QPersistentModelIndex, QPersistentModelIndex] = dict()
+        self._out_links: dict[QPersistentModelIndex, List[QPersistentModelIndex]] = dict()
         
         # self._link_widgets: bidict[tuple[QPersistentModelIndex, QPersistentModelIndex], LinkItem] = bidict()
         self._draft_link: QGraphicsLineItem | None = None
@@ -162,23 +163,23 @@ class GraphView(QWidget):
             # incoming links
             for child_row in range(self._model.rowCount(index)):
                 if self.rowType(child_row, index) == RowType.LINK:
-                    link_index = self._model.index(child_row, 0, index)
-                    self.updateLink(link_index)
+                    self.updateLinkGeometry(child_row, index)
 
             # outgoing links
             if links:=self._out_links.get(index):
                 for link_index in links:
-                    self.updateLink(link_index)
+                    self.updateLinkGeometry(link_index.row(), link_index.parent())
 
-    def updateLink(self, link:QModelIndex):
+    def updateLinkGeometry(self, row:int, parent:QModelIndex):
         """update link widget position associated with the qmodelindex"""
-        source = self._model.data(link, GraphDataRole.SourceRole)
-        target = link.parent()
+        print("update link geometry")
+        link_index = self._model.index(row, 0, parent)
+        source = self._model.data(link_index, GraphDataRole.SourceRole)
+        target = link_index.parent()
 
-        link_widget =   self._row_widgets.inverse.get(QPersistentModelIndex(link))
-        source_widget = self._row_widgets.inverse.get(QPersistentModelIndex(source))
-        target_widget = self._row_widgets.inverse.get(QPersistentModelIndex(target))
-        if link_widget:
+        if link_widget:=self._row_widgets.get(QPersistentModelIndex(link_index)):
+            source_widget = self._row_widgets.get(QPersistentModelIndex(source))
+            target_widget = self._row_widgets.get(QPersistentModelIndex(target))
             link_widget = cast(LinkWidget, link_widget)
             link_widget.updateLine(source_widget, target_widget)
 
@@ -265,7 +266,13 @@ class GraphView(QWidget):
                 case RowType.OUTLET:
                     pass
                 case RowType.LINK:
+                    
+                    link_index = QPersistentModelIndex(self._model.index(row, 0, parent))
+                    source_index = link_index.data(GraphDataRole.SourceRole)
+                    self._out_links[source_index].append(link_index)
+                    self._link_source[link_index] = source_index
                     self._add_link_widget(row, parent)
+                    self.updateLinkGeometry(link_index.row(), link_index.parent())
                 case _:
                     raise NotImplementedError(f"Row kind {row_kind} is not implemented!")
 
@@ -297,12 +304,10 @@ class GraphView(QWidget):
                 case None:
                     pass
                 case RowType.NODE:
-                    pass
                     self._remove_node_widget(row, parent)
                 case RowType.INLET:
                     self._remove_inlet_widget(row, parent)
                 case RowType.OUTLET:
-                    pass
                     self._remove_outlet_widget(row, parent)
                 case _:
                     raise NotImplementedError(f"Row kind {row_kind} is not implemented!")
@@ -339,8 +344,10 @@ class GraphView(QWidget):
         # add widget
         index = self._model.index(row, 0, parent)
         widget = InletWidget()
+
         self._row_widgets[QPersistentModelIndex(index)] = widget
         self._add_cell_widgets(row, parent)
+
 
         # attach to parent widget
         if parent.isValid():
@@ -351,48 +358,63 @@ class GraphView(QWidget):
             parent_widget.addInlet(widget)
         else:
             raise NotImplementedError("root graph inlets are not yet implemented!")
+        
+        # update link geometry
+        def update_in_links(view=self, inlet_index:QModelIndex=index):
+            for child_row in range(view._model.rowCount(inlet_index)):
+                view.updateLinkGeometry(child_row, inlet_index)
+
+        widget.scenePositionChanged.connect(update_in_links)
 
         # return widget
         return widget
     
     def _add_outlet_widget(self, row, parent: QModelIndex):
         # add widget
-        index = self._model.index(row, 0, parent)
+        outlet_index = self._model.index(row, 0, parent)
         widget = OutletWidget()
-        self._row_widgets[QPersistentModelIndex(index)] = widget
+        self._row_widgets[QPersistentModelIndex(outlet_index)] = widget
         self._add_cell_widgets(row, parent)
+        self.graphicsview.scene().addItem(widget)
+
 
         # attach to parent widget
-        parent = index.parent()
+        parent = outlet_index.parent()
         if parent.isValid():
             parent_widget = self._row_widgets[QPersistentModelIndex(parent)]
             parent_widget = cast(NodeWidget, parent_widget)
             parent_widget.addInlet(widget)
 
+        self._out_links[QPersistentModelIndex(outlet_index)] = []
+
+        # update link geometry
+        def update_out_links(view=self, outlet_index:QModelIndex=outlet_index):
+            for link_index in view._out_links[QPersistentModelIndex(outlet_index)]:
+                view.updateLinkGeometry(link_index.row(), link_index.parent())
+
+        widget.scenePositionChanged.connect(update_out_links)
+
         return widget
     
     def _add_link_widget(self, row:int, parent: QModelIndex):
-        """Create a link widget. Returns None if source widget doesn't exist yet."""
-        index = self._model.index(row, 0, parent)
-        persistent_link_index = QPersistentModelIndex(index)
-        persistent_source_index = index.data(GraphDataRole.SourceRole)
-        
-        # Validate source index
-        if not persistent_source_index or not persistent_source_index.isValid() or not isinstance(persistent_source_index, QPersistentModelIndex):
-            # dont add widget when source does not exist, not valid or not the right type
-            return None
-        
-        if self._row_widgets.get(QPersistentModelIndex(index)):
-            # dont add existing widgets
-            return
-        
-        # Create and setup widget
+        # add widget
+        persistent_link_index = QPersistentModelIndex(self._model.index(row, 0, parent))
         widget = LinkWidget()
-        persistent_link_index = QPersistentModelIndex(index)
         self._row_widgets[persistent_link_index] = widget
-        self._out_links[persistent_source_index].append(persistent_link_index)
+        self._out_links[persistent_link_index] = []
+        self._link_source[persistent_link_index] = None
         self._add_cell_widgets(row, parent)
         self.graphicsview.scene().addItem(widget)
+
+        # attach to parent widget
+        parent = persistent_link_index.parent()
+        print("parent not valid?", parent.isValid())
+        if parent.isValid():
+            parent_widget = self._row_widgets[QPersistentModelIndex(parent)]
+            parent_widget = cast(InletWidget, parent_widget)
+            widget.setParentItem(parent_widget)
+        else:
+            raise ValueError("Link must have a parents")
 
         return widget
 
@@ -449,9 +471,10 @@ class GraphView(QWidget):
         self._remove_cell_widgets(row, parent)
         
         # remove widget from graphview
-        index = self._model.index(row, 0, parent)
-        widget = self._row_widgets[QPersistentModelIndex(index)]
-        del self._row_widgets[QPersistentModelIndex(index)]
+        persistent_outlet_index = QPersistentModelIndex(self._model.index(row, 0, parent))
+        widget = self._row_widgets[persistent_outlet_index]
+        del self._row_widgets[persistent_outlet_index]
+        
 
         # detach widget from scene (or parent widget)
         if parent.isValid():
@@ -461,34 +484,32 @@ class GraphView(QWidget):
         else:
             raise NotImplementedError("support inlets attached to the root graph")
         
+        # update links
+        for persistent_link_index in self._out_links[persistent_outlet_index]:
+            assert isinstance(persistent_link_index, QPersistentModelIndex)
+            self.updateLinkGeometry(persistent_link_index.row(), persistent_link_index.parent())
+            self._link_source[persistent_link_index].remove(persistent_outlet_index)
+        del self._out_links[persistent_outlet_index]
+        
+        
     def _remove_link_widget(self, row:int, parent: QModelIndex):
+        """Remove an inlet widget and its associated cell widgets."""
+        # Remove all cell widgets for this inlet
+        self._remove_cell_widgets(row, parent)
+        
+        # remove widget from graphview
         index = self._model.index(row, 0, parent)
-        persistent_link_index = QPersistentModelIndex(index)
-        link_widget = self._row_widgets.get(persistent_link_index)
+        widget = self._row_widgets[QPersistentModelIndex(index)]
+        del self._row_widgets[QPersistentModelIndex(index)]
 
-        if link_widget:
-            # Remove all cell widgets for this outlet
-            self._remove_cell_widgets(row, parent)
-
-            # remove widget from graphview
-            widget = self._row_widgets[persistent_link_index]
-            del self._row_widgets[persistent_link_index]
-            persistent_source_index = index.data(GraphDataRole.SourceRole)
-            del self._out_links[persistent_source_index]
-
-            # detach widget from scene (or parent widget)
-            if parent.isValid():
-                self.graphicsview.scene().removeItem(widget)
-                source_index = index.data(GraphDataRole.SourceRole)
-                assert isinstance(source_index, QPersistentModelIndex), f"Source index mus be a QPersistentIndex, got: {source_index}!"
-                assert source_index in self._row_widgets, f"Warning: link({index}) source({source_index}) not found in _row_widgets!"
-                target_index = QPersistentModelIndex(parent)
-                source_widget = self._row_widgets[source_index]
-                target_widget = self._row_widgets[target_index]
-                source_widget._links.remove(widget)
-                target_widget._links.remove(widget)
-            else:
-                raise ValueError("Edges Must have an inlet parent!")
+        # detach widget from scene (or parent widget)
+        if parent.isValid():
+            parent_widget = self._row_widgets[QPersistentModelIndex(parent)]
+            parent_widget = cast(InletWidget, parent_widget)
+            parent_widget.setParentItem(None)
+            self.graphicsview.scene().removeItem(widget)
+        else:
+            raise ValueError()
 
     def _defaultRowKind(self, row:int, parent:QModelIndex) -> RowType | None:
         """
@@ -586,19 +607,14 @@ class GraphView(QWidget):
         if GraphDataRole.SourceRole in roles or roles == []:
             for row in range(topLeft.row(), bottomRight.row()+1):
                 if self.rowType(row, topLeft.parent()) == RowType.LINK:
-                    link_index = topLeft.siblingAtRow(row)
-                    self._link_sources
-                    new_source_index = link_index.data(GraphDataRole.SourceRole)
-
-
-                if source_index and isinstance(source_index, QPersistentModelIndex):
-                    node_widget = cast(NodeWidget, self._row_widgets[QPersistentModelIndex(row_index)])
-                else:
-                    if QPersistentModelIndex(source_index) in self._out_links:
-                        ...
-                        # remove 
-            # node_widget.resize(node_widget.layout().sizeHint(Qt.SizeHint.PreferredSize))
-            # node_widget.updateGeometry()
+                    persistent_link_index = QPersistentModelIndex(topLeft.siblingAtRow(row))
+                    new_source_index = persistent_link_index.data(GraphDataRole.SourceRole)
+                    previous_source_index = self._link_source[persistent_link_index]
+                    if previous_source_index != new_source_index:
+                        """!link source has changed"""
+                        self._link_source[persistent_link_index] = new_source_index
+                        self._out_links[previous_source_index].remove(persistent_link_index)
+                        self._out_links[previous_source_index].append(new_source_index)
 
 
 class CellWidget(QGraphicsProxyWidget):
@@ -615,13 +631,12 @@ class CellWidget(QGraphicsProxyWidget):
 
 
 class BaseRowWidget(QGraphicsWidget):
+    scenePositionChanged = Signal()
     def __init__(self, parent: QGraphicsItem | None = None):
         super().__init__(parent=parent)
 
         layout = QGraphicsLinearLayout(Qt.Orientation.Vertical)
         self.setLayout(layout)
-
-        self._links = []
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsScenePositionChanges, True)
 
     def addCell(self, cell:CellWidget):
@@ -635,8 +650,8 @@ class BaseRowWidget(QGraphicsWidget):
     def itemChange(self, change, value):
         match change:
             case QGraphicsItem.GraphicsItemChange.ItemScenePositionHasChanged:
-                for link in self._links:
-                    link.updateLine()
+                self.scenePositionChanged.emit()
+                    
         return super().itemChange(change, value)
 
 
@@ -665,11 +680,10 @@ class NodeWidget(BaseRowWidget):
         super().__init__(parent=parent)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
-        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsScenePositionChanges, True)
+        
 
         layout = QGraphicsLinearLayout(Qt.Orientation.Vertical)
         self.setLayout(layout)
-        self._links = []
 
     def addInlet(self, inlet:InletWidget):
         layout = cast(QGraphicsLinearLayout, self.layout())
@@ -699,14 +713,12 @@ class NodeWidget(BaseRowWidget):
 
 
 class LinkWidget(BaseRowWidget):
+    
     def __init__(self, parent: QGraphicsItem | None = None):
         super().__init__(parent=parent)
         # self.setZValue(-1)  # Ensure links are drawn below nodes
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
-
-        self._source_widget: QGraphicsItem | None = None
-        self._target_widget: QGraphicsItem | None = None
-        self._line = QLineF(0, 0, 20, 20)
+        self._line = QLineF(0, 0, 100, 100)
 
         self._data_column = QGraphicsWidget(parent=self)
         self._data_column.setLayout(QGraphicsLinearLayout(Qt.Orientation.Vertical))
@@ -739,16 +751,25 @@ class LinkWidget(BaseRowWidget):
         else:
             painter.setBrush(self.palette().text())
         painter.setPen(Qt.PenStyle.NoPen)
-
+        print("paint")
         shape = self.shape()
         painter.drawPath(shape)
 
-    def updateLine(self, source:QGraphicsItem, target:QGraphicsItem):
+    def updateLine(self, source:QGraphicsItem|None, target:QGraphicsItem|None):
+        print("updateLine: {source}->{target}")
         self.prepareGeometryChange()
         if source and target:
-            source_pos = source.scenePos()
-            target_pos = target.scenePos()
+            source_pos = source.scenePos()-self.scenePos()
+            target_pos = target.scenePos()-self.scenePos()
             self._line = QLineF(source_pos, target_pos)
+        elif source:
+            source_pos = source.scenePos()-self.scenePos()
+            self._line = QLineF(source_pos, source_pos+QPointF(100,100))
+        elif target:
+            target_pos = target.scenePos()-self.scenePos()
+            self._line = QLineF(target_pos-QPointF(100,100), target_pos)
+        else:
+            ...
 
         self.update()
 

@@ -8,6 +8,9 @@ from PySide6.QtWidgets import QHBoxLayout, QTreeView
 from graphview import GraphView, GraphDataRole, RowType
 
 
+
+
+
 class LinkTableDelegate(QStyledItemDelegate):
     def displayText(self, value: Any, locale: QLocale | QLocale.Language, /) -> str:
         print("display text for", value)

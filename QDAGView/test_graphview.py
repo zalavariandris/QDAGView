@@ -80,19 +80,8 @@ class TestLinks(unittest.TestCase):
         self.assertIn(link_id, self.view._row_widgets)
         self.assertIsInstance(self.view._row_widgets[link_id], QGraphicsItem)
 
-    def test_create_danglink_link(self):
-        # link
-        link = QStandardItem("link")
-        self.in1.appendRow(link)
-
-        # dangling links should not create a widget
-        link_id = QPersistentModelIndex(link.index())
-        self.assertNotIn(link_id, self.view._row_widgets)
-
-        # 
-        link.setData(QPersistentModelIndex( self.out1.index() ), GraphDataRole.SourceRole)
-        # self.assertIn(link_id, self.view._row_widgets)
-
+    def test_link_geometry_update(self):
+        ...
 
 class TestGraphView_UnsupportedModelStructures(unittest.TestCase):
      ...
