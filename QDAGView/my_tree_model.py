@@ -1,12 +1,12 @@
 from PySide6.QtCore import Qt, QModelIndex, QAbstractItemModel, QObject, Signal
-
+from typing import *
 
 class TreeItem(QObject):
     data_changed = Signal(int)            # column
     child_inserted = Signal(int, int)     # position, count
     child_removed = Signal(int, int)      # position, count
 
-    def __init__(self, data, parent=None):
+    def __init__(self, data:list[Any], parent=None):
         super().__init__()
         self.item_data = data
         self.parent_item = parent
@@ -105,8 +105,14 @@ class TreeModel(QAbstractItemModel):
             return QModelIndex()
 
         child_item = index.internalPointer()
+        if not child_item:
+            return QModelIndex()
+
         parent_item = child_item.parent()
-        if parent_item == self.root_item or parent_item is None:
+        if parent_item == self.root_item:
+            return QModelIndex()
+        
+        if parent_item is None:
             return QModelIndex()
 
         return self.createIndex(parent_item.row(), 0, parent_item)
@@ -153,27 +159,82 @@ class TreeModel(QAbstractItemModel):
 if __name__ == "__main__":
     import sys
     from PySide6.QtWidgets import QApplication, QTreeView
+    from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QHBoxLayout
+    from PySide6.QtCore import QEvent, QPoint
+    from PySide6.QtWidgets import QAbstractItemView
+    from collections import defaultdict
 
     app = QApplication(sys.argv)
+    class MainWidget(QWidget):
+        def __init__(self):
+            super().__init__()
+            layout = QVBoxLayout(self)
+            button_layout = QHBoxLayout()
 
-    view = QTreeView()
-    model = TreeModel(["Title"])
-    view.setModel(model)
+            self.add_btn = QPushButton("Add Item")
+            self.remove_btn = QPushButton("Remove Selected")
+            button_layout.addWidget(self.add_btn)
+            button_layout.addWidget(self.remove_btn)
+            layout.addLayout(button_layout)
 
-    # Add root children
-    root = model.root_item
-    child1 = TreeItem(["Item 1"])
-    child2 = TreeItem(["Item 2"])
-    root.append_child(child1)
-    root.append_child(child2)
+            self.treeview = QTreeView()
 
-    # Add nested children
-    child1.append_child(TreeItem(["Child 1"]))
-    child1.append_child(TreeItem(["Child 2"]))
+            # Event filter to deselect all when clicking on a blank area
 
-    # Direct item edit — model will emit signals!
-    child1.set_data(0, "Updated Item 1")
 
-    view.expandAll()
-    view.show()
+            self.treeview.viewport().installEventFilter(self)
+            self.treeview.setSelectionMode(QTreeView.ExtendedSelection)
+            layout.addWidget(self.treeview)
+
+            self.model = TreeModel(["Title"])
+            self.treeview.setModel(self.model)
+
+            # Add root children
+            root = self.model.root_item
+            child1 = TreeItem(["Item 1"])
+            child2 = TreeItem(["Item 2"])
+            root.append_child(child1)
+            root.append_child(child2)
+
+            # Add nested children
+            child1.append_child(TreeItem(["Child 1"]))
+            child1.append_child(TreeItem(["Child 2"]))
+
+            # Direct item edit — model will emit signals!
+            child1.set_data(0, "Updated Item 1")
+
+            self.treeview.expandAll()
+
+            self.add_btn.clicked.connect(self.add_item)
+            self.remove_btn.clicked.connect(self.remove_item)
+
+        def eventFilter(self, obj, event):
+            if event.type() == QEvent.MouseButtonPress and obj is self.treeview.viewport():
+                pos = event.pos()
+                index = self.treeview.indexAt(pos)
+                if not index.isValid():
+                    self.treeview.clearSelection()
+            return super().eventFilter(obj, event)
+
+        def add_item(self):
+            index = self.treeview.currentIndex()
+            parent = index if index.isValid() else QModelIndex()
+            self.model.insertRows(self.model.rowCount(parent), 1, parent)
+
+        def remove_item(self):
+            indexes = self.treeview.selectionModel().selectedRows()
+            # Group indexes by parent to avoid shifting issues
+            parent_map = defaultdict(list)
+            for index in indexes:
+                parent_map[index.parent()].append(index.row())
+            for parent, rows in parent_map.items():
+                for row in sorted(rows, reverse=True):
+                    self.model.removeRows(row, 1, parent)
+
+    main_widget = MainWidget()
+
+
+    main_widget.resize(400, 300)
+    main_widget.show()
+
     sys.exit(app.exec())
