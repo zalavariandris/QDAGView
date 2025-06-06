@@ -1,4 +1,6 @@
 from PySide6.QtCore import *
+from PySide6.QtGui import *
+from PySide6.QtWidgets import *
 from collections import defaultdict
 from typing import *
 from enum import Enum, StrEnum
@@ -51,7 +53,7 @@ class BaseItem:
             
         # Set the data - this will create the nested structure if needed        if self._data[role].get(column) != value:
             self._data[role][column] = value
-            self._emit_data_changed(column)
+            self.emitDataChanged(column)
         return True
         
     def insert_child(self, position: int, child: Self) -> None:
@@ -127,35 +129,13 @@ class BaseItem:
         for child in item._child_items:
             self._set_model_recursively(child)
             
-    def _emit_data_changed(self, column: int, roles: List[int] = None) -> None:
+    def emitDataChanged(self, column: int, roles: List[int] = None) -> None:
         """Emit model's dataChanged signal for this item."""
         if self._model and self != self._model._root_item:
             index = self._model.createIndex(self.row(), column, self)
             if roles is None:
                 roles = []
             self._model.dataChanged.emit(index, index, roles)
-
-    # def _emit_rows_about_to_be_inserted(self, position: int, count: int) -> None:
-    #     """Emit model's beginInsertRows signal for this item."""
-    #     if self._model:
-    #         parent_index = self.index()
-    #         self._model.beginInsertRows(parent_index, position, position + count - 1)
-
-    # def _emit_rows_inserted(self) -> None:
-    #     """Emit model's endInsertRows signal."""
-    #     if self._model:
-    #         self._model.endInsertRows()
-
-    # def _emit_rows_about_to_be_removed(self, position: int, count: int) -> None:
-    #     """Emit model's beginRemoveRows signal for this item."""
-    #     if self._model:
-    #         parent_index = self.index()
-    #         self._model.beginRemoveRows(parent_index, position, position + count - 1)
-
-    # def _emit_rows_removed(self) -> None:
-    #     """Emit model's endRemoveRows signal."""
-    #     if self._model:
-    #         self._model.endRemoveRows()
 
 
 class NodeItem(BaseItem):
@@ -473,37 +453,17 @@ if __name__ == "__main__":
     from PySide6.QtCore import QEvent, QPoint
     from PySide6.QtWidgets import QAbstractItemView
     from collections import defaultdict
+    from graphview import GraphView
 
     app = QApplication(sys.argv)
     class MainWidget(QWidget):
         def __init__(self):
             super().__init__()
-            self.setWindowTitle("Graph Model Example")
-            layout = QVBoxLayout(self)
-            button_layout = QHBoxLayout()
-
-            self.add_btn = QPushButton("Add Item")
-            self.remove_btn = QPushButton("Remove Selected")
-            button_layout.addWidget(self.add_btn)
-            button_layout.addWidget(self.remove_btn)
-            layout.addLayout(button_layout)
-
-            self.treeview = QTreeView()
-
-            # Event filter to deselect all when clicking on a blank area
-            self.treeview.viewport().installEventFilter(self)
-            self.treeview.setSelectionMode(QTreeView.ExtendedSelection)
-            layout.addWidget(self.treeview)
-            
+            # Setup model
             self.model = GraphModel()
             self.selection = QItemSelectionModel(self.model)
-            self.treeview.setModel(self.model)
-            self.treeview.setSelectionModel(self.selection)
-            self.model.rowsInserted.connect(lambda parent, first, last: print(f"Rows inserted at {parent}, from {first} to {last}"))
-            self.selection.currentChanged.connect(self.updateContextAwareToolbar)
-            
 
-            # Add nodes
+            ## populate model with some initial data
             node1 = NodeItem("Node 1")
             node1.appendInlet(InletItem("Inlet 1"))
             node1.appendOutlet(OutletItem("out"))
@@ -514,26 +474,112 @@ if __name__ == "__main__":
             node2.appendOutlet(OutletItem("out"))
             self.model.addNode(node2)
 
-            # Direct item edit — model will emit signals!
-            node1.setData(0, "Updated Name")
+            # setup view
+            self.setWindowTitle("Graph Model Example")
 
+            ### context aware toolbar
+            button_layout = QHBoxLayout()
+            self.add_btn = QPushButton("Add Item")
+            self.add_btn.clicked.connect(self.add_item)
+            self.remove_btn = QPushButton("Remove Selected")
+            self.remove_btn.clicked.connect(self.remove_selected_items)
+            button_layout.addWidget(self.add_btn)
+            button_layout.addWidget(self.remove_btn)
+
+            self.selection.currentChanged.connect(self.updateContextAwareToolbar)
+            
+
+            ## treeview
+            self.treeview = QTreeView()
+            self.treeview.viewport().installEventFilter(self)
+            self.treeview.setSelectionMode(QTreeView.ExtendedSelection)
+            
+
+            self.treeview.setModel(self.model)
+            self.treeview.setSelectionModel(self.selection)
+            
+            self.treeview.setContextMenuPolicy(Qt.CustomContextMenu)
+            self.treeview.customContextMenuRequested.connect(self.showContextAwareMenu)
+            self.treeview.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.SelectedClicked)
+            self.treeview.setSelectionBehavior(QAbstractItemView.SelectRows)
+            
             self.treeview.expandAll()
 
-            self.add_btn.clicked.connect(self.add_item)
-            self.remove_btn.clicked.connect(self.remove_item)
+            ## graphview
+            self.graphview = GraphView()
+            self.graphview.setModel(self.model)
+            self.graphview.setSelectionModel(self.selection)
+            self.graphview.setMinimumSize(400, 300)
+
+            # layout widgets
+            splitter = QSplitter(Qt.Horizontal, self)
+            layout = QVBoxLayout(self)
+            layout.addLayout(button_layout)
+            layout.addWidget(splitter)
+            splitter.addWidget(self.treeview)
+            splitter.addWidget(self.graphview)
+            splitter.setSizes([100, 600])
+            splitter.setStretchFactor(0, 0)
+            self.setLayout(layout)
+
+            self.resize(1000, 600)
+
+        def sizeHint(self):
+            return QSize(1000, 600)  # Set a default size hint for the main widget
+            
+
+        def showContextAwareMenu(self, pos):
+            """Show context-aware menu based on the current selection."""
+            menu = QMenu(self)
+            # index = self.treeview.indexAt(pos)  # Ensure the context menu is shown at the correct position
+            index = self.selection.currentIndex()
+            item = index.internalPointer() if index.isValid() else self.model.invisibleRootItem()
+            match index.isValid(), item.type():
+                case (False, _):
+                    menu.addAction("Add Node", lambda: self.model.addNode(NodeItem("New Node"), QModelIndex()))
+                case (True, ItemType.Node):
+                    menu.addAction("Add Inlet", lambda: self.model.addInlet(InletItem("in"), index))
+                    menu.addAction("Add Outlet", lambda: self.model.addOutlet(OutletItem("out"), index))
+
+                case (True, ItemType.Inlet):
+                    ...
+                case (True, ItemType.Outlet):
+                    ...
+                case (True, ItemType.Link):
+                    ...
+                case _:
+                    ...
+
+            menu.addAction("Remove Selected Items", self.remove_selected_items)
+            menu.exec(self.treeview.viewport().mapToGlobal(pos))
 
         def eventFilter(self, obj, event):
-            if event.type() == QEvent.MouseButtonPress and obj is self.treeview.viewport():
-                index = self.treeview.indexAt(event.position().toPoint())
-                if not index.isValid():
-                    self.treeview.clearSelection()
-                    self.treeview.setCurrentIndex(QModelIndex())
+            if obj is self.treeview.viewport() and event.type() == QEvent.MouseButtonPress:
+                if  event.buttons() == Qt.LeftButton:
+                    index = self.treeview.indexAt(event.position().toPoint())
+                    if not index.isValid():
+                        self.treeview.clearSelection()
+                        self.treeview.setCurrentIndex(QModelIndex())
+                        return True  # Allow the click to pass through
+            # For other events or if the index is valid, let the default processing happen
             return super().eventFilter(obj, event)
 
-        def add_item(self):
-            index = self.treeview.currentIndex()
-            parent = index if index.isValid() else QModelIndex()
+        def add_item(self, current:QModelIndex|None = None):
+            """Add a new item to the model at the current selection."""
+            if not current:
+                current = self.treeview.currentIndex()
+            parent = current if current.isValid() else QModelIndex()
             self.model.insertRows(self.model.rowCount(parent), 1, parent)
+
+        def remove_selected_items(self):
+            indexes = self.treeview.selectionModel().selectedRows()
+            # Group indexes by parent to avoid shifting issues
+            parent_map = defaultdict(list)
+            for index in indexes:
+                parent_map[index.parent()].append(index.row())
+            for parent, rows in parent_map.items():
+                for row in sorted(rows, reverse=True):
+                    self.model.removeRows(row, 1, parent)
 
         def updateContextAwareToolbar(self):
             """Update the context-aware toolbar based on the current selection."""
@@ -573,18 +619,8 @@ if __name__ == "__main__":
                     self.remove_btn.setEnabled(False)
 
 
-        def remove_item(self):
-            indexes = self.treeview.selectionModel().selectedRows()
-            # Group indexes by parent to avoid shifting issues
-            parent_map = defaultdict(list)
-            for index in indexes:
-                parent_map[index.parent()].append(index.row())
-            for parent, rows in parent_map.items():
-                for row in sorted(rows, reverse=True):
-                    self.model.removeRows(row, 1, parent)
 
     main_widget = MainWidget()
-    main_widget.resize(400, 300)
     main_widget.show()
 
     sys.exit(app.exec())
