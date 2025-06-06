@@ -284,6 +284,10 @@ class GraphModel(QAbstractItemModel):
         self._set_model_recursively(self._root_item)  # Set model for all descendants
         self._headers = ["name", "content"]
 
+    def invisibleRootItem(self) -> SubGraphItem:
+        """Return the invisible root item of the model."""
+        return self._root_item
+
     # Override Read Methods for compatibility with standard views
     def index(self, row: int, column: int, parent: QModelIndex = QModelIndex()) -> QModelIndex:
         if not self.hasIndex(row, column, parent):
@@ -535,37 +539,39 @@ if __name__ == "__main__":
             """Update the context-aware toolbar based on the current selection."""
             
             current_index = self.treeview.currentIndex()
-            if current_index and current_index.isValid():
-                # Enable remove button if any item is selected
-                item = current_index.internalPointer()
-                match item.type():
-                    case ItemType.Node:
-                        self.add_btn.setText("Add Inlet")
-                        self.add_btn.setDisabled(False)
-                        self.remove_btn.setText("Remove Node")
-                    case ItemType.Inlet:
-                        self.add_btn.setText("Add Item")
-                        self.add_btn.setDisabled(True)
-                        self.remove_btn.setText("Remove Inlet")
-                    case ItemType.Outlet:
-                        self.add_btn.setText("Add Item")
-                        self.add_btn.setDisabled(True)
-                        self.remove_btn.setText("Remove Outlet")
-                    case ItemType.Link:
-                        self.add_btn.setText("Add Item")
-                        self.add_btn.setDisabled(True)
-                        self.remove_btn.setText("Remove Link")
-                    case _:
-                        self.add_btn.setText("Add Item")
-                        self.add_btn.setDisabled(True)
-                        self.remove_btn.setText("Remove Item")
-                self.remove_btn.setEnabled(True)
-            else:
-                # Disable remove button if no items are selected
-                self.add_btn.setText("Add Node")
-                self.add_btn.setDisabled(False)
-                self.remove_btn.setText("Remove Item")
-                self.remove_btn.setEnabled(False)
+            item = current_index.internalPointer() if current_index.isValid() else self.model.invisibleRootItem()
+            match current_index.isValid(), item.type():
+                case (False, _):
+                    self.add_btn.setText("Add Node")
+                    self.add_btn.setDisabled(False)
+                    self.remove_btn.setText("Remove Item")
+                    self.remove_btn.setEnabled(False)
+                case (True, ItemType.Node):
+                    self.add_btn.setText("Add Inlet")
+                    self.add_btn.setEnabled(True)
+                    self.remove_btn.setText("Remove Node")
+                    self.remove_btn.setEnabled(True)
+                case (True, ItemType.Inlet):
+                    self.add_btn.setText("Add Item")
+                    self.add_btn.setEnabled(False)
+                    self.remove_btn.setText("Remove Inlet")
+                    self.remove_btn.setEnabled(True)
+                case (True, ItemType.Outlet):
+                    self.add_btn.setText("Add Item")
+                    self.add_btn.setEnabled(False)
+                    self.remove_btn.setText("Remove Outlet")
+                    self.remove_btn.setEnabled(True)
+                case (True, ItemType.Link):
+                    self.add_btn.setText("Add Item")
+                    self.add_btn.setEnabled(False)
+                    self.remove_btn.setText("Remove Link")
+                    self.remove_btn.setEnabled(True)
+                case _:
+                    self.add_btn.setText("Add Item")
+                    self.add_btn.setEnabled(False)
+                    self.remove_btn.setText("Remove Item")
+                    self.remove_btn.setEnabled(False)
+
 
         def remove_item(self):
             indexes = self.treeview.selectionModel().selectedRows()
