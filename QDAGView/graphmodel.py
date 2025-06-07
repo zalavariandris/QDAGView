@@ -1,393 +1,454 @@
-from PySide6.QtCore import Qt, QModelIndex, QAbstractItemModel, QEvent
-from PySide6.QtWidgets import QApplication, QTreeView
-import sys
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QHBoxLayout
+from PySide6.QtCore import *
+from PySide6.QtGui import *
+from PySide6.QtWidgets import *
+from collections import defaultdict
 from typing import *
+from core import GraphDataRole, GraphItemType
 
 
-from __future__ import annotations
-
-
-
-class NodeItem:
-    def __init__(self, name:str, content:str):
-        self._name = name
-        self._content = content
-        self._model:GraphModel|None = None
-
-        self._inlets:list[InletItem] = []
-
-    def name(self):
-        return self._name
-    
-    def content(self):
-        return self._content
-    
-    def inlets(self)->list:
-        return self._inlets
-    
-    def appendInlet(self, inlet:InletItem):
-        self._inlets.append(inlet)
-        inlet._node = self
-
-    def removeInlet(self, inlet:InletItem):
-        self._inlets.remove(inlet)
-        inlet._node = None
-
-
-class InletItem:
-    def __init__(self, name:str, content:str):
-        self._name = name
-        self._content = content
-        self._model:GraphModel|None
-
-    def name(self):
-        return self._name
-    
-    def setName(self, value:str):
-        self._name = value
-    
-    def content(self):
-        return self._content
-    
-    def setContent(self, value:str):
-        if self._model:
-            self._model.dataChanged.emit()
-        self._content = value
-    
-    def node(self)->NodeItem|None:
-        return self._node
-    
-    def links(self)->list:
-        return []
-    
-
-class OutletItem:
-    def __init__(self, name:str, content:str):
-        self._name = name
-        self._content = content
-        self._model:GraphModel|None = None
-
-        self._inlets:list[InletItem] = []
-
-class LinkItem:
-    def __init__(self, name:str, content:str):
-        self._name = name
-        self._content = content
-        self._model:GraphModel|None = None
-
-        self._inlets:list[InletItem] = []
-
-
-class TreeItem:
-    def __init__(self, data: list[dict], parent=None):
-        self.parentItem = parent
-        self.itemData = data
-        self.childItems = []
-
-    def appendChild(self, item):
-        self.childItems.append(item)
-
-    def child(self, row):
-        return self.childItems[row]
-
-    def childCount(self):
-        return len(self.childItems)
-
-    def columnCount(self):
-        # Always return 1 for now since we're only showing name
-        return 1
-
-    def data(self, column):
-        match column:
-            case 0:
-                return self.itemData.get("name", "")
-            case 1:
-                return self.itemData.get("content", "")
-        return None
-
-    def parent(self):
-        return self.parentItem
-
-    def row(self):
-        if self.parentItem:
-            return self.parentItem.childItems.index(self)
-        return 0
-
-class GraphModel(QAbstractItemModel):
-    def __init__(self, parent=None):
-        super(GraphModel, self).__init__(parent)
-        self._nodes = []
-
-
-    def columnCount(self, parent=QModelIndex()):
-        return 2
-
-    def rowCount(self, parent=QModelIndex()):
-        if not parent.isValid():
-            return len(self._nodes)
+class BaseItem:
+    def __init__(self, data: List[str] = None):
+        """Initialize BaseItem with proper data storage for multiple columns and roles."""
+        # Use nested dictionary: {role: {column: value}}
+        self._data: Dict[int, Dict[int, Any]] = defaultdict(dict)
         
-        match parent.internalPointer():
-            case NodeItem():
-                node = cast(NodeItem, parent.internalPointer())
-                return len(node.inlets())
-            case InletItem():
-                inlet = cast(InletItem, parent.internalPointer())
-                return len(inlet.links())
-            case OutletItem():
-                return 0
-            case LinkItem():
-                return 0
-    
-    def addNode(self, node:NodeItem):
-        ...
-    
-    def insertRows(self, row, count, parent=QModelIndex()):
-        parentItem = self.rootItem if not parent.isValid() else parent.internalPointer()
-        self.beginInsertRows(parent, row, row + count - 1)
-        for i in range(count):
-            item = TreeItem({"name": "New Item", "content": None, "children": []}, parentItem)
-            parentItem.childItems.insert(row, item)
-        self.endInsertRows()
-        return True
+        # Initialize with provided data if any
+        if data:
+            for column, value in enumerate(data):
+                self._data[Qt.DisplayRole][column] = value
+                self._data[Qt.EditRole][column] = value
+        self._data[GraphDataRole.TypeRole][0] = GraphItemType.BASE
+        
+        self._parent_item: Optional['BaseItem'] = None
+        self._child_items: List['BaseItem'] = []
+        self._model: Optional['GraphModel'] = None
+        
+    # def type(self) -> GraphItemType:
+    #     """Return the type of this item."""
+    #     return GraphItemType.BASE
 
-    def removeRows(self, row, count, parent=QModelIndex()):
-        parentItem = self.rootItem if not parent.isValid() else parent.internalPointer()
-        if row < 0 or (row + count) > parentItem.childCount():
-            return False
-        self.beginRemoveRows(parent, row, row + count - 1)
-        for i in range(count):
-            del parentItem.childItems[row]
-        self.endRemoveRows()
-        return True
+    def model(self) -> Optional['GraphModel']:
+        """Return the model associated with this item."""
+        return self._model
     
-    def data(self, index, role=Qt.DisplayRole):
-        if not index.isValid():
+    def data(self, column: int, role: int = Qt.EditRole) -> Any:
+        """Return the data for the specified column."""
+        try:
+            return self._data[role][column]
+        except (IndexError, KeyError):
             return None
-        
-        if role == Qt.DisplayRole or role == Qt.EditRole:
-            match index.internalPointer():
-                case NodeItem():
-                    node = cast(NodeItem, index.internalPointer())
-                    match index.column():
-                        case 0:
-                            return node.name()
-                        case 1:
-                            return node.content()
-                        case _:
-                            return None
-  
-                case InletItem():
-                    inlet = cast(InletItem, index.internalPointer())
-                    match index.column():
-                        case 0:
-                            return inlet.name()
-                        case 1:
-                            return inlet.content()
-                        case _:
-                            return None
-                        
-                case OutletItem():
-                    outlet = cast(OutletItem, index.internalPointer())
-                    match index.column():
-                        case 0:
-                            return outlet.name()
-                        case 1:
-                            return outlet.content()
-                        case _:
-                            return None
-                        
-                case LinkItem():
-                    link = cast(LinkItem, index.internalPointer())
-                    match index.column():
-                        case 0:
-                            return link.name()
-                        case 1:
-                            return link.content()
-                        case _:
-                            return None
-                        
-                case _:
-                    return None
-        return None
     
-    def setData(self, index, value, role=Qt.EditRole):
-        if not index.isValid() or role != Qt.EditRole:
+    def setData(self, column: int, value: Any, role: int = Qt.EditRole) -> bool:
+        """Set data for the specified column."""
+        # Check if column is valid (we support unlimited columns)
+        if column < 0:
             return False
-        item = index.internalPointer()
-        col = index.column()
+            
+        # Set the data - this will create the nested structure if needed        if self._data[role].get(column) != value:
+            self._data[role][column] = value
+            self.emitDataChanged(column)
+        return True
+        
+    def insert_child(self, position: int, child: Self) -> None:
+        """Insert a child item at the specified position."""
 
-        if role == Qt.DisplayRole or role == Qt.EditRole:
-            match index.internalPointer():
-                case NodeItem():
-                    node = cast(NodeItem, index.internalPointer())
-                    match index.column():
-                        case 0:
-                            return node.setName(value)
-                        case 1:
-                            return node.setContent(value)
-                        case _:
-                            return None
-  
-                case InletItem():
-                    inlet = cast(InletItem, index.internalPointer())
-                    match index.column():
-                        case 0:
-                            return inlet.setName(value)
-                        case 1:
-                            return inlet.setContent(value)
-                        case _:
-                            return None
-                        
-                case OutletItem():
-                    outlet = cast(OutletItem, index.internalPointer())
-                    match index.column():
-                        case 0:
-                            return outlet.setName(value)
-                        case 1:
-                            return outlet.setContent(value)
-                        case _:
-                            return None
-                        
-                case LinkItem():
-                    link = cast(LinkItem, index.internalPointer())
-                    match index.column():
-                        case 0:
-                            return link.setName(value)
-                        case 1:
-                            return link.setContent(value)
-                        case _:
-                            return None
-                        
-                case _:
-                    return None
-        return None
+        if 0 <= position <= len(self._child_items):
+            if self._model:
+                self._model.beginInsertRows(self.index(), position, position)
+            child._parent_item = self
+            child._model = self._model  # Pass model reference to child
+            self._set_model_recursively(child)  # Set model for all descendants
+            self._child_items.insert(position, child)
+            if self._model:
+                self._model.endInsertRows()
 
-    def headerData(self, section, orientation, role=Qt.DisplayRole):
-        if orientation == Qt.Horizontal and role == Qt.DisplayRole:
-            return ["name", "content"][section]
-        return None
+    def append_child(self, child: Self) -> None:
+        """Append a child item to this item."""
+        self.insert_child(len(self._child_items), child)
 
-    def flags(self, index):
-        if not index.isValid():
-            return Qt.NoItemFlags
-        return Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsEditable
+    def remove_child(self, child: Self) -> bool:
+        """Remove child item at the specified position."""
+        position = self._child_items.index(child) if child in self._child_items else -1
+        if position == -1:
+            return False
+        
+        if 0 <= position < len(self._child_items):
+            if self._model:
+                self._model.beginRemoveRows(self.index(), position, position)
+            removed_child = self._child_items.pop(position)
+            removed_child._parent_item = None
+            removed_child._model = None
+            if self._model:
+                self._model.endRemoveRows()
+            return True
+        return False
 
-    def parent(self, index):
-        if not index.isValid():
-            return QModelIndex()
-        childItem = index.internalPointer()
-        parentItem = childItem.parent()
-        if parentItem == self.rootItem or parentItem is None:
-            return QModelIndex()
-        return self.createIndex(parentItem.row(), 0, parentItem)
+    def childAt(self, row: int) -> Optional[Self]:
+        """Return the child item at the specified row."""
+        return self._child_items[row] if 0 <= row < len(self._child_items) else None
 
-    def index(self, row, column, parent=QModelIndex()):
-        if not self.hasIndex(row, column, parent):
-            return QModelIndex()
-        parentItem = self.rootItem if not parent.isValid() else parent.internalPointer()
-        childItem = parentItem.child(row)
-        if childItem:
-            return self.createIndex(row, column, childItem)
+    def childCount(self) -> int:
+        """Return the number of child items."""
+        return len(self._child_items)
+    
+    def columnCount(self) -> int:
+        """Return the number of columns for this item."""
+        # Find the maximum column index across all roles
+        max_column = -1
+        for role_data in self._data.values():
+            if role_data:  # Check if role_data is not empty
+                max_column = max(max_column, max(role_data.keys(), default=-1))
+        return max_column + 1 if max_column >= 0 else 0
+
+    def parent(self) -> Self|None:
+        """Return the parent item."""
+        return self._parent_item
+
+    def row(self) -> int:
+        if self._parent_item:
+            return self._parent_item._child_items.index(self)
+        return -1
+    
+    def index(self) -> QModelIndex:
+        """Get the QModelIndex for this item."""
+        if self._model and self != self._model._root_item:
+            return self._model.createIndex(self.row(), 0, self)
         return QModelIndex()
     
-
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    QApplication.setStyle("Fusion")
-    class MainWidget(QWidget):
-        def __init__(self, model, view:QTreeView):
-            super().__init__()
-            self.model = model
-            self.view = view
-
-            layout = QVBoxLayout(self)
-            layout.addWidget(self.view)
-
-            btn_layout = QHBoxLayout()
-            self.insert_btn = QPushButton("Insert Row")
-            self.remove_btn = QPushButton("Remove Selected")
-            btn_layout.addWidget(self.insert_btn)
-            btn_layout.addWidget(self.remove_btn)
-            layout.addLayout(btn_layout)
-
-            self.insert_btn.clicked.connect(self.insert_row)
-            self.remove_btn.clicked.connect(self.remove_selected)
-
-            self.view.viewport().installEventFilter(self)
-            # self.installEventFilter(self.view.viewport())
-
-        def eventFilter(self, watched, event:QEvent):
-            if watched is self.view.viewport() and event.type() == QEvent.MouseButtonPress:
-                index = self.view.indexAt(event.position().toPoint())
-                if not index.isValid():
-                    self.view.selectionModel().clearSelection()
-                    self.view.selectionModel().clearCurrentIndex()
-                    return True
-
-            return super().eventFilter(watched, event)
-
-        def insert_row(self):
-            index = self.view.currentIndex()
-            parent = index if index.isValid() else QModelIndex()
-            self.model.insertRows(0, 1, parent)
-
-        def remove_selected(self):
-            selected_indexes = self.view.selectionModel().selectedIndexes()
-            rows_to_remove = set()
-            for index in selected_indexes:
-                if index.isValid():
-                    rows_to_remove.add((index.parent(), index.row()))
-            # Remove from bottom to top to avoid shifting indices
-            for parent, row in sorted(rows_to_remove, key=lambda x: -x[1]):
-                self.model.removeRows(row, 1, parent)
-            index = self.view.currentIndex()
-
-    headers = ["Name"]
-    data = [
-        {
-            "name": "Root1",
-            "content": "Root1 content",
-            "children": [
-                {
-                    "name": "Child1",
-                    "content": "Child1 content",
-                    "children": [
-                        {"name": "Grandchild1", "content": "Grandchild1 content", "children": []},
-                        {"name": "Grandchild2", "content": "Grandchild2 content", "children": []}
-                    ]
-                },
-                {
-                    "name": "Child2",
-                    "content": "Child2 content",
-                    "children": []
-                }
-            ]
-        },
-        {
-            "name": "Root2",
-            "content": "Root2 content",
-            "children": [
-                {
-                    "name": "Child3",
-                    "content": "Child3 content",
-                    "children": []
-                }
-            ]
-        }
-    ]    # Data is already in the correct dictionary format, no conversion needed
-
-    model = GraphModel(data)
-    view = QTreeView()
-    view.setSelectionMode(QTreeView.ExtendedSelection)
-    view.setModel(model)
-    view.setWindowTitle("TreeModel Example")
-    view.resize(400, 300)
-
-    main_widget = MainWidget(model, view)
-    main_widget.setWindowTitle("TreeModel Example")
-    main_widget.resize(400, 350)
-    main_widget.show()
+    # Helper functions
+    def _set_model_recursively(self, item: 'BaseItem') -> None:
+        """Recursively set model reference for all children."""
+        item._model = self._model
+        for child in item._child_items:
+            self._set_model_recursively(child)
+            
+    def emitDataChanged(self, column: int, roles: List[int] = None) -> None:
+        """Emit model's dataChanged signal for this item."""
+        if self._model and self != self._model._root_item:
+            index = self._model.createIndex(self.row(), column, self)
+            if roles is None:
+                roles = []
+            self._model.dataChanged.emit(index, index, roles)
 
 
-    sys.exit(app.exec())
+class NodeItem(BaseItem):
+    def __init__(self, text: str=""):
+        """Initialize NodeItem with list data format only."""
+        super().__init__([text] if text else None)
+        self._data[GraphDataRole.TypeRole][0] = GraphItemType.NODE
+    #     self._type = GraphItemType.NODE
+    
+    # def type(self) -> GraphItemType:
+    #     """Return the type of this item."""
+    #     return self._type
+    
+    def appendInlet(self, inlet: 'InletItem') -> None:
+        """Add an inlet to this node."""
+        item_type = inlet.data(0, GraphDataRole.TypeRole)
+        if item_type != GraphItemType.INLET:
+            raise TypeError("Only InletItem can be added as an inlet.")
+        if inlet in self._child_items:
+            raise ValueError("Inlet already exists in this node's children.")
+        # Ensure the inlet is not already a child of another node
+        if inlet.parent() is not None:
+            raise ValueError("Inlet is already a child of another node.")
+        
+        self.append_child(inlet)
+
+    def removeInlet(self, inlet: 'InletItem') -> bool:
+        """Remove an inlet from this node."""
+        item_type = inlet.data(0, GraphDataRole.TypeRole)
+        if item_type != GraphItemType.INLET:
+            raise TypeError("Only InletItem can be removed as an inlet.")
+        if inlet not in self._child_items:
+            raise ValueError("Inlet not found in this node's children.")
+        if inlet.parent() != self:
+            raise ValueError("Inlet is not a child of this node.")
+        return self.remove_child(inlet)
+
+    def appendOutlet(self, outlet: 'OutletItem') -> None:
+        """Add an outlet to this node."""
+        item_type = outlet.data(0, GraphDataRole.TypeRole)
+        if item_type != GraphItemType.OUTLET:
+            raise TypeError("Only OutletItem can be added as an outlet.")
+        if outlet in self._child_items:
+            raise ValueError("Outlet already exists in this node's children.")
+        # Ensure the outlet is not already a child of another node
+        if outlet.parent() is not None:
+            raise ValueError("Outlet is already a child of another node.")
+        self.append_child(outlet)
+
+    def removeOutlet(self, outlet: 'OutletItem') -> bool:
+        """Remove an outlet from this node."""
+        item_type = outlet.data(0, GraphDataRole.TypeRole)
+        if item_type != GraphItemType.OUTLET:
+            raise TypeError("Only OutletItem can be removed as an outlet.")
+        if outlet not in self._child_items:
+            raise ValueError("Outlet not found in this node's children.")
+        if outlet.parent() != self:
+            raise ValueError("Outlet is not a child of this node.")
+        return self.remove_child(outlet)
+
+
+class InletItem(BaseItem):
+    def __init__(self, text: str=""):
+        """Initialize InletItem with list data format only."""
+        super().__init__([text] if text else None)
+        self._data[GraphDataRole.TypeRole][0] = GraphItemType.INLET
+    #     self._type = GraphItemType.INLET
+    
+    # def type(self) -> str:
+    #     """Return the type of this item."""
+    #     return self._type
+
+
+class OutletItem(BaseItem):
+    def __init__(self, text: str=""):
+        """Initialize OutletItem with list data format only."""
+        super().__init__([text] if text else None)
+        self._data[GraphDataRole.TypeRole][0] = GraphItemType.OUTLET
+    #     self._type = GraphItemType.OUTLET
+    
+    # def type(self) -> str:
+    #     """Return the type of this item."""
+    #     return self._type
+    
+
+class LinkItem(BaseItem):
+    def __init__(self, text: str=""):
+        """Initialize LinkItem with list data format only."""
+        super().__init__([text] if text else None)
+        self._data[GraphDataRole.TypeRole][0] = GraphItemType.LINK
+    #     self._type = GraphItemType.LINK
+    
+    # def type(self) -> str:
+    #     """Return the type of this item."""
+    #     return self._type
+
+
+class SubGraphItem(BaseItem):
+    def __init__(self, text: Union[str, List[str]] = ""):
+        """Initialize SubGraphItem with list data format only."""
+        if isinstance(text, str):
+            super().__init__([text] if text else None)
+        else:
+            super().__init__(text)
+        
+        self._data[GraphDataRole.TypeRole][0] = GraphItemType.SUBGRAPH
+    #     self._type = GraphItemType.SUBGRAPH
+    
+    # def type(self) -> str:
+    #     """Return the type of this item."""
+    #     return self._type
+    
+    def addNode(self, node: NodeItem) -> None:
+        """Add a node to this subgraph."""
+        assert node.type() == GraphItemType.NODE, "Only NodeItem can be added as a node."
+        if node in self._child_items:
+            raise ValueError("Node already exists in this subgraph's children.")
+        # Ensure the node is not already a child of another subgraph
+        if node.parent() is not None:
+            raise ValueError("Node is already a child of another subgraph.")
+        
+        self.append_child(node)
+
+    def removeNode(self, node: NodeItem) -> bool:
+        """Remove a node from this subgraph."""
+        assert node.type() == GraphItemType.NODE, "Only NodeItem can be removed as a node."
+        if node not in self._child_items:
+            raise ValueError("Node not found in this subgraph's children.")
+        if node.parent() != self:
+            raise ValueError("Node is not a child of this subgraph.")
+        return self.remove_child(node)
+
+
+class GraphModel(QAbstractItemModel):
+    def __init__(self, parent: QObject|None = None) -> None:
+        """Initialize TreeModel with list headers."""
+        super().__init__(parent)
+        self._root_item = SubGraphItem(["root"])
+        self._root_item._model = self
+        self._set_model_recursively(self._root_item)  # Set model for all descendants
+        self._headers = ["name", "content"]
+
+    def invisibleRootItem(self) -> SubGraphItem:
+        """Return the invisible root item of the model."""
+        return self._root_item
+
+    # Override Read Methods for compatibility with standard views
+    def index(self, row: int, column: int, parent: QModelIndex = QModelIndex()) -> QModelIndex:
+        if not self.hasIndex(row, column, parent):
+            return QModelIndex()
+
+        parent_item = self._root_item if not parent.isValid() else parent.internalPointer()
+        child_item = parent_item.childAt(row)
+        if child_item:
+            return self.createIndex(row, column, child_item)
+        return QModelIndex()
+    
+    def parent(self, index: QModelIndex) -> QModelIndex:
+        if not index.isValid():
+            return QModelIndex()
+
+        child_item: BaseItem = index.internalPointer()
+        if not child_item:
+            return QModelIndex()
+
+        parent_item = child_item.parent()
+        # If parent_item is None or is the root, return invalid QModelIndex
+        if parent_item is None or parent_item == self._root_item:
+            return QModelIndex()
+
+        return self.createIndex(parent_item.row(), 0, parent_item)
+      
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        parent_item = self._root_item if not parent.isValid() else parent.internalPointer()
+        return parent_item.childCount()
+    
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        return self._root_item.columnCount() if not parent.isValid() else parent.internalPointer().columnCount()
+
+    def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> Any:
+        """Return the data stored under the given role for the item referred to by the index."""
+        if not index.isValid():
+            return None
+
+        item: BaseItem = index.internalPointer()
+        return item.data(index.column(), role)
+
+    
+    ## Optional read methods
+    def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.DisplayRole) -> Any:
+        """Return the data for the given role and section in the header."""
+        if orientation == Qt.Horizontal and role == Qt.DisplayRole:
+            return self._headers[section]
+        return None
+    
+    # Enable editing with builtin views
+    def setData(self, index: QModelIndex, value: Any, role: int = Qt.EditRole) -> bool:
+        """Set the role data for the item at index to value."""
+        if index.isValid() and role == Qt.EditRole:
+            item: BaseItem = index.internalPointer()
+            return item.setData(index.column(), value)
+        return False
+    
+    def setHeaderData(self, section, orientation, value, /, role = ...):
+        return super().setHeaderData(section, orientation, value, role)
+    
+    def flags(self, index: QModelIndex) -> Qt.ItemFlags:
+        """Return the item flags for the given index."""
+        if not index.isValid():
+            return Qt.ItemIsEnabled
+        return Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsEditable
+    
+    # Insert and remove methods
+    def insertRows(self, position: int, rows: int, parent: QModelIndex = QModelIndex()) -> bool:
+        """Insert rows into the model."""
+        assert isinstance(parent, QModelIndex), "Parent must be a QModelIndex."
+        parent_item: BaseItem = self._root_item if not parent.isValid() else parent.internalPointer()
+        item_type = parent_item.data(0, GraphDataRole.TypeRole)
+        
+        match item_type:
+            case GraphItemType.SUBGRAPH:
+                subgraph_item = cast(SubGraphItem, parent_item)
+                for row in range(rows):
+                    subgraph_item.addNode(NodeItem(f"New Node {position + row + 1}"))
+                return True
+            case GraphItemType.NODE:
+                # For NodeItem, we insert an inlet
+                node_item = cast(NodeItem, parent_item)
+                for row in range(rows):
+                    node_item.appendInlet(InletItem(f"New Inlet {position + row + 1}"))
+                return True
+            case _:
+                print(f"Warning: Cannot insert rows into {item_type} item.")
+                return False
+    
+    def removeRows(self, position: int, rows: int, parent: QModelIndex = QModelIndex()) -> bool:
+        """Remove rows from the model."""
+        assert isinstance(parent, QModelIndex), "Parent must be a QModelIndex."
+        parent_item: BaseItem = self._root_item if not parent.isValid() else parent.internalPointer()
+        
+        # Remove in reverse order to avoid index shifting issues
+        success = True
+        for i in range(rows - 1, -1, -1):
+            child_to_remove = parent_item.childAt(position + i)
+            if child_to_remove is None or not parent_item.remove_child(child_to_remove):
+                success = False
+        return success
+    
+    ## utility methods
+    def _set_model_recursively(self, item: BaseItem) -> None:
+        """Recursively set model reference for all children."""
+        item._model = self
+        for child in item._child_items:
+            self._set_model_recursively(child)
+
+    ## Graph specific methods
+    def addNode(self, node: NodeItem, parent: QModelIndex = QModelIndex()) -> None:
+        """Add a node to the graph model."""
+        parent_item: BaseItem = self._root_item if not parent.isValid() else parent.internalPointer()
+        if not isinstance(node, NodeItem):
+            raise TypeError("Only NodeItem can be added as a node.")
+        parent_item.append_child(node)
+
+    def removeNode(self, node: NodeItem, parent: QModelIndex = QModelIndex()) -> bool:
+        """Remove a node from the graph model."""
+        parent_item: BaseItem = self._root_item if not parent.isValid() else parent.internalPointer()
+        if not isinstance(node, NodeItem):
+            raise TypeError("Only NodeItem can be removed as a node.")
+        return parent_item.remove_child(node)
+
+    def addInlet(self, inlet: InletItem, node_index: QModelIndex) -> None:
+        """Add an inlet to a node."""
+        if not isinstance(inlet, InletItem):
+            raise TypeError("Only InletItem can be added as an inlet.")
+        node_item: NodeItem = node_index.internalPointer()
+        if not isinstance(node_item, NodeItem):
+            raise TypeError("Parent index must point to a NodeItem.")
+        
+        node_item.appendInlet(inlet)
+
+    def removeOutlet(self, outlet: OutletItem, node_index: QModelIndex) -> bool:
+        """Remove an outlet from a node."""
+        if not isinstance(outlet, OutletItem):
+            raise TypeError("Only OutletItem can be removed as an outlet.")
+        node_item: NodeItem = node_index.internalPointer()
+        if not isinstance(node_item, NodeItem):
+            raise TypeError("Parent index must point to a NodeItem.")
+        return node_item.removeOutlet(outlet)
+
+    def addOutlet(self, outlet: OutletItem, node_index: QModelIndex) -> None:
+        """Add an outlet to a node."""
+        if not isinstance(outlet, OutletItem):
+            raise TypeError("Only OutletItem can be added as an outlet.")
+        node_item: NodeItem = node_index.internalPointer()
+        if not isinstance(node_item, NodeItem):
+            raise TypeError("Parent index must point to a NodeItem.")
+        node_item.appendOutlet(outlet)
+
+    def addLink(self, link: LinkItem, source_index: QModelIndex, target_index: QModelIndex) -> None:
+        """Add a link between two nodes."""
+        if not isinstance(link, LinkItem):
+            raise TypeError("Only LinkItem can be added as a link.")
+        source_item: NodeItem = source_index.internalPointer()
+        target_item: NodeItem = target_index.internalPointer()
+        if not isinstance(source_item, NodeItem) or not isinstance(target_item, NodeItem):
+            raise TypeError("Source and target indices must point to NodeItems.")
+        
+        # Here you would typically handle the logic of linking nodes
+        # For simplicity, we just append the link to the root item
+        self._root_item.append_child(link)
+
+    def removeLink(self, link: LinkItem) -> bool:
+        """Remove a link from the graph model."""
+        if not isinstance(link, LinkItem):
+            raise TypeError("Only LinkItem can be removed as a link.")
+        return self._root_item.remove_child(link)
+    
+    def clear(self) -> None:
+        """Clear the entire graph model."""
+        self.beginResetModel()
+        self._root_item = SubGraphItem(["root"])
+        self.endResetModel()
+

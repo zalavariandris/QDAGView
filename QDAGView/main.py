@@ -1,347 +1,181 @@
-from typing import *
+from graphmodel import GraphModel, NodeItem, InletItem, OutletItem, BaseItem
+from graphview import GraphView
+from core import GraphItemType
+from PySide6.QtWidgets import *
 from PySide6.QtCore import *
 from PySide6.QtGui import *
-from PySide6.QtWidgets import *
-
-from PySide6.QtGui import QStandardItemModel
-from PySide6.QtWidgets import QHBoxLayout, QTreeView
-from graphview import GraphView, GraphDataRole, RowKind
-
-
-
-class LinkTableDelegate(QStyledItemDelegate):
-    def displayText(self, value: Any, locale: QLocale | QLocale.Language, /) -> str:
-        print("display text for", value)
-        match value:
-            case QPersistentModelIndex():
-                text = ""
-                index = value
-                path  = []
-                while index.isValid():
-                    path.append(index)
-                    # text = f"{index.data(Qt.ItemDataRole.DisplayRole)}.{text}"
-                    index = index.parent()
-
-
-
-                return ".".join( map(lambda index: index.data(Qt.ItemDataRole.DisplayRole), reversed(path)) )
-            case _:
-                return super().displayText(value, locale)
-        
-class MainWindow(QMainWindow):
-    def __init__(self, parent:QWidget|None=None):
-        super().__init__(parent=parent)
-        
-        self.setWindowTitle("Python Visual Editor")
-
-        ### Setup Menu Bar
-        menubar = self.menuBar()
-
-        edit_menu = menubar.addMenu("Edit")
-
-        # Add Node action
-        add_node_action = QAction("Add Node", self)
-        add_node_action.setShortcut(QKeySequence("Ctrl+N"))
-        add_node_action.triggered.connect(lambda: self.addNode("new_node", ""))
-        edit_menu.addAction(add_node_action)
-
-        # Add submenu for selected node
-        add_inlet_action = QAction("Add Inlet", self)
-        add_inlet_action.setShortcut(QKeySequence("Ctrl+I"))
-        add_inlet_action.triggered.connect(self.addInletToSelected)
-        edit_menu.addAction(add_inlet_action)
-
-        add_outlet_action = QAction("Add Outlet", self)
-        add_outlet_action.setShortcut(QKeySequence("Ctrl+O"))
-        add_outlet_action.triggered.connect(self.addOutletToSelected)
-        edit_menu.addAction(add_outlet_action)
-
-        add_link_action = QAction("Link Selected", self)
-        add_link_action.setShortcut(QKeySequence("Ctrl+L"))
-        add_link_action.triggered.connect(self.linkSelected)
-        edit_menu.addAction(add_link_action)
-
-        # Delete action
-        menubar.addSeparator()
-        delete_action = QAction("Delete Selected", self)
-        delete_action.setShortcut(QKeySequence.StandardKey.Delete)
-        delete_action.triggered.connect(self.deleteSelected)
-        edit_menu.addAction(delete_action)
-
-        # Create central widget
-        central_widget = QWidget()
-
-        ### Setup base model
-        self.nodes = QStandardItemModel()
-        self.nodes.setHorizontalHeaderLabels(["name", "content"])
-
-        # access roles in QML by name
-        self.nodes.setItemRoleNames({
-            Qt.ItemDataRole.DisplayRole: b'name',
-            GraphDataRole.KindRole: b'node_type',
-            GraphDataRole.SourceRole: b'link_source'
-        })
-
-        # populate with initial nodes
-        read_node = self.addNode(
-            name="read_file",
-            content="read_file('path/to/file')"
-        )
-
-        process_node = self.addNode(
-            name="process_data",
-            content="process_data(data)"
-        )
-
-        inlet = self.addInlet(read_node, "in")
-        outlet = self.addOutlet(process_node, "out")
-
-        link = self.addLink(
-            outlet, inlet, "link"
-        )
-
-        ### Setup selection models
-        self.selection = QItemSelectionModel(self.nodes)
-
-        ### Setup table views
-        self.node_tree = QTreeView()
-        self.node_tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.node_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.node_tree.setModel(self.nodes)
-        self.node_tree.setSelectionModel(self.selection)
-        self.node_tree.expandAll()
-
-        ### Setup Graphview
-        self.graphview = GraphView()
-        self.graphview.setModel(self.nodes)
-        self.graphview.setSelectionModel(self.selection)        ### Setup Layout
-        layout = QHBoxLayout()
-        layout.addWidget(self.node_tree)
-        layout.addWidget(self.graphview)
-        central_widget.setLayout(layout)
-        self.setCentralWidget(central_widget)
-
-    @Slot(str, str)
-    def addNode(self, name:str, content:str):
-        item = QStandardItem(name)
-        item.setData(RowKind.NODE, GraphDataRole.KindRole)
-        self.nodes.appendRow([item, QStandardItem(content)])
-        return item
-    
-    @Slot(QStandardItem, str)
-    def addInlet(self, node:QStandardItem, name:str):
-        item = QStandardItem(name)
-        item.setData(RowKind.INLET, GraphDataRole.KindRole)
-        node.appendRow(item)
-        return item
-    
-    @Slot(QStandardItem, str)
-    def addOutlet(self, node:QStandardItem, name:str):
-        item = QStandardItem(name)
-        item.setData(RowKind.OUTLET, GraphDataRole.KindRole)
-        node.appendRow(item)
-        return item
-    
-    @Slot(QStandardItem, QStandardItem)
-    def addLink(self, source:QStandardItem, target:QStandardItem, data:str):
-        # add link to inlet, store as the children of the inlet
-        assert source.index().isValid(), "Source must be a valid index"
-        assert source.data(GraphDataRole.KindRole) == RowKind.OUTLET, "Source must be an outlet"
-        item = QStandardItem()
-        item.setData(RowKind.LINK, GraphDataRole.KindRole)
-        item.setData(f"{source.index().parent().data(Qt.ItemDataRole.DisplayRole)}.{source.data(Qt.ItemDataRole.DisplayRole)}", Qt.ItemDataRole.DisplayRole)
-        item.setData(QPersistentModelIndex(source.index()), GraphDataRole.SourceRole)
-        target.appendRow([item, QStandardItem(data)])
-# 
-    def sizeHint(self):
-        return QSize(2048, 900) 
-
-    ### Commands
-    def create_new_node(self, scenepos:QPointF=QPointF()):
-        assert self._model
-        existing_names = list(self._model.nodes())
-
-        func_name = make_unique_id(6)
-        self._model.addNode(func_name, "None", kind='expression')
-
-        ### position node widget
-        node_graphics_item = self.graph_view.nodeItem(func_name)
-        if node_graphics_item := self.graph_view.nodeItem(func_name):
-            node_graphics_item.setPos(scenepos-node_graphics_item.boundingRect().center())
-
-    def delete_selected(self):
-        assert self._model
-        # delete selected links
-        link_indexes:list[QModelIndex] = self.link_selection_model.selectedIndexes()
-        link_rows = set(index.row() for index in link_indexes)
-        for link_row in sorted(link_rows, reverse=True):
-            source, target, outlet, inlet = self.link_proxy_model.mapToSource(self.link_proxy_model.index(link_row, 0))
-            self._model.unlinkNodes(source, target, outlet, inlet)
-
-        # delete selected nodes
-        node_indexes:list[QModelIndex] = self.node_selection_model.selectedRows(column=0)
-        for node_index in sorted(node_indexes, key=lambda idx:idx.row(), reverse=True):
-            node = self.node_proxy_model.mapToSource(node_index)
-            self._model.removeNode(node)
-
-    def connect_nodes(self, source:str, target:str, inlet:str):
-        assert self._model
-        self._model.linkNodes(source, target, "out", inlet)
-
-    def eventFilter(self, watched, event):
-        if watched == self.graph_view:
-            ### Create node on double click
-            if event.type() == QEvent.Type.MouseButtonDblClick:
-                event = cast(QMouseEvent, event)
-                self.create_new_node(self.graph_view.mapToScene(event.position().toPoint()))
-                return True
-
-        return super().eventFilter(watched, event)
-
-    def addInletToSelected(self):
-        """Add an inlet to the currently selected node"""
-        indexes = self.selection.selectedIndexes()
-        if not indexes:
-            return
-            
-        # Get the first selected node
-        index = indexes[0]
-        # Get to the root item (node)
-        while index.parent().isValid():
-            index = index.parent()
-            
-        item = self.nodes.itemFromIndex(index)
-        if item.data(GraphDataRole.KindRole) == RowKind.NODE:
-            self.addInlet(item, f"in{item.rowCount()}")
-
-    def addOutletToSelected(self):
-        """Add an outlet to the currently selected node"""
-        indexes = self.selection.selectedIndexes()
-        if not indexes:
-            return
-            
-        # Get the first selected node
-        index = indexes[0]
-        # Get to the root item (node)
-        while index.parent().isValid():
-            index = index.parent()
-            
-        item = self.nodes.itemFromIndex(index)
-        if item.data(GraphDataRole.KindRole) == RowKind.NODE:
-            self.addOutlet(item, f"out{item.rowCount()}")
-
-    def deleteSelected(self):
-        """Delete selected items from the model"""
-        if not self.selection.hasSelection():
-            return
-
-        def index_depth(idx: QModelIndex) -> int:
-            depth = 0
-            while idx.parent().isValid():
-                idx = idx.parent()
-                depth += 1
-            return depth
-
-        # Only keep one index per row (e.g., column 0)
-        unique_indexes = {}
-        for idx in self.selection.selectedIndexes():
-            key = (idx.model(), idx.parent(), idx.row())
-            # Only keep the first index for each row (usually column 0)
-            if key not in unique_indexes or idx.column() == 0:
-                unique_indexes[key] = idx
-
-        # Sort by depth (deepest first)
-        indexes = sorted(
-            unique_indexes.values(),
-            key=index_depth,
-            reverse=True
-        )
-        seen = set()
-
-        for index in indexes:
-            if index in seen:
-                continue
-            item = self.nodes.itemFromIndex(index)
-            rowtype = item.data(GraphDataRole.KindRole)
-            parent = item.parent() or self.nodes.invisibleRootItem()
-            row = item.row()
-            seen.add(index)
-
-            if rowtype == RowKind.LINK:
-                parent.removeRow(row)
-            elif rowtype in (RowKind.INLET, RowKind.OUTLET):
-                parent.removeRow(row)
-            elif rowtype == RowKind.NODE:
-                self.nodes.removeRow(row)
-    
-    def linkSelected(self):
-        """
-        Link the first selected outlet to the first selected inlet, if both are selected and on different nodes.
-        If nodes are selected, use their first inlet/outlet.
-        """
-        indexes = self.selection.selectedIndexes()
-        if not indexes:
-            return
-
-        # Only process one index per row (column 0)
-        unique_indexes = {}
-        for idx in indexes:
-            key = (idx.model(), idx.parent(), idx.row())
-            if key not in unique_indexes or idx.column() == 0:
-                unique_indexes[key] = idx
-
-        outlet_item = None
-        inlet_item = None
-        outlet_node = None
-        inlet_node = None
-
-        # Helper to find first child of a given type
-        def find_first_child_of_type(parent_item, rowtype):
-            for i in range(parent_item.rowCount()):
-                child = parent_item.child(i)
-                if child.data(GraphDataRole.KindRole) == rowtype:
-                    return child
-            return None
-
-        for idx in unique_indexes.values():
-            item = self.nodes.itemFromIndex(idx)
-            rowtype = item.data(GraphDataRole.KindRole)
-            parent = item.parent()
-            if rowtype == RowKind.OUTLET and outlet_item is None:
-                outlet_item = item
-                outlet_node = parent
-            elif rowtype == RowKind.INLET and inlet_item is None:
-                inlet_item = item
-                inlet_node = parent
-            elif rowtype == RowKind.NODE:
-                # Try to find first outlet/inlet under this node
-                if outlet_item is None:
-                    candidate = find_first_child_of_type(item, RowKind.OUTLET)
-                    if candidate:
-                        outlet_item = candidate
-                        outlet_node = item
-                if inlet_item is None:
-                    candidate = find_first_child_of_type(item, RowKind.INLET)
-                    if candidate:
-                        inlet_item = candidate
-                        inlet_node = item
-
-        # Only link if both are found and are on different nodes
-        if outlet_item and inlet_item and outlet_node and inlet_node and outlet_node != inlet_node:
-            self.addLink(outlet_item, inlet_item, "link")
 
 if __name__ == "__main__":
     import sys
-    from pathlib import Path
-    import pathlib
-    parent_folder = pathlib.Path(__file__).parent.resolve()
-    print("Python Visual Editor starting...\n  working directory:", Path.cwd())
 
-    app = QApplication([])
+    from collections import defaultdict
 
-    window = MainWindow()
-    window.setGeometry(QRect(QPoint(), app.primaryScreen().size()).adjusted(40,80,-30,-300))
-    window.show()
-    app.exec()
-    # window.openFile(Path.cwd()/"./tests/dissertation_builder.yaml")
+    app = QApplication(sys.argv)
+    class MainWidget(QWidget):
+        def __init__(self):
+            super().__init__()
+            # Setup model
+            self.model = GraphModel()
+            self.selection = QItemSelectionModel(self.model)
 
+            ## populate model with some initial data
+            node1 = NodeItem("Node 1")
+            node1.appendInlet(InletItem("Inlet 1"))
+            node1.appendOutlet(OutletItem("out"))
+            self.model.addNode(node1)
+
+            node2 = NodeItem("Node 2")
+            node2.appendInlet(InletItem("Inlet 1"))
+            node2.appendOutlet(OutletItem("out"))
+            self.model.addNode(node2)
+
+            # setup view
+            self.setWindowTitle("Graph Model Example")
+
+            ### context aware toolbar
+            button_layout = QHBoxLayout()
+            self.add_btn = QPushButton("Add Item")
+            self.add_btn.clicked.connect(self.add_item)
+            self.remove_btn = QPushButton("Remove Selected")
+            self.remove_btn.clicked.connect(self.remove_selected_items)
+            button_layout.addWidget(self.add_btn)
+            button_layout.addWidget(self.remove_btn)
+
+            self.selection.currentChanged.connect(self.updateContextAwareToolbar)
+            
+
+            ## treeview
+            self.treeview = QTreeView()
+            self.treeview.viewport().installEventFilter(self)
+            self.treeview.setSelectionMode(QTreeView.ExtendedSelection)
+            
+
+            self.treeview.setModel(self.model)
+            self.treeview.setSelectionModel(self.selection)
+            
+            self.treeview.setContextMenuPolicy(Qt.CustomContextMenu)
+            self.treeview.customContextMenuRequested.connect(self.showContextAwareMenu)
+            self.treeview.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.SelectedClicked)
+            self.treeview.setSelectionBehavior(QAbstractItemView.SelectRows)
+            
+            self.treeview.expandAll()
+
+            ## graphview
+            self.graphview = GraphView()
+            self.graphview.setModel(self.model)
+            self.graphview.setSelectionModel(self.selection)
+            self.graphview.setMinimumSize(400, 300)
+
+            # layout widgets
+            splitter = QSplitter(Qt.Horizontal, self)
+            layout = QVBoxLayout(self)
+            layout.addLayout(button_layout)
+            layout.addWidget(splitter)
+            splitter.addWidget(self.treeview)
+            splitter.addWidget(self.graphview)
+            splitter.setSizes([100, 600])
+            splitter.setStretchFactor(0, 0)
+            self.setLayout(layout)
+
+            self.resize(1000, 600)
+
+        def sizeHint(self):
+            return QSize(1000, 600)  # Set a default size hint for the main widget
+            
+
+        def showContextAwareMenu(self, pos):
+            """Show context-aware menu based on the current selection."""
+            menu = QMenu(self)
+            # index = self.treeview.indexAt(pos)  # Ensure the context menu is shown at the correct position
+            index = self.selection.currentIndex()
+            item = index.internalPointer() if index.isValid() else self.model.invisibleRootItem()
+            match index.isValid(), item.type():
+                case (False, _):
+                    menu.addAction("Add Node", lambda: self.model.addNode(NodeItem("New Node"), QModelIndex()))
+                case (True, BaseItem.ItemType.Node):
+                    menu.addAction("Add Inlet", lambda: self.model.addInlet(InletItem("in"), index))
+                    menu.addAction("Add Outlet", lambda: self.model.addOutlet(OutletItem("out"), index))
+
+                case (True, BaseItem.ItemType.Inlet):
+                    ...
+                case (True, BaseItem.ItemType.Outlet):
+                    ...
+                case (True, BaseItem.ItemType.Link):
+                    ...
+                case _:
+                    ...
+
+            menu.addAction("Remove Selected Items", self.remove_selected_items)
+            menu.exec(self.treeview.viewport().mapToGlobal(pos))
+
+        def eventFilter(self, obj, event):
+            if obj is self.treeview.viewport() and event.type() == QEvent.MouseButtonPress:
+                if  event.buttons() == Qt.LeftButton:
+                    index = self.treeview.indexAt(event.position().toPoint())
+                    if not index.isValid():
+                        self.treeview.clearSelection()
+                        self.treeview.setCurrentIndex(QModelIndex())
+                        return True  # Allow the click to pass through
+            # For other events or if the index is valid, let the default processing happen
+            return super().eventFilter(obj, event)
+
+        def add_item(self, current:QModelIndex|None = None):
+            """Add a new item to the model at the current selection."""
+            if not current:
+                current = self.treeview.currentIndex()
+            parent = current if current.isValid() else QModelIndex()
+            self.model.insertRows(self.model.rowCount(parent), 1, parent)
+
+        def remove_selected_items(self):
+            indexes = self.treeview.selectionModel().selectedRows()
+            # Group indexes by parent to avoid shifting issues
+            parent_map = defaultdict(list)
+            for index in indexes:
+                parent_map[index.parent()].append(index.row())
+            for parent, rows in parent_map.items():
+                for row in sorted(rows, reverse=True):
+                    self.model.removeRows(row, 1, parent)
+
+        def updateContextAwareToolbar(self):
+            """Update the context-aware toolbar based on the current selection."""
+            
+            current_index = self.treeview.currentIndex()
+            item = current_index.internalPointer() if current_index.isValid() else self.model.invisibleRootItem()
+            match current_index.isValid(), item.type():
+                case (False, _):
+                    self.add_btn.setText("Add Node")
+                    self.add_btn.setDisabled(False)
+                    self.remove_btn.setText("Remove Item")
+                    self.remove_btn.setEnabled(False)
+                case (True, GraphItemType.NODE):
+                    self.add_btn.setText("Add Inlet")
+                    self.add_btn.setEnabled(True)
+                    self.remove_btn.setText("Remove Node")
+                    self.remove_btn.setEnabled(True)
+                case (True, GraphItemType.INLET):
+                    self.add_btn.setText("Add Item")
+                    self.add_btn.setEnabled(False)
+                    self.remove_btn.setText("Remove Inlet")
+                    self.remove_btn.setEnabled(True)
+                case (True, GraphItemType.OUTLET):
+                    self.add_btn.setText("Add Item")
+                    self.add_btn.setEnabled(False)
+                    self.remove_btn.setText("Remove Outlet")
+                    self.remove_btn.setEnabled(True)
+                case (True, GraphItemType.LINK):
+                    self.add_btn.setText("Add Item")
+                    self.add_btn.setEnabled(False)
+                    self.remove_btn.setText("Remove Link")
+                    self.remove_btn.setEnabled(True)
+                case _:
+                    self.add_btn.setText("Add Item")
+                    self.add_btn.setEnabled(False)
+                    self.remove_btn.setText("Remove Item")
+                    self.remove_btn.setEnabled(False)
+
+
+
+    main_widget = MainWidget()
+    main_widget.show()
+
+    sys.exit(app.exec())
