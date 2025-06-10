@@ -153,8 +153,10 @@ class GraphView(QGraphicsView):
             #     self._draft_link.setLine(line)
             #     event.acceptProposedAction() # Todo: accept delete action
 
-    # def dropEvent(self, event: QDropEvent) -> None:
-    #     super().dropEvent(event)
+    def dropEvent(self, event: QDropEvent) -> None:
+        super().dropEvent(event)
+        print("GraphScene DropEvent", event.mimeData().formats())
+        self._cleanupDraftLink()
     #     # if event.isAccepted():
     #     #     return
 
@@ -169,6 +171,11 @@ class GraphView(QGraphicsView):
     #         link_key = event.mimeData().data(GraphMimeData.LinkTargetData).toStdString().split("/")
     #         source, target, outlet, inlet = link_key
     #         self._model.unlinkNodes(source, target, outlet, inlet)
+
+    def dragLeaveEvent(self, event):
+        print("GraphScene DragLeaveEvent")
+        super().dragLeaveEvent(event)
+        self._cleanupDraftLink()
 
     def setupUI(self):
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
@@ -326,12 +333,11 @@ class GraphView(QGraphicsView):
         return self._selection
     
     def addRowWidgets(self, *root:QModelIndex):
-        # first pass: collect each row recursively
+        # first pass: Breadth-first search: collect each row recursively
         def children(index:QModelIndex):
             for row in range(self._model.rowCount(parent=index)):
                 yield self._model.index(row, 0, index) 
 
-        # Breadth-first search
         queue:List[QModelIndex] = [*root]
         indexes = list()
         while queue:
@@ -352,7 +358,7 @@ class GraphView(QGraphicsView):
                 case GraphItemType.INLET:
                     self._add_inlet_widget(row, parent)
                 case GraphItemType.OUTLET:
-                    self._add_outlet_widget(row, parent)                        
+                    self._add_outlet_widget(row, parent)
                 case GraphItemType.LINK:
                     pass
                 case _:
@@ -522,6 +528,14 @@ class GraphView(QGraphicsView):
             widget.setParentItem(parent_widget)
         else:
             raise ValueError("Link must have a parents")
+        
+        # check for source outlets
+        source_index = persistent_link_index.data(GraphDataRole.SourceRole)
+        if source_index.isValid():
+            # if source_index is valid, it means this link is an outlet link
+            # we need to update the link source
+            self._link_source[persistent_link_index] = QPersistentModelIndex(source_index)
+            self._out_links[QPersistentModelIndex(source_index)].append(persistent_link_index)
 
         return widget
 
@@ -607,6 +621,14 @@ class GraphView(QGraphicsView):
         index = self._model.index(row, 0, parent)
         widget = self._row_widgets[QPersistentModelIndex(index)]
         del self._row_widgets[QPersistentModelIndex(index)]
+
+        # detach link source
+        persistent_link_index = QPersistentModelIndex(index)
+        if persistent_link_index in self._link_source:
+            source_index = self._link_source[persistent_link_index]
+            if source_index in self._out_links:
+                self._out_links[source_index].remove(persistent_link_index)
+            del self._link_source[persistent_link_index]
 
         # detach widget from scene (or parent widget)
         if parent.isValid():
@@ -723,22 +745,21 @@ class GraphView(QGraphicsView):
                         self._out_links[previous_source_index].append(new_source_index)
 
 
-
-
-
-
-
 class CellWidget(QGraphicsProxyWidget):
     def __init__(self, parent: QGraphicsItem | None = None):
         super().__init__(parent=parent)
         self._label = QLabel("")
+        self._label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+        self._label.setStyleSheet("background: yellow;")
         self.setWidget(self._label)
+        self.setAutoFillBackground(False)
 
     def text(self):
         return self._label.text()
 
     def setText(self, text:str):
         self._label.setText(text)
+
 
 
 class BaseRowWidget(QGraphicsWidget):
@@ -943,7 +964,7 @@ class LinkWidget(BaseRowWidget):
         # self.setZValue(-1)  # Ensure links are drawn below nodes
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
         self._line = QLineF(0, 0, 100, 100)
-
+        self._label = QLabel("Link")
         self._data_column = QGraphicsWidget(parent=self)
         self._data_column.setLayout(QGraphicsLinearLayout(Qt.Orientation.Vertical))
 
@@ -983,9 +1004,8 @@ class LinkWidget(BaseRowWidget):
         print("updateLine: {source}->{target}")
         self.prepareGeometryChange()
         if source and target:
-            source_pos = source.scenePos()-self.scenePos()
-            target_pos = target.scenePos()-self.scenePos()
-            self._line = QLineF(source_pos, target_pos)
+            self._line = makeLineBetweenShapes(source, target)
+            self._line.translate(-self.scenePos().x(), -self.scenePos().y())
         elif source:
             source_pos = source.scenePos()-self.scenePos()
             self._line = QLineF(source_pos, source_pos+QPointF(100,100))
@@ -994,5 +1014,11 @@ class LinkWidget(BaseRowWidget):
             self._line = QLineF(target_pos-QPointF(100,100), target_pos)
         else:
             ...
+
+        self._data_column.layout().setGeometry(
+            QRectF(self._line.p1(), self._line.p2())
+            .adjusted(-5, -5, 5, 5)
+            .normalized()
+        )
 
         self.update()

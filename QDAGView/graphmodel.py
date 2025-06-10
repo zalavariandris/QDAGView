@@ -315,7 +315,8 @@ class GraphModel(QAbstractItemModel):
         """Return the data stored under the given role for the item referred to by the index."""
         if not index.isValid():
             return None
-
+        
+        # return the source index for SourceRole
         if role == GraphDataRole.SourceRole:
             # Special handling for SourceRole to return the source index of a LinkItem !!!
             item: BaseItem = index.internalPointer()
@@ -323,8 +324,20 @@ class GraphModel(QAbstractItemModel):
                 outlet_item = item.source()
                 return outlet_item.index() if outlet_item else None
             return None
+        
+        # if link item, return a string representation of the link
+        item: BaseItem = index.internalPointer()
+        if item.data(0, GraphDataRole.TypeRole) == GraphItemType.LINK and role == Qt.ItemDataRole.DisplayRole:
+            inlet_item = item.parent()
+            outlet_item = item.source()
+            if inlet_item and outlet_item:
+                return f"{inlet_item.data(0, Qt.ItemDataRole.DisplayRole)} -> {outlet_item.data(0, Qt.ItemDataRole.DisplayRole)}"
+
+        # by default return the data for the specified role and column stored in the item
         item: BaseItem = index.internalPointer()
         return item.data(index.column(), role)
+        
+        
 
     ## Optional read methods
     def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
