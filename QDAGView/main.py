@@ -1,6 +1,6 @@
 from graphmodel import GraphModel, NodeItem, InletItem, OutletItem, BaseItem
 from graphview import GraphView
-from core import GraphItemType
+from core import GraphDataRole, GraphItemType
 from PySide6.QtWidgets import *
 from PySide6.QtCore import *
 from PySide6.QtGui import *
@@ -32,7 +32,7 @@ if __name__ == "__main__":
             # setup view
             self.setWindowTitle("Graph Model Example")
 
-            ### context aware toolbar
+            # context aware toolbar
             button_layout = QHBoxLayout()
             self.add_btn = QPushButton("Add Item")
             self.add_btn.clicked.connect(self.add_item)
@@ -47,16 +47,15 @@ if __name__ == "__main__":
             ## treeview
             self.treeview = QTreeView()
             self.treeview.viewport().installEventFilter(self)
-            self.treeview.setSelectionMode(QTreeView.ExtendedSelection)
-            
+            self.treeview.setSelectionMode(QTreeView.SelectionMode.ExtendedSelection)
 
             self.treeview.setModel(self.model)
             self.treeview.setSelectionModel(self.selection)
             
-            self.treeview.setContextMenuPolicy(Qt.CustomContextMenu)
+            self.treeview.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             self.treeview.customContextMenuRequested.connect(self.showContextAwareMenu)
-            self.treeview.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.SelectedClicked)
-            self.treeview.setSelectionBehavior(QAbstractItemView.SelectRows)
+            self.treeview.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.SelectedClicked)
+            self.treeview.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
             
             self.treeview.expandAll()
 
@@ -67,7 +66,7 @@ if __name__ == "__main__":
             self.graphview.setMinimumSize(400, 300)
 
             # layout widgets
-            splitter = QSplitter(Qt.Horizontal, self)
+            splitter = QSplitter(Qt.Orientation.Horizontal, self)
             layout = QVBoxLayout(self)
             layout.addLayout(button_layout)
             layout.addWidget(splitter)
@@ -92,15 +91,15 @@ if __name__ == "__main__":
             match index.isValid(), item.type():
                 case (False, _):
                     menu.addAction("Add Node", lambda: self.model.addNode(NodeItem("New Node"), QModelIndex()))
-                case (True, BaseItem.ItemType.Node):
+                case (True, GraphItemType.NODE):
                     menu.addAction("Add Inlet", lambda: self.model.addInlet(InletItem("in"), index))
                     menu.addAction("Add Outlet", lambda: self.model.addOutlet(OutletItem("out"), index))
 
-                case (True, BaseItem.ItemType.Inlet):
+                case (True, GraphItemType.INLET):
                     ...
-                case (True, BaseItem.ItemType.Outlet):
+                case (True, GraphItemType.OUTLET):
                     ...
-                case (True, BaseItem.ItemType.Link):
+                case (True, GraphItemType.LINK):
                     ...
                 case _:
                     ...
@@ -109,8 +108,8 @@ if __name__ == "__main__":
             menu.exec(self.treeview.viewport().mapToGlobal(pos))
 
         def eventFilter(self, obj, event):
-            if obj is self.treeview.viewport() and event.type() == QEvent.MouseButtonPress:
-                if  event.buttons() == Qt.LeftButton:
+            if obj is self.treeview.viewport() and event.type() == QEvent.Type.MouseButtonPress:
+                if  event.buttons() == Qt.MouseButton.LeftButton:
                     index = self.treeview.indexAt(event.position().toPoint())
                     if not index.isValid():
                         self.treeview.clearSelection()
@@ -138,10 +137,9 @@ if __name__ == "__main__":
 
         def updateContextAwareToolbar(self):
             """Update the context-aware toolbar based on the current selection."""
-            
             current_index = self.treeview.currentIndex()
-            item = current_index.internalPointer() if current_index.isValid() else self.model.invisibleRootItem()
-            match current_index.isValid(), item.type():
+            item_type:GraphItemType = self.model.data(current_index, GraphDataRole.TypeRole)
+            match current_index.isValid(), item_type:
                 case (False, _):
                     self.add_btn.setText("Add Node")
                     self.add_btn.setDisabled(False)
