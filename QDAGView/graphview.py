@@ -5,6 +5,7 @@
 #
 # A Graph view that directly connects to QStandardItemModel
 #
+from __future__ import annotations
 import traceback
 
 from enum import Enum
@@ -17,7 +18,7 @@ from collections import defaultdict
 from bidict import bidict
 
 from utils import group_consecutive_numbers
-from utils.geo import makeLineBetweenShapes, makeLineToShape
+from utils.geo import makeLineBetweenShapes, makeLineToShape, makeArrowShape
 # from pylive.utils.geo import makeLineBetweenShapes, makeLineToShape
 # from pylive.utils.qt import distribute_items_horizontal
 # from pylive.utils.unique import make_unique_name
@@ -74,6 +75,35 @@ class GraphView(QGraphicsView):
         """
         return self._row_widgets[QPersistentModelIndex(index)]
 
+    def pathFromIndex(self, index:QModelIndex) -> str:
+        """Convert a QModelIndex to a path string. separated by '/'"""
+        assert self._model, "Model must be set before converting index to path"
+        assert index.isValid(), "Index must be valid"
+        path = []
+        while index.isValid():
+            path.append(index.row())
+            index = index.parent()
+
+        path = reversed(path)
+        path = map(str, path)
+        path = "/".join(path)
+        return path
+    
+    def indexFromPath(self, path:str) -> QModelIndex:
+        """Get the QModelIndex from a path.
+        path is a '/'-separated string of row numbers.
+        For example, "0/1/2" corresponds to the index at row 2 of the child of row 1 of the root node.
+        """
+        assert self._model, "Model must be set before converting path to index"
+        assert isinstance(path, str), "Path must be a string"
+
+        index = QModelIndex()
+        rows = list(map(int, path.split("/")))
+        for row in rows:
+            index = self._model.index(row, 0, index)
+        assert index.isValid(), "Index must be valid"
+        return index
+
     def _createDraftLink(self):
         """Safely create draft link with state tracking"""
         assert self._draft_link is None
@@ -97,81 +127,85 @@ class GraphView(QGraphicsView):
         # event.acceptProposedAction()
     
     def dragMoveEvent(self, event)->None:
-        
         print("dragMoveEvent", event.mimeData().formats())
         super().dragMoveEvent(event) # sLet the scene handle the event normally, which will forward to widgets
         if event.isAccepted():
             return
 
-        if event.mimeData().hasFormat(GraphMimeData.OutletData):
-            pass
-            # source_node, outlet = event.mimeData().data(GraphMimeData.OutletData).toStdString().split("/")
-            # source_item = self._node_widgets[source_node]._outlet_widgets[outlet]
-            # if self._draft_link:
-            #     line = self._draft_link.line()
-            #     mouse_scene_pos = self.mapToScene(event.position().toPoint())
-            #     line = makeLineBetweenShapes(source_item, mouse_scene_pos)
-            #     self._draft_link.setLine(line)
-
-
         if event.mimeData().hasFormat(GraphMimeData.InletData):
-            node_row, inlet_row = event.mimeData().data(GraphMimeData.InletData).toStdString().split("/")
-            node_index = self._model.index(int(node_row), 0, QModelIndex())
-            inlet_index = self._model.index(int(inlet_row), 0, node_index)
-            target_item = self._row_widgets[QPersistentModelIndex(inlet_index)]
+            path = event.mimeData().data(GraphMimeData.InletData).toStdString()
+            index = self.indexFromPath(path)
+            widget = self._row_widgets[QPersistentModelIndex(index)]
             if self._draft_link:
                 line = self._draft_link.line()
                 mouse_scene_pos = self.mapToScene(event.position().toPoint())
-                line = makeLineBetweenShapes(mouse_scene_pos, target_item)
+                line = makeLineBetweenShapes(mouse_scene_pos, widget)
                 self._draft_link.setLine(line)
+                event.acceptProposedAction()
 
-        if event.mimeData().hasFormat(GraphMimeData.LinkSourceData):
-            pass
-            # link_key = event.mimeData().data(GraphMimeData.LinkSourceData).toStdString().split("/")
-            # source, target, outlet, inlet = link_key
-            # source_item = self._node_widgets[source]._outlet_widgets[outlet]
-            # target_item = self._node_widgets[target]._inlet_widgets[inlet]
+        if event.mimeData().hasFormat(GraphMimeData.OutletData):
+            path = event.mimeData().data(GraphMimeData.OutletData).toStdString()
+            index = self.indexFromPath(path)
+            widget = self._row_widgets[QPersistentModelIndex(index)]
+            if self._draft_link:
+                line = self._draft_link.line()
+                mouse_scene_pos = self.mapToScene(event.position().toPoint())
+                line = makeLineBetweenShapes(widget, mouse_scene_pos)
+                self._draft_link.setLine(line)
+                event.acceptProposedAction()
 
-            # if self._draft_link:
-            #     line = self._draft_link.line()
-            #     mouse_scene_pos = self.mapToScene(event.position().toPoint())
-            #     line = makeLineBetweenShapes(source_item, mouse_scene_pos)
-            #     self._draft_link.setLine(line)
-            #     event.acceptProposedAction() # Todo: accept delete action
+        if event.mimeData().hasFormat(GraphMimeData.LinkTailData):
+            print("GraphScene DragMoveEvent LinkTailData", event.mimeData().formats())
+            link_path = event.mimeData().data(GraphMimeData.LinkTailData).toStdString()
+            link_index = self.indexFromPath(link_path)
+            target_index = link_index.parent()
 
-        if event.mimeData().hasFormat(GraphMimeData.LinkTargetData):
-            pass
-            # link_key = event.mimeData().data(GraphMimeData.LinkTargetData).toStdString().split("/")
-            # source, target, outlet, inlet = link_key
-            # source_item = self._node_widgets[source]._outlet_widgets[outlet]
-            # target_item = self._node_widgets[target]._inlet_widgets[inlet]
+            target_widget = self._row_widgets[QPersistentModelIndex(target_index)]
+            mouse_scene_pos = self.mapToScene(event.position().toPoint())
+            line = makeLineBetweenShapes(mouse_scene_pos, target_widget)
+            
+            link_widget = self._row_widgets[QPersistentModelIndex(link_index)]
+            line = QLineF(link_widget.mapFromScene(line.p1()), link_widget.mapFromScene(line.p2()))
+            link_widget.setLine(line)
+            event.acceptProposedAction()
 
-            # if self._draft_link:
-            #     line = self._draft_link.line()
-            #     mouse_scene_pos = self.mapToScene(event.position().toPoint())
-            #     line = makeLineBetweenShapes(mouse_scene_pos, target_item)
-            #     self._draft_link.setLine(line)
-            #     event.acceptProposedAction() # Todo: accept delete action
+        if event.mimeData().hasFormat(GraphMimeData.LinkHeadData):
+            print("GraphScene DragMoveEvent LinkHeadData", event.mimeData().formats())
+            link_path = event.mimeData().data(GraphMimeData.LinkHeadData).toStdString()
+            link_index = self.indexFromPath(link_path)
+            source_index = link_index.data(GraphDataRole.SourceRole)
+
+            source_widget = self._row_widgets[QPersistentModelIndex(source_index)]
+            mouse_scene_pos = self.mapToScene(event.position().toPoint())
+            line = makeLineBetweenShapes(source_widget, mouse_scene_pos)
+            
+            link_widget = self._row_widgets[QPersistentModelIndex(link_index)]
+            line = QLineF(link_widget.mapFromScene(line.p1()), link_widget.mapFromScene(line.p2()))
+
+            link_widget.setLine(line)
+            event.acceptProposedAction()
+
 
     def dropEvent(self, event: QDropEvent) -> None:
-        super().dropEvent(event)
         print("GraphScene DropEvent", event.mimeData().formats())
-        self._cleanupDraftLink()
-    #     # if event.isAccepted():
-    #     #     return
+        super().dropEvent(event)
+        
+        if event.mimeData().hasFormat(GraphMimeData.LinkTailData):
+            assert self._model
+            link_path = event.mimeData().data(GraphMimeData.LinkTailData).toStdString()
+            link_index = self.indexFromPath(link_path)
+            if not self._model.removeRows(link_index.row(), 1, link_index.parent()):
+                print("Failed to remove link row from model")
+            return
 
-    #     if event.mimeData().hasFormat(GraphMimeData.LinkSourceData):
-    #         assert self._model
-    #         link_key = event.mimeData().data(GraphMimeData.LinkSourceData).toStdString().split("/")
-    #         source, target, outlet, inlet = link_key
-    #         self._model.unlinkNodes(source, target, outlet, inlet)
-
-    #     if event.mimeData().hasFormat(GraphMimeData.LinkTargetData):
-    #         assert self._model
-    #         link_key = event.mimeData().data(GraphMimeData.LinkTargetData).toStdString().split("/")
-    #         source, target, outlet, inlet = link_key
-    #         self._model.unlinkNodes(source, target, outlet, inlet)
-
+        if event.mimeData().hasFormat(GraphMimeData.LinkHeadData):
+            assert self._model
+            link_path = event.mimeData().data(GraphMimeData.LinkHeadData).toStdString()
+            link_index = self.indexFromPath(link_path)
+            if not self._model.removeRows(link_index.row(), 1, link_index.parent()):
+                print("Failed to remove link row from model")
+            return
+        
     def dragLeaveEvent(self, event):
         print("GraphScene DragLeaveEvent")
         super().dragLeaveEvent(event)
@@ -287,7 +321,6 @@ class GraphView(QGraphicsView):
 
     def updateLinkGeometry(self, row:int, parent:QModelIndex):
         """update link widget position associated with the qmodelindex"""
-        print("update link geometry")
         link_index = self._model.index(row, 0, parent)
         source = self._model.data(link_index, GraphDataRole.SourceRole)
         target = link_index.parent()
@@ -336,12 +369,12 @@ class GraphView(QGraphicsView):
         # first pass: Breadth-first search: collect each row recursively
         def children(index:QModelIndex):
             for row in range(self._model.rowCount(parent=index)):
-                yield self._model.index(row, 0, index) 
-
+                yield self._model.index(row, 0, index)
+        
         queue:List[QModelIndex] = [*root]
         indexes = list()
         while queue:
-            index = queue.pop()
+            index = queue.pop(0)  # Remove from front for proper BFS
             indexes.append(index)
             for child in children(index):
                 queue.append(child)
@@ -394,23 +427,24 @@ class GraphView(QGraphicsView):
         # first pass: collect each row recursively
         def children(index:QModelIndex):
             for row in range(self._model.rowCount(parent=index)):
-                yield self._model.index(row, 0, index) 
-
-        # Breadth-first search
+                yield self._model.index(row, 0, index)        # Breadth-first search
         queue:List[QModelIndex] = [*root]
         bfs_indexes = list()
         while queue:
-            index = queue.pop()
+            index = queue.pop(0)  # Remove from front for proper BFS
             bfs_indexes.append(index)
             for child in children(index):
                 queue.append(child)
 
         # remove links first
-        for index in filter(lambda idx: self.itemType(idx.row(), idx.parent()) == GraphItemType.LINK, bfs_indexes):
+        link_indexes = filter(lambda idx: self.itemType(idx.row(), idx.parent()) == GraphItemType.LINK, bfs_indexes)
+        
+        for index in link_indexes:
             self._remove_link_widget(index.row(), index.parent())
 
         # remove widgets reversed depth order
-        for index in filter(lambda idx: self.itemType(idx.row(), idx.parent()) != GraphItemType.LINK, reversed(bfs_indexes) ):
+        non_link_indexes = filter(lambda idx: self.itemType(idx.row(), idx.parent()) != GraphItemType.LINK, reversed(bfs_indexes) )
+        for index in non_link_indexes:
             row, parent = index.row(), index.parent()
             row_kind = self.itemType(row, parent)
             match row_kind:
@@ -620,6 +654,7 @@ class GraphView(QGraphicsView):
         # remove widget from graphview
         index = self._model.index(row, 0, parent)
         widget = self._row_widgets[QPersistentModelIndex(index)]
+        assert isinstance(widget, LinkWidget), "Link widget must be of type LinkWidget"
         del self._row_widgets[QPersistentModelIndex(index)]
 
         # detach link source
@@ -631,13 +666,10 @@ class GraphView(QGraphicsView):
             del self._link_source[persistent_link_index]
 
         # detach widget from scene (or parent widget)
-        if parent.isValid():
-            parent_widget = self._row_widgets[QPersistentModelIndex(parent)]
-            parent_widget = cast(InletWidget, parent_widget)
-            parent_widget.setParentItem(None)
-            self.scene().removeItem(widget)
-        else:
-            raise ValueError()
+        link_widget = cast(LinkWidget, widget)
+        link_widget.setParentItem(None)
+        self.scene().removeItem(link_widget)
+
 
     def _defaultItemType(self, row:int, parent:QModelIndex) -> GraphItemType | None:
         """
@@ -749,8 +781,10 @@ class CellWidget(QGraphicsProxyWidget):
     def __init__(self, parent: QGraphicsItem | None = None):
         super().__init__(parent=parent)
         self._label = QLabel("")
-        self._label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-        self._label.setStyleSheet("background: yellow;")
+        self._label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self._label.setStyleSheet("background: orange;")
+        self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setWidget(self._label)
         self.setAutoFillBackground(False)
 
@@ -761,12 +795,11 @@ class CellWidget(QGraphicsProxyWidget):
         self._label.setText(text)
 
 
-
 class BaseRowWidget(QGraphicsWidget):
     scenePositionChanged = Signal()
     def __init__(self, graphview:'GraphView', parent: QGraphicsItem | None = None):
         super().__init__(parent=parent)
-        self._graphview = graphview
+        self._view = graphview
         layout = QGraphicsLinearLayout(Qt.Orientation.Vertical)
         self.setLayout(layout)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsScenePositionChanges, True)
@@ -800,55 +833,134 @@ class PortWidget(BaseRowWidget):
 
 
 class InletWidget(PortWidget):
-    def mousePressEvent(self, event):
-        # Setup new drag
-        graphview = self._graphview
-        # assert isinstance(graphview, 'GraphView'), "Inlet must be in a GraphView"
-        node_widget = self.parentItem()
-        assert isinstance(node_widget, NodeWidget), "Inlet must be a child of NodeWidget"
-        inlet_index = graphview._row_widgets.inverse[self]
-        node_index = inlet_index.parent()
-        assert node_index.isValid(), "Inlet must have a valid parent node index"
-        node_index.data(GraphDataRole.TypeRole) == GraphItemType.NODE, "Inlet must have a valid parent node of type NODE"
-        mime = QMimeData()
-        mime.setData(GraphMimeData.InletData, f"{node_index.row()}/{inlet_index.row()}".encode("utf-8"))
-        drag = QDrag(graphview)
-        drag.setMimeData(mime)
+    def __init__(self, graphview:'GraphView', parent: QGraphicsItem | None = None):
+        super().__init__(graphview, parent=parent)
+        self.setAcceptDrops(True)
 
-        # Create visual feedback
-        # graphview._createDraftLink()
+    def paint(self, painter, option, /, widget:QWidget|None = None):
+        painter.setBrush("lightblue")
+        painter.drawRect(option.rect)
+
+    def mousePressEvent(self, event:QGraphicsSceneMouseEvent)->None:
+        # Setup new drag
+        inlet_index = self._view._row_widgets.inverse[self]
+        inlet_path = self._view.pathFromIndex(inlet_index)
+        mime = QMimeData()
+        mime.setData(GraphMimeData.InletData, inlet_path.encode("utf-8"))
+        drag = QDrag(self._view)
+        drag.setMimeData(mime)
 
         # Execute drag
         try:
             action = drag.exec(Qt.DropAction.CopyAction)
         except Exception as err:
             traceback.print_exc()
-        finally:
-            pass
-            # graphview._cleanupDraftLink()
+
         return super().mousePressEvent(event)
+    
+    def dragEnterEvent(self, event: QGraphicsSceneDragDropEvent) -> None:
+        print("INLET: drag enter event", event.mimeData().formats())
+        event.setAccepted(True)
+        if event.mimeData().hasFormat(GraphMimeData.OutletData):
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event: QGraphicsSceneDragDropEvent) -> None:
+        print("Inlet: drag move event", event.mimeData().formats())
+        if event.mimeData().hasFormat(GraphMimeData.OutletData):
+            assert self._view
+            assert self._view._model
+            # parse the target inlet path
+            outlet_path = event.mimeData().data(GraphMimeData.OutletData).toStdString()
+
+            outlet_index = self._view.indexFromPath(outlet_path)
+            assert outlet_index.isValid(), "Inlet index must be valid"
+            
+            outlet_widget = self._view._row_widgets[QPersistentModelIndex(outlet_index)]
+            assert isinstance(outlet_widget, OutletWidget)
+            if self._view._draft_link:
+                line = self._view._draft_link.line()
+                line = makeLineBetweenShapes(outlet_widget, self)
+                self._view._draft_link.setLine(line)
+                event.acceptProposedAction()
+                return
+            
+        if event.mimeData().hasFormat(GraphMimeData.LinkTailData):
+            print("INLET: drag move event link source", event.mimeData().formats())
+            assert self._view
+            assert self._view._model
+            link_path = event.mimeData().data(GraphMimeData.LinkTailData).toStdString()
+            link_index = self.indexFromPath(link_path)
+            target_index = link_index.parent()
+
+            target_widget = self._row_widgets[QPersistentModelIndex(target_index)]
+            mouse_scene_pos = self.mapToScene(event.position().toPoint())
+            line = makeLineBetweenShapes(mouse_scene_pos, target_widget)
+            
+            link_widget = self._row_widgets[QPersistentModelIndex(link_index)]
+            line = QLineF(link_widget.mapFromScene(line.p1()), link_widget.mapFromScene(line.p2()))
+            link_widget.setLine(line)
+
+        return super().dragMoveEvent(event)
+    
+    def dropEvent(self, event: QGraphicsSceneDragDropEvent) -> None:
+        assert self._view
+        assert self._view._model
+        print("INLET: drop event", event.mimeData().formats())
+        if event.mimeData().hasFormat(GraphMimeData.OutletData):
+
+            outlet_path = event.mimeData().data(GraphMimeData.OutletData).toStdString()
+            outlet_index = self._view.indexFromPath(outlet_path)
+
+            # get the source outlet index, the index corresponding to this widget
+            inlet_index = self._view.indexFromWidget(self)
+
+            self._view._model.createLink(
+                source=outlet_index,
+                target=inlet_index
+            )
+
+            # self._graphview._model.linkNodes(cast(NodeItem, self.parentItem()).key, target_node, self.key, inlet)
+            event.acceptProposedAction()
+            return
+
+        return super().dragMoveEvent(event)
 
 
 class OutletWidget(PortWidget):
     def __init__(self, graphview:'GraphView', parent: QGraphicsItem | None = None):
         super().__init__(graphview, parent=parent)
-        self._view = graphview
         self.setAcceptDrops(True)
 
     def paint(self, painter, option, /, widget:QWidget|None = None):
         painter.setBrush("purple")
         painter.drawRect(option.rect)
 
+    def mousePressEvent(self, event:QGraphicsSceneMouseEvent) -> None:
+        assert self._view
+        # Setup new drag
+        outlet_index = self._view._row_widgets.inverse[self]
+        assert outlet_index.isValid(), "Outlet index must be valid"
+        outlet_path = self._view.pathFromIndex(outlet_index)
+        mime = QMimeData()
+        mime.setData(GraphMimeData.OutletData, outlet_path.encode("utf-8"))
+        drag = QDrag(self._view)
+        drag.setMimeData(mime)
+
+        # Execute drag
+        try:
+            action = drag.exec(Qt.DropAction.CopyAction)
+        except Exception as err:
+            traceback.print_exc()
+        return super().mousePressEvent(event)
+
     def dragEnterEvent(self, event: QGraphicsSceneDragDropEvent) -> None:
         print("OUTLET: drag enter event", event.mimeData().formats())
-        
-
         event.setAccepted(True)
         if event.mimeData().hasFormat(GraphMimeData.InletData):
             event.acceptProposedAction() # Todo: set accepted action
             return
 
-        if event.mimeData().hasFormat(GraphMimeData.LinkTargetData):
+        if event.mimeData().hasFormat(GraphMimeData.LinkHeadData):
             event.acceptProposedAction()
             return
 
@@ -857,10 +969,11 @@ class OutletWidget(PortWidget):
         if event.mimeData().hasFormat(GraphMimeData.InletData):
             assert self._view
             assert self._view._model
-            target_path = event.mimeData().data(GraphMimeData.InletData).toStdString()
-            node_row, inlet_row = target_path.split("/")
-            node_index = self._view._model.index(int(node_row), 0, QModelIndex())
-            inlet_index = self._view._model.index(int(inlet_row), 0, node_index)
+            # parse the target inlet path
+            inlet_path = event.mimeData().data(GraphMimeData.InletData).toStdString()
+
+            inlet_index = self._view.indexFromPath(inlet_path)
+            assert inlet_index.isValid(), "Inlet index must be valid"
             
             inlet_widget = self._view._row_widgets[QPersistentModelIndex(inlet_index)]
             assert isinstance(inlet_widget, InletWidget), "Inlet must be a child of InletWidget"
@@ -870,18 +983,23 @@ class OutletWidget(PortWidget):
                 self._view._draft_link.setLine(line)
                 event.acceptProposedAction()
                 return
-
-        if event.mimeData().hasFormat(GraphMimeData.LinkTargetData):
+            
+        if event.mimeData().hasFormat(GraphMimeData.LinkHeadData):
             assert self._view
-            link_key = event.mimeData().data(GraphMimeData.LinkTargetData).toStdString().split("/")
-            source, target, outlet, inlet = link_key
-            source_item = self._view._node_widgets[source]._inlet_widgets[outlet]
-            if self._view._draft_link:
-                line = self._view._draft_link.line()
-                line = makeLineBetweenShapes(source_item, self)
-                self._view._draft_link.setLine(line)
-                event.acceptProposedAction()
-                return
+            assert self._view._model
+            # parse the target inlet path
+            link_path = event.mimeData().data(GraphMimeData.LinkHeadData).toStdString()
+
+            link_index = self._view.indexFromPath(link_path)
+            assert link_index.isValid(), "Link target index must be valid"
+            
+            link_widget = self._view._row_widgets[QPersistentModelIndex(link_index)]
+            assert isinstance(link_widget, LinkWidget), "Link target must be a child of LinkWidget"
+            source_index = self._link_source[QPersistentModelIndex(link_index)]
+            source_widget = self._view._row_widgets[source_index]
+            line = makeLineBetweenShapes(source_widget, self)
+            link_widget.setLine(line)
+            return
 
         return super().dragMoveEvent(event)
     
@@ -891,9 +1009,7 @@ class OutletWidget(PortWidget):
             assert self._view
             assert self._view._model
             inlet_path = event.mimeData().data(GraphMimeData.InletData).toStdString()
-            target_node_row, target_inlet_row = inlet_path.split("/")
-            target_node_index = self._view._model.index(int(target_node_row), 0, QModelIndex())
-            target_inlet_index = self._view._model.index(int(target_inlet_row), 0, target_node_index)
+            target_inlet_index = self._view.indexFromPath(inlet_path)
 
             # get the source outlet index, the index corresponding to this widget
             source_outlet_index = self._view.indexFromWidget(self)
@@ -903,20 +1019,7 @@ class OutletWidget(PortWidget):
                 target_inlet_index
             )
 
-            # self._view._model.linkNodes(cast(NodeItem, self.parentItem()).key, target_node, self.key, inlet)
-            event.acceptProposedAction()
-            return
-
-        if event.mimeData().hasFormat(GraphMimeData.LinkTargetData):
-            assert self._view
-            assert self._view._model
-            link_key = event.mimeData().data(GraphMimeData.LinkTargetData).toStdString().split("/")
-            source, target, outlet, inlet = link_key
-            # unlink current
-            self._view._model.unlinkNodes(source, target, outlet, inlet)
-
-            # link source with new target
-            self._view._model.linkNodes(source, cast(NodeItem, self.parentItem()).key, outlet, self.key)
+            # self._graphview._model.linkNodes(cast(NodeItem, self.parentItem()).key, target_node, self.key, inlet)
             event.acceptProposedAction()
             return
 
@@ -949,6 +1052,9 @@ class NodeWidget(BaseRowWidget):
 
     def addCell(self, cell):
         return super().addCell(cell)
+    
+    def removeCell(self, cell):
+        return super().removeCell(cell)
 
     def paint(self, painter: QPainter, option: QStyleOption, widget=None):
         rect = option.rect       
@@ -974,6 +1080,22 @@ class LinkWidget(BaseRowWidget):
         _ = _.adjusted(-5,-5,5,5)
         return _
     
+    def line(self)->QLineF:
+        """Get the line of the link widget."""
+        return self._line
+    
+    def setLine(self, line:QLineF):
+        """Set the line of the link widget."""
+        self._line = line
+        self.prepareGeometryChange()
+        self._data_column.layout().setGeometry(
+            QRectF(self._line.p1(), self._line.p2())
+            .adjusted(-5, -5, 5, 5)
+            .normalized()
+        )
+
+        self.update()
+    
     def shape(self)->QPainterPath:
         path = QPainterPath()
         path.moveTo(self._line.p1())
@@ -996,29 +1118,59 @@ class LinkWidget(BaseRowWidget):
         else:
             painter.setBrush(self.palette().text())
         painter.setPen(Qt.PenStyle.NoPen)
-        print("paint")
-        shape = self.shape()
-        painter.drawPath(shape)
+        arrow = makeArrowShape(self._line, 2)
+        painter.drawPath(arrow)
 
     def updateLine(self, source:QGraphicsItem|None, target:QGraphicsItem|None):
-        print("updateLine: {source}->{target}")
         self.prepareGeometryChange()
         if source and target:
-            self._line = makeLineBetweenShapes(source, target)
-            self._line.translate(-self.scenePos().x(), -self.scenePos().y())
+            line = makeLineBetweenShapes(source, target)
+            line = QLineF(self.mapFromScene(line.p1()), self.mapFromScene(line.p2()))
+            self.setLine(line)
         elif source:
             source_pos = source.scenePos()-self.scenePos()
-            self._line = QLineF(source_pos, source_pos+QPointF(100,100))
+            line = QLineF(source_pos, source_pos+QPointF(100,100))
+            line = QLineF(self.mapFromScene(line.p1()), self.mapFromScene(line.p2()))
+            self.setLine(line)
         elif target:
             target_pos = target.scenePos()-self.scenePos()
-            self._line = QLineF(target_pos-QPointF(100,100), target_pos)
+            line = QLineF(target_pos-QPointF(100,100), target_pos)
+            line = QLineF(self.mapFromScene(line.p1()), self.mapFromScene(line.p2()))
+            self.setLine(line)
         else:
             ...
 
-        self._data_column.layout().setGeometry(
-            QRectF(self._line.p1(), self._line.p2())
-            .adjusted(-5, -5, 5, 5)
-            .normalized()
-        )
+    def mousePressEvent(self, event:QGraphicsSceneMouseEvent) -> None:
+        assert self._view
+        source_distance = (event.pos() - self.line().p1()).manhattanLength()
+        target_distance = (event.pos() - self.line().p2()).manhattanLength()
+        if source_distance < target_distance:
+            mime = QMimeData()
+            link_index = self._view._row_widgets.inverse[self]
+            assert link_index.isValid(), "Link index must be valid"
+            link_path = self._view.pathFromIndex(link_index)
+            mime.setData(GraphMimeData.LinkTailData, link_path.encode("utf-8"))
+            drag = QDrag(self._view)
+            drag.setMimeData(mime)
+            
+            # Execute drag
+            try:
+                action = drag.exec(Qt.DropAction.TargetMoveAction)
+            except Exception as err:
+                traceback.print_exc()
+        else:
+            # Setup new drag
+            mime = QMimeData()
+            link_index = self._view._row_widgets.inverse[self]
+            assert link_index.isValid(), "Link index must be valid"
+            link_path = self._view.pathFromIndex(link_index)
+            mime.setData(GraphMimeData.LinkHeadData, link_path.encode("utf-8"))
+            drag = QDrag(self._view)
+            drag.setMimeData(mime)
+            
+            # Execute drag
+            try:
+                action = drag.exec(Qt.DropAction.TargetMoveAction)
+            except Exception as err:
+                traceback.print_exc()
 
-        self.update()

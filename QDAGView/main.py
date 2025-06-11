@@ -19,15 +19,20 @@ if __name__ == "__main__":
             self.selection = QItemSelectionModel(self.model)
 
             ## populate model with some initial data
-            node1 = NodeItem("Node 1")
-            node1.appendInlet(InletItem("Inlet 1"))
+            node1 = NodeItem("Node1")
+            node1.appendInlet(InletItem("in"))
             node1.appendOutlet(OutletItem("out"))
             self.model.addNode(node1)
 
-            node2 = NodeItem("Node 2")
-            node2.appendInlet(InletItem("Inlet 1"))
+            node2 = NodeItem("Node2")
+            node2.appendInlet(InletItem("in"))
             node2.appendOutlet(OutletItem("out"))
             self.model.addNode(node2)
+
+            node3 = NodeItem("Node3")
+            node3.appendInlet(InletItem("in"))
+            node3.appendOutlet(OutletItem("out"))
+            self.model.addNode(node3)
 
             # setup view
             self.setWindowTitle("Graph Model Example")
@@ -87,8 +92,8 @@ if __name__ == "__main__":
             menu = QMenu(self)
             # index = self.treeview.indexAt(pos)  # Ensure the context menu is shown at the correct position
             index = self.selection.currentIndex()
-            item = index.internalPointer() if index.isValid() else self.model.invisibleRootItem()
-            match index.isValid(), item.type():
+            item_type = self.model.data(index, GraphDataRole.TypeRole)
+            match index.isValid(), item_type:
                 case (False, _):
                     menu.addAction("Add Node", lambda: self.model.addNode(NodeItem("New Node"), QModelIndex()))
                 case (True, GraphItemType.NODE):
