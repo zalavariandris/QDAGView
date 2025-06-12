@@ -1112,8 +1112,10 @@ class LinkWidget(BaseRowWidget):
     
     def setLine(self, line:QLineF):
         """Set the line of the link widget."""
-        self._line = line
+        
         self.prepareGeometryChange()
+        self._line = line
+
         self._data_column.layout().setGeometry(
             QRectF(self._line.p1(), self._line.p2())
             .adjusted(-5, -5, 5, 5)
@@ -1148,7 +1150,6 @@ class LinkWidget(BaseRowWidget):
         painter.drawPath(arrow)
 
     def updateLine(self, source:QGraphicsItem|None, target:QGraphicsItem|None):
-        self.prepareGeometryChange()
         if source and target:
             line = makeLineBetweenShapes(source, target)
             line = QLineF(self.mapFromScene(line.p1()), self.mapFromScene(line.p2()))
