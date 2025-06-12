@@ -814,12 +814,28 @@ class CellWidget(QGraphicsProxyWidget):
         self._label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setWidget(self._label)
         self.setAutoFillBackground(False)
+        
+        # Make CellWidget transparent to drag events so parent can handle them
+        self.setAcceptDrops(False)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, False)
 
     def text(self):
         return self._label.text()
 
     def setText(self, text:str):
         self._label.setText(text)
+    
+    # def dragEnterEvent(self, event: QGraphicsSceneDragDropEvent) -> None:
+    #     # Ignore drag events and let parent handle them
+    #     event.ignore()
+    
+    # def dragMoveEvent(self, event: QGraphicsSceneDragDropEvent) -> None:
+    #     # Ignore drag events and let parent handle them
+    #     event.ignore()
+    
+    # def dropEvent(self, event: QGraphicsSceneDragDropEvent) -> None:
+    #     # Ignore drop events and let parent handle them
+    #     event.ignore()
 
 
 class BaseRowWidget(QGraphicsWidget):

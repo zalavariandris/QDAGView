@@ -7,17 +7,16 @@ from typing import *
 from core import GraphDataRole, GraphItemType
 
 
-class BaseItem:
-    def __init__(self, data: List[str]|None = None):
+class BaseRowItem:
+    def __init__(self, *text: str):
         """Initialize BaseItem with proper data storage for multiple columns and roles."""
         # Use nested dictionary: {role: {column: value}}
         self._data: Dict[int, Dict[int, Any]] = defaultdict(dict)
         
         # Initialize with provided data if any
-        if data:
-            for column, value in enumerate(data):
-                self._data[Qt.ItemDataRole.DisplayRole][column] = value
-                self._data[Qt.ItemDataRole.EditRole][column] = value
+        for column, value in enumerate(text):
+            self._data[Qt.ItemDataRole.DisplayRole][column] = value
+            self._data[Qt.ItemDataRole.EditRole][column] = value
         self._data[GraphDataRole.TypeRole][0] = GraphItemType.BASE
         
         self._parent_item: Self|None = None
@@ -64,11 +63,11 @@ class BaseItem:
             if self._model:
                 self._model.endInsertRows()
 
-    def append_child(self, child: BaseItem) -> None:
+    def append_child(self, child: BaseRowItem) -> None:
         """Append a child item to this item."""
         self.insert_child(len(self._child_items), child)
 
-    def remove_child(self, child: BaseItem) -> bool:
+    def remove_child(self, child: BaseRowItem) -> bool:
         """Remove child item at the specified position."""
         position = self._child_items.index(child) if child in self._child_items else -1
         if position == -1:
@@ -102,7 +101,7 @@ class BaseItem:
                 max_column = max(max_column, max(role_data.keys(), default=-1))
         return max_column + 1 if max_column >= 0 else 0
 
-    def parent(self) -> BaseItem|None:
+    def parent(self) -> BaseRowItem|None:
         """Return the parent item."""
         return self._parent_item
 
@@ -118,7 +117,7 @@ class BaseItem:
         return QModelIndex()
     
     # Helper functions
-    def _set_model_recursively(self, item: BaseItem) -> None:
+    def _set_model_recursively(self, item: BaseRowItem) -> None:
         """Recursively set model reference for all children."""
         item._model = self._model
         for child in item._child_items:
@@ -131,10 +130,10 @@ class BaseItem:
             self._model.dataChanged.emit(index, index, roles)
 
 
-class NodeItem(BaseItem):
-    def __init__(self, text: str=""):
+class NodeItem(BaseRowItem):
+    def __init__(self, *text:str):
         """Initialize NodeItem with list data format only."""
-        super().__init__([text] if text else None)
+        super().__init__(*text)
         self._data[GraphDataRole.TypeRole][0] = GraphItemType.NODE
     
     def appendInlet(self, inlet: InletItem) -> None:
@@ -193,10 +192,10 @@ class NodeItem(BaseItem):
         return self.remove_child(outlet)
 
 
-class InletItem(BaseItem):
-    def __init__(self, text: str=""):
+class InletItem(BaseRowItem):
+    def __init__(self, *text: str):
         """Initialize InletItem with list data format only."""
-        super().__init__([text] if text else None)
+        super().__init__(*text)
         self._data[GraphDataRole.TypeRole][0] = GraphItemType.INLET
 
     def addLink(self, link:LinkItem)->None:
@@ -206,17 +205,17 @@ class InletItem(BaseItem):
         self.remove_child(link)
 
 
-class OutletItem(BaseItem):
-    def __init__(self, text: str=""):
+class OutletItem(BaseRowItem):
+    def __init__(self, *text: str):
         """Initialize OutletItem with list data format only."""
-        super().__init__([text] if text else None)
+        super().__init__(*text)
         self._data[GraphDataRole.TypeRole][0] = GraphItemType.OUTLET
 
 
-class LinkItem(BaseItem):
-    def __init__(self, text: str=""):
+class LinkItem(BaseRowItem):
+    def __init__(self, *text):
         """Initialize LinkItem with list data format only."""
-        super().__init__([text] if text else None)
+        super().__init__(*text)
         self._data[GraphDataRole.TypeRole][0] = GraphItemType.LINK
         self._data[GraphDataRole.SourceRole][0] = None
         self._source:OutletItem|None=None
@@ -229,20 +228,12 @@ class LinkItem(BaseItem):
         return self._source
 
 
-class SubGraphItem(BaseItem):
-    def __init__(self, text: Union[str, List[str]] = ""):
+class SubGraphItem(BaseRowItem):
+    def __init__(self, *text: str):
         """Initialize SubGraphItem with list data format only."""
-        if isinstance(text, str):
-            super().__init__([text] if text else None)
-        else:
-            super().__init__(text)
+        super().__init__(*text)
         
         self._data[GraphDataRole.TypeRole][0] = GraphItemType.SUBGRAPH
-    #     self._type = GraphItemType.SUBGRAPH
-    
-    # def type(self) -> str:
-    #     """Return the type of this item."""
-    #     return self._type
     
     def addNode(self, node: NodeItem) -> None:
         """Add a node to this subgraph."""
@@ -293,7 +284,7 @@ class GraphModel(QAbstractItemModel):
         if not index.isValid():
             return QModelIndex()
 
-        child_item: BaseItem = index.internalPointer()
+        child_item: BaseRowItem = index.internalPointer()
         if not child_item:
             return QModelIndex()
 
@@ -309,6 +300,7 @@ class GraphModel(QAbstractItemModel):
         return parent_item.childCount()
     
     def columnCount(self, parent: QModelIndex|QPersistentModelIndex = QModelIndex()) -> int:
+        return 2
         return self._root_item.columnCount() if not parent.isValid() else parent.internalPointer().columnCount()
 
     def data(self, index: QModelIndex|QPersistentModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
@@ -319,14 +311,14 @@ class GraphModel(QAbstractItemModel):
         # return the source index for SourceRole
         if role == GraphDataRole.SourceRole:
             # Special handling for SourceRole to return the source index of a LinkItem !!!
-            item: BaseItem = index.internalPointer()
+            item: BaseRowItem = index.internalPointer()
             if isinstance(item, LinkItem):
                 outlet_item = item.source()
                 return outlet_item.index() if outlet_item else None
             return None
         
         # if link item, return a string representation of the link
-        item: BaseItem = index.internalPointer()
+        item: BaseRowItem = index.internalPointer()
         if item.data(0, GraphDataRole.TypeRole) == GraphItemType.LINK and role == Qt.ItemDataRole.DisplayRole:
             inlet_item = item.parent()
             outlet_item = item.source()
@@ -334,7 +326,7 @@ class GraphModel(QAbstractItemModel):
                 return f"{inlet_item.data(0, Qt.ItemDataRole.DisplayRole)} -> {outlet_item.data(0, Qt.ItemDataRole.DisplayRole)}"
 
         # by default return the data for the specified role and column stored in the item
-        item: BaseItem = index.internalPointer()
+        item: BaseRowItem = index.internalPointer()
         return item.data(index.column(), role)
 
     ## Optional read methods
@@ -348,7 +340,7 @@ class GraphModel(QAbstractItemModel):
     def setData(self, index: QModelIndex|QPersistentModelIndex, value: Any, role: int = Qt.ItemDataRole.EditRole) -> bool:
         """Set the role data for the item at index to value."""
         if index.isValid() and role == Qt.ItemDataRole.EditRole:
-            item: BaseItem = index.internalPointer()
+            item: BaseRowItem = index.internalPointer()
             return item.setData(index.column(), value)
         return False
     
@@ -365,7 +357,7 @@ class GraphModel(QAbstractItemModel):
     def insertRows(self, position: int, rows: int, parent: QModelIndex|QPersistentModelIndex = QModelIndex()) -> bool:
         """Insert rows into the model."""
         assert isinstance(parent, QModelIndex), "Parent must be a QModelIndex."
-        parent_item: BaseItem = self._root_item if not parent.isValid() else parent.internalPointer()
+        parent_item: BaseRowItem = self._root_item if not parent.isValid() else parent.internalPointer()
         item_type = parent_item.data(0, GraphDataRole.TypeRole)
         
         match item_type:
@@ -387,7 +379,7 @@ class GraphModel(QAbstractItemModel):
     def removeRows(self, position: int, rows: int, parent: QModelIndex|QPersistentModelIndex = QModelIndex()) -> bool:
         """Remove rows from the model."""
         assert isinstance(parent, QModelIndex), "Parent must be a QModelIndex."
-        parent_item: BaseItem = self._root_item if not parent.isValid() else parent.internalPointer()
+        parent_item: BaseRowItem = self._root_item if not parent.isValid() else parent.internalPointer()
         
         # Remove in reverse order to avoid index shifting issues
         success = True
@@ -398,7 +390,7 @@ class GraphModel(QAbstractItemModel):
         return success
     
     ## utility methods
-    def _set_model_recursively(self, item: BaseItem) -> None:
+    def _set_model_recursively(self, item: BaseRowItem) -> None:
         """Recursively set model reference for all children."""
         item._model = self
         for child in item._child_items:
@@ -407,7 +399,7 @@ class GraphModel(QAbstractItemModel):
     ## Graph specific methods
     def addNode(self, node: NodeItem, parent: QModelIndex = QModelIndex()) -> None:
         """Add a node to the graph model."""
-        parent_item: BaseItem = self._root_item if not parent.isValid() else parent.internalPointer()
+        parent_item: BaseRowItem = self._root_item if not parent.isValid() else parent.internalPointer()
         
         if not isinstance(node, NodeItem):
             raise TypeError("Only NodeItem can be added as a node.")
@@ -416,7 +408,7 @@ class GraphModel(QAbstractItemModel):
 
     def removeNode(self, node: NodeItem, parent: QModelIndex = QModelIndex()) -> bool:
         """Remove a node from the graph model."""
-        parent_item: BaseItem = self._root_item if not parent.isValid() else parent.internalPointer()
+        parent_item: BaseRowItem = self._root_item if not parent.isValid() else parent.internalPointer()
         
         if not isinstance(node, NodeItem):
             raise TypeError("Only NodeItem can be removed as a node.")

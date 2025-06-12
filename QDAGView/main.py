@@ -1,4 +1,4 @@
-from graphmodel import GraphModel, NodeItem, InletItem, OutletItem, BaseItem
+from graphmodel import GraphModel, NodeItem, InletItem, OutletItem, BaseRowItem
 from graphview import GraphView
 from core import GraphDataRole, GraphItemType
 from PySide6.QtWidgets import *
@@ -20,7 +20,7 @@ if __name__ == "__main__":
             self.selection = QItemSelectionModel(self.model)
 
             ## populate model with some initial data
-            node1 = NodeItem("Node1")
+            node1 = NodeItem("Node1", "content")
             node1.appendInlet(InletItem("in"))
             node1.appendOutlet(OutletItem("out"))
             self.model.addNode(node1)
