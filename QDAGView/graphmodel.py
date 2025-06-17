@@ -198,12 +198,6 @@ class InletItem(BaseRowItem):
         super().__init__(*text)
         self._data[GraphDataRole.TypeRole][0] = GraphItemType.INLET
 
-    # def addLink(self, link:LinkItem)->None:
-    #     self.append_child(link)
-
-    # def removeLink(self, link:LinkItem)->None:
-    #     self.remove_child(link)
-
 
 class OutletItem(BaseRowItem):
     def __init__(self, *text: str):
@@ -217,11 +211,8 @@ class LinkItem(BaseRowItem):
         """Initialize LinkItem with list data format only."""
         super().__init__(*text)
         self._data[GraphDataRole.TypeRole][0] = GraphItemType.LINK
-        self._data[GraphDataRole.SourceRole][0] = None
-        self._source:OutletItem|None=None
-
-        target.append_child(self)  # Add this link to the target inlet
         self._source = source
+        target.append_child(self)  # Add this link to the target inlet
 
     def source(self) -> OutletItem|None:
         """Return the source outlet of this link."""
@@ -230,13 +221,6 @@ class LinkItem(BaseRowItem):
     def target(self) -> InletItem:
         """Return the target inlet of this link."""
         return self.parent()
-
-    # def setSource(self, value:OutletItem):
-    #     self._source = value
-    #     self.emitDataChanged(0, [GraphDataRole.SourceRole])
-    
-    # def source(self)->OutletItem|None:
-    #     return self._source
 
 
 class SubGraphItem(BaseRowItem):
@@ -465,9 +449,6 @@ class GraphModel(QAbstractItemModel):
         target_inlet_item = target.internalPointer()
         source_outlet_item = source.internalPointer()
         link_item = LinkItem(source_outlet_item, target_inlet_item)
-        # assert source_outlet_item
-        # link_item.setSource(source_outlet_item)
-        # inlet_item.addLink(link_item)
         return link_item
     
     def removeLink(self, link: LinkItem) -> bool:
@@ -482,7 +463,6 @@ class GraphModel(QAbstractItemModel):
         
         return target_inlet_item.remove_child(link)
 
-    
     def clear(self) -> None:
         """Clear the entire graph model."""
         self.beginResetModel()
