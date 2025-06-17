@@ -113,7 +113,7 @@ class MainWindow(QMainWindow):
 
         ### Setup Graphview
         self.graphview = GraphView()
-        self.graphview.setModel(self.nodes)
+        self.graphview.setAdapter(self.nodes)
         self.graphview.setSelectionModel(self.selection)        ### Setup Layout
         layout = QHBoxLayout()
         layout.addWidget(self.node_tree)

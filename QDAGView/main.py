@@ -1,5 +1,5 @@
 from graphmodel import GraphModel, NodeItem, InletItem, OutletItem, BaseRowItem
-from graphview import GraphView
+from graphview import GraphView, GraphAdapter
 from core import GraphDataRole, GraphItemType
 from PySide6.QtWidgets import *
 from PySide6.QtCore import *
@@ -35,6 +35,8 @@ if __name__ == "__main__":
             node3.appendOutlet(OutletItem("out"))
             self.model.addNode(node3)
 
+            # self.model.addLink(LinkItem)
+
             # setup view
             self.setWindowTitle("Graph Model Example")
 
@@ -48,7 +50,6 @@ if __name__ == "__main__":
             button_layout.addWidget(self.remove_btn)
 
             self.selection.currentChanged.connect(self.updateContextAwareToolbar)
-            
 
             ## treeview
             self.treeview = QTreeView()
@@ -67,7 +68,9 @@ if __name__ == "__main__":
 
             ## graphview
             self.graphview = GraphView()
-            self.graphview.setModel(self.model)
+            self.adapter = GraphAdapter(self)
+            self.adapter.setSourceModel(self.model)
+            self.graphview.setAdapter(self.adapter)
             self.graphview.setSelectionModel(self.selection)
             self.graphview.setMinimumSize(400, 300)
 

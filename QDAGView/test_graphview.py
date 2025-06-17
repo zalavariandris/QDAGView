@@ -44,13 +44,13 @@ class TestGraphView(unittest.TestCase):
         addNode(model, "read", "read()")
 
         view = GraphView()
-        view.setModel(model)
+        view.setAdapter(model)
 
 class TestLinks(unittest.TestCase):
     def setUp(self):
         self.view = GraphView()
         self.model = QStandardItemModel()
-        self.view.setModel(self.model)
+        self.view.setAdapter(self.model)
         # add node1
         self.node1 = QStandardItem("node1")
         self.node1.setData(RowKind.NODE, GraphDataRole.KindRole)

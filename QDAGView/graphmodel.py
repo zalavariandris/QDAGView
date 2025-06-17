@@ -198,11 +198,11 @@ class InletItem(BaseRowItem):
         super().__init__(*text)
         self._data[GraphDataRole.TypeRole][0] = GraphItemType.INLET
 
-    def addLink(self, link:LinkItem)->None:
-        self.append_child(link)
+    # def addLink(self, link:LinkItem)->None:
+    #     self.append_child(link)
 
-    def removeLink(self, link:LinkItem)->None:
-        self.remove_child(link)
+    # def removeLink(self, link:LinkItem)->None:
+    #     self.remove_child(link)
 
 
 class OutletItem(BaseRowItem):
@@ -213,19 +213,30 @@ class OutletItem(BaseRowItem):
 
 
 class LinkItem(BaseRowItem):
-    def __init__(self, *text):
+    def __init__(self, source:OutletItem, target:InletItem, *text):
         """Initialize LinkItem with list data format only."""
         super().__init__(*text)
         self._data[GraphDataRole.TypeRole][0] = GraphItemType.LINK
         self._data[GraphDataRole.SourceRole][0] = None
         self._source:OutletItem|None=None
 
-    def setSource(self, value:OutletItem):
-        self._source = value
-        self.emitDataChanged(0, [GraphDataRole.SourceRole])
-    
-    def source(self)->OutletItem|None:
+        target.append_child(self)  # Add this link to the target inlet
+        self._source = source
+
+    def source(self) -> OutletItem|None:
+        """Return the source outlet of this link."""
         return self._source
+    
+    def target(self) -> InletItem:
+        """Return the target inlet of this link."""
+        return self.parent()
+
+    # def setSource(self, value:OutletItem):
+    #     self._source = value
+    #     self.emitDataChanged(0, [GraphDataRole.SourceRole])
+    
+    # def source(self)->OutletItem|None:
+    #     return self._source
 
 
 class SubGraphItem(BaseRowItem):
@@ -451,12 +462,12 @@ class GraphModel(QAbstractItemModel):
     def createLink(self, source: QModelIndex|QPersistentModelIndex, target: QModelIndex|QPersistentModelIndex)->LinkItem:
         assert self.data(source, GraphDataRole.TypeRole) == GraphItemType.OUTLET
         assert self.data(target, GraphDataRole.TypeRole) == GraphItemType.INLET
-        inlet_item = target.internalPointer()
-        link_item = LinkItem()
-        source_item = source.internalPointer()
-        assert source_item
-        link_item.setSource(source_item)
-        inlet_item.addLink(link_item)
+        target_inlet_item = target.internalPointer()
+        source_outlet_item = source.internalPointer()
+        link_item = LinkItem(source_outlet_item, target_inlet_item)
+        # assert source_outlet_item
+        # link_item.setSource(source_outlet_item)
+        # inlet_item.addLink(link_item)
         return link_item
     
     def removeLink(self, link: LinkItem) -> bool:
@@ -465,32 +476,12 @@ class GraphModel(QAbstractItemModel):
             raise TypeError("Only LinkItem can be removed as a link.")
         
         # Find the parent item of the link
-        parent_item = link.parent()
-        if not isinstance(parent_item, InletItem):
+        target_inlet_item = link.parent()
+        if not isinstance(target_inlet_item, InletItem):
             raise TypeError("Link must be a child of an InletItem.")
         
-        return parent_item.removeLink(link)
+        return target_inlet_item.remove_child(link)
 
-    # def addLink(self, link: LinkItem, source_index: QModelIndex, target_index: QModelIndex) -> None:
-    #     """Add a link between two nodes."""
-    #     if not isinstance(link, LinkItem):
-    #         raise TypeError("Only LinkItem can be added as a link.")
-
-    #     source_item: NodeItem = source_index.internalPointer()
-    #     target_item: NodeItem = target_index.internalPointer()
-        
-    #     if not isinstance(source_item, NodeItem) or not isinstance(target_item, NodeItem):
-    #         raise TypeError("Source and target indices must point to NodeItems.")
-        
-    #     # Here you would typically handle the logic of linking nodes
-    #     # For simplicity, we just append the link to the root item
-    #     self._root_item.append_child(link)
-
-    # def removeLink(self, link: LinkItem) -> bool:
-    #     """Remove a link from the graph model."""
-    #     assert isinstance(link, LinkItem)
-        
-    #     return self._root_item.remove_child(link)
     
     def clear(self) -> None:
         """Clear the entire graph model."""
