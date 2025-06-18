@@ -161,17 +161,23 @@ class GraphView(QGraphicsView):
         print(f"onSelectionChanged: {selected.indexes()}, {deselected.indexes()}")
         scene = self.scene()
         scene.blockSignals(True)
-        selected_indexes = [QPersistentModelIndex(idx) for idx in selected.indexes()]
-        deselected_indexes = [QPersistentModelIndex(idx) for idx in deselected.indexes()]
+        selected_indexes = sorted([QPersistentModelIndex(idx) for idx in selected.indexes()], 
+                                  key= lambda idx: idx.row(), 
+                                  reverse= True)
+        deselected_indexes = sorted([QPersistentModelIndex(idx) for idx in deselected.indexes()], 
+                                    key= lambda idx: idx.row(), 
+                                    reverse= True)
         for index in deselected_indexes:
             if index.isValid() and index.column() == 0:
                 if widget:=self.widgetFromIndex(index):
-                    widget.setSelected(False)
+                    if widget.scene() and widget.isSelected():
+                        widget.setSelected(False)
 
         for index in selected_indexes:
             if index.isValid() and index.column() == 0:
                 if widget:=self.widgetFromIndex(index):
-                    widget.setSelected(True)
+                    if widget.scene() and not widget.isSelected():
+                        widget.setSelected(True)
         
         scene.blockSignals(False)
 
@@ -274,25 +280,34 @@ class GraphView(QGraphicsView):
         """Remove a node widget"""
         assert isinstance(index, QPersistentModelIndex), "Index must be a QPersistentModelIndex"
         assert index.column()==0, "Index must be in the first column"
-        
-        # remove widget from graphview
+
+        self.scene().blockSignals(True) #Block signals to prevent unnecessary updates during removal, eg selection
+        # store widget
         widget = self._widgets[index]
+
+        # remove widget from graphview
         del self._widgets[index]
-        
+
         # detach from scene or parent widget
         if index.parent().isValid():
             raise NotImplementedError()
         else:
             self.scene().removeItem(widget)
         print(f"Removed node widget")
+        self.scene().blockSignals(False)  # Unblock signals after removal
+        
+        
         
     def _remove_inlet_widget(self, index:QPersistentModelIndex):
         """Remove an inlet widget and its associated cell widgets."""
         assert isinstance(index, QPersistentModelIndex), "Index must be a QPersistentModelIndex"
         assert index.column()==0, "Index must be in the first column"
         
-        # remove widget from graphview
+        self.scene().blockSignals(True)  # Block signals to prevent unnecessary updates during removal, eg selection
+        # store widget
         widget = self._widgets[index]
+
+        # remove widget from graphview
         del self._widgets[index]
 
         # detach widget from scene (or parent widget)
@@ -303,14 +318,21 @@ class GraphView(QGraphicsView):
         else:
             raise NotImplementedError("support inlets attached to the root graph")
         print(f"Removed inlet widget")
+        self.scene().blockSignals(False)  # Unblock signals after removal
 
     def _remove_outlet_widget(self, index:QPersistentModelIndex):
         """Remove an outlet widget and its associated cell widgets."""
         assert isinstance(index, QPersistentModelIndex), "Index must be a QPersistentModelIndex"
         assert index.column()==0, "Index must be in the first column"
-           
-        # detach widget from scene (or parent widget)
+        
+        self.scene().blockSignals(True)  # Block signals to prevent unnecessary updates during removal, eg selection
+        # store widget  
         widget = self._widgets[index]
+
+        # remove widget from graphview
+        del self._widgets[index]
+
+        # detach widget from scene (or parent widget)
         if index.parent().isValid():
             parent_widget = self._widgets[QPersistentModelIndex(index.parent())]
             parent_widget = cast(NodeWidget, parent_widget)
@@ -318,26 +340,32 @@ class GraphView(QGraphicsView):
         else:
             raise NotImplementedError("support inlets attached to the root graph")
         
-        # remove widget from graphview
-        del self._widgets[index]
+        
         print(f"Removed outlet widget")
+        self.scene().blockSignals(False)  # Unblock signals after removal
         
     def _remove_link_widget(self, index:QPersistentModelIndex):
         """Remove an inlet widget and its associated cell widgets."""
         assert isinstance(index, QPersistentModelIndex), "Index must be a QPersistentModelIndex"
         assert index.column()==0, "Index must be in the first column"
         
-        # detach widget from scene (or parent widget)
+        self.scene().blockSignals(True)  # Block signals to prevent unnecessary updates during removal, eg selection
+        # store widget
         widget = self._widgets[index]
+
+        # remove widget from graphview
+        del self._widgets[index]
+
+        # detach widget from scene (or parent widget)
         assert isinstance(widget, LinkWidget), "Link widget must be of type LinkWidget"
         link_widget = cast(LinkWidget, widget)
         link_widget.unlink()  # Unlink the link widget from its source and target items
         link_widget.setParentItem(None)
         self.scene().removeItem(link_widget)  # Remove from scene immediately
 
-        # remove widget from graphview
-        del self._widgets[index]
+        
         print(f"Removed link widget")
+        self.scene().blockSignals(False)  # Unblock signals after removal
 
     def _set_data(self, index:QPersistentModelIndex, column:int, roles:list=[]):
         """Set the data for a node widget."""
