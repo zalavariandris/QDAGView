@@ -18,6 +18,8 @@ if __name__ == "__main__":
             # Setup model
             self.model = GraphModel()
             self.selection = QItemSelectionModel(self.model)
+            self.adapter = GraphAdapter(self)
+            self.adapter.setSourceModel(self.model)
 
             ## populate model with some initial data
             node1 = NodeItem("Node1", "content")
@@ -68,8 +70,7 @@ if __name__ == "__main__":
 
             ## graphview
             self.graphview = GraphView()
-            self.adapter = GraphAdapter(self)
-            self.adapter.setSourceModel(self.model)
+            
             self.graphview.setAdapter(self.adapter)
             self.graphview.setSelectionModel(self.selection)
             self.graphview.setMinimumSize(400, 300)

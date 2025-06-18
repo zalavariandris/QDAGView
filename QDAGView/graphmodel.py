@@ -351,7 +351,7 @@ class GraphModel(QAbstractItemModel):
     # Insert and remove methods
     def insertRows(self, position: int, rows: int, parent: QModelIndex|QPersistentModelIndex = QModelIndex()) -> bool:
         """Insert rows into the model."""
-        assert isinstance(parent, QModelIndex), "Parent must be a QModelIndex."
+        assert isinstance(parent, (QModelIndex, QPersistentModelIndex)), "Parent must be a QModelIndex."
         parent_item: BaseRowItem = self._root_item if not parent.isValid() else parent.internalPointer()
         item_type = parent_item.data(0, GraphDataRole.TypeRole)
         
@@ -367,6 +367,7 @@ class GraphModel(QAbstractItemModel):
                 for row in range(rows):
                     node_item.appendInlet(InletItem(f"New Inlet {position + row + 1}"))
                 return True
+            
             case _:
                 print(f"Warning: Cannot insert rows into {item_type} item.")
                 return False
@@ -443,11 +444,12 @@ class GraphModel(QAbstractItemModel):
         
         node_item.appendOutlet(outlet)
 
-    def createLink(self, source: QModelIndex|QPersistentModelIndex, target: QModelIndex|QPersistentModelIndex)->LinkItem:
-        assert self.data(source, GraphDataRole.TypeRole) == GraphItemType.OUTLET
-        assert self.data(target, GraphDataRole.TypeRole) == GraphItemType.INLET
-        target_inlet_item = target.internalPointer()
-        source_outlet_item = source.internalPointer()
+    def createLink(self, outlet: QModelIndex|QPersistentModelIndex, inlet: QModelIndex|QPersistentModelIndex)->LinkItem:
+        assert self.data(outlet, GraphDataRole.TypeRole) == GraphItemType.OUTLET
+        assert self.data(inlet, GraphDataRole.TypeRole) == GraphItemType.INLET
+
+        target_inlet_item = inlet.internalPointer()
+        source_outlet_item = outlet.internalPointer()
         link_item = LinkItem(source_outlet_item, target_inlet_item)
         return link_item
     
