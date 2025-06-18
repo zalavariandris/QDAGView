@@ -45,7 +45,7 @@ class GraphView(QGraphicsView):
         self._selection:QItemSelectionModel | None = None
         self._selection_connections:List[Tuple[Signal, Callable]] = []
         # store model widget relations
-        self._widgets: bidict[QPersistentModelIndex, NodeWidget] = bidict()
+        self._widgets: bidict[QPersistentModelIndex, BaseRowWidget] = bidict()
         self._draft_link: QGraphicsLineItem | None = None
 
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
@@ -59,19 +59,19 @@ class GraphView(QGraphicsView):
         self.setScene(scene)
         self.setAcceptDrops(True)
 
-    def indexFromWidget(self, widget:NodeWidget) -> QPersistentModelIndex:
+    def indexFromWidget(self, widget:BaseRowWidget) -> QPersistentModelIndex|None:
         """
         Get the index of the node widget in the model.
         This is used to identify the node in the model.
         """
-        return QPersistentModelIndex(self._widgets.inverse[widget])
+        return QPersistentModelIndex(self._widgets.inverse.get(widget, None))
     
-    def widgetFromIndex(self, index:QModelIndex) -> NodeWidget:
+    def widgetFromIndex(self, index:QModelIndex) -> BaseRowWidget|None:
         """
         Get the widget from the index.
         This is used to identify the node in the model.
         """
-        return self._widgets[QPersistentModelIndex(index)]
+        return self._widgets.get(QPersistentModelIndex(index), None)
 
     def setAdapter(self, adapter:GraphAdapter):
         if self._adapter_connections:
@@ -158,18 +158,21 @@ class GraphView(QGraphicsView):
         assert self._selection, "Selection model must be set before handling selection changes!"
         assert self._adapter, "Model must be set before handling selection changes!"
         assert self._selection.model() == self._adapter.sourceModel(), "Selection model must be for the same model as the graph view!"
+        print(f"onSelectionChanged: {selected.indexes()}, {deselected.indexes()}")
         scene = self.scene()
         scene.blockSignals(True)
-        
-        for index in deselected.indexes():
-            widget = self._widgets[QPersistentModelIndex(index.siblingAtColumn(0))]
-            widget.setSelected(False)
-            # widget.update()
+        selected_indexes = [QPersistentModelIndex(idx) for idx in selected.indexes()]
+        deselected_indexes = [QPersistentModelIndex(idx) for idx in deselected.indexes()]
+        for index in deselected_indexes:
+            if index.isValid() and index.column() == 0:
+                if widget:=self.widgetFromIndex(index):
+                    widget.setSelected(False)
 
-        for index in selected.indexes():
-            widget = self._widgets[QPersistentModelIndex(index.siblingAtColumn(0))]
-            widget.setSelected(True)
-            # widget.update()
+        for index in selected_indexes:
+            if index.isValid() and index.column() == 0:
+                if widget:=self.widgetFromIndex(index):
+                    widget.setSelected(True)
+        
         scene.blockSignals(False)
 
     def updateSelectionModel(self):
@@ -272,9 +275,6 @@ class GraphView(QGraphicsView):
         assert isinstance(index, QPersistentModelIndex), "Index must be a QPersistentModelIndex"
         assert index.column()==0, "Index must be in the first column"
         
-        # Remove all cell widgets for this node
-        self._remove_cell_widgets(index.row(), index.parent() )
-
         # remove widget from graphview
         widget = self._widgets[index]
         del self._widgets[index]
@@ -284,13 +284,12 @@ class GraphView(QGraphicsView):
             raise NotImplementedError()
         else:
             self.scene().removeItem(widget)
+        print(f"Removed node widget")
         
     def _remove_inlet_widget(self, index:QPersistentModelIndex):
         """Remove an inlet widget and its associated cell widgets."""
         assert isinstance(index, QPersistentModelIndex), "Index must be a QPersistentModelIndex"
         assert index.column()==0, "Index must be in the first column"
-        # Remove all cell widgets for this inlet
-        self._remove_cell_widgets(index.row(), index.parent() )
         
         # remove widget from graphview
         widget = self._widgets[index]
@@ -303,17 +302,15 @@ class GraphView(QGraphicsView):
             parent_widget.removeInlet(widget)
         else:
             raise NotImplementedError("support inlets attached to the root graph")
+        print(f"Removed inlet widget")
 
     def _remove_outlet_widget(self, index:QPersistentModelIndex):
         """Remove an outlet widget and its associated cell widgets."""
         assert isinstance(index, QPersistentModelIndex), "Index must be a QPersistentModelIndex"
         assert index.column()==0, "Index must be in the first column"
-        
-        # remove widget from graphview
-        widget = self._widgets[index]
-        del self._widgets[index]
-        
+           
         # detach widget from scene (or parent widget)
+        widget = self._widgets[index]
         if index.parent().isValid():
             parent_widget = self._widgets[QPersistentModelIndex(index.parent())]
             parent_widget = cast(NodeWidget, parent_widget)
@@ -321,46 +318,34 @@ class GraphView(QGraphicsView):
         else:
             raise NotImplementedError("support inlets attached to the root graph")
         
+        # remove widget from graphview
+        del self._widgets[index]
+        print(f"Removed outlet widget")
+        
     def _remove_link_widget(self, index:QPersistentModelIndex):
         """Remove an inlet widget and its associated cell widgets."""
         assert isinstance(index, QPersistentModelIndex), "Index must be a QPersistentModelIndex"
         assert index.column()==0, "Index must be in the first column"
-        widget = self._widgets[index]
+        
         # detach widget from scene (or parent widget)
-        link_widget = cast(LinkWidget, widget)
-        
-        # link_widget.deleteLater()  # Schedule for deletion
-        link_widget.setParentItem(None)
-        self.scene().removeItem(link_widget)
-
-        # Remove all cell widgets for this inlet
-        # self._remove_cell_widgets(index.row(), index.parent())
-        
-        # remove widget from graphview
-        
+        widget = self._widgets[index]
         assert isinstance(widget, LinkWidget), "Link widget must be of type LinkWidget"
-        del self._widgets[index]
-
+        link_widget = cast(LinkWidget, widget)
+        link_widget.unlink()  # Unlink the link widget from its source and target items
+        link_widget.setParentItem(None)
         self.scene().removeItem(link_widget)  # Remove from scene immediately
+
+        # remove widget from graphview
+        del self._widgets[index]
+        print(f"Removed link widget")
 
     def _set_data(self, index:QPersistentModelIndex, column:int, roles:list=[]):
         """Set the data for a node widget."""
         assert isinstance(index, QPersistentModelIndex), "Index must be a QPersistentModelIndex"
         assert index.column() == 0, "Index must be in the first column"
-        assert index in self._widgets, f"Index {index} not found in row widgets"
 
-        widget = self._widgets[index]
-        widget.setLabel(index.data(Qt.ItemDataRole.DisplayRole))
-        # if not isinstance(widget, NodeWidget):
-        #     raise ValueError(f"Widget for index {index} is not a NodeWidget")
-        
-        # # update cell widgets
-        # cell_index = index.sibling(index.row(), column)
-        # widget = self._cell_widgets[QPersistentModelIndex(cell_index)]
-        # proxy = cast(QGraphicsProxyWidget, widget)
-        # label = proxy.widget()
-        # assert isinstance(label, QLabel)
-        # label.setText(cell_index.data(Qt.ItemDataRole.DisplayRole))
+        if widget := self._widgets.get(index):
+            widget.setLabel(index.data(Qt.ItemDataRole.DisplayRole))
 
     def _createDraftLink(self):
         """Safely create draft link with state tracking"""
@@ -798,14 +783,14 @@ class LinkWidget(BaseRowWidget):
 
         tail_distance = (event.pos() - self.line().p1()).manhattanLength()
         head_distance = (event.pos() - self.line().p2()).manhattanLength()
-        if self._source is None and self._target is None:
+        if self._source and self._target:
             if tail_distance < head_distance:
                 startDragTail()
             else:
                 startDragHead()
-        elif self._target is not None:
+        elif self._target:
             startDragTail()
-        elif self._source is not None:
+        elif self._source:
             startDragHead()
             
         super().mousePressEvent(event) # select on mousepress

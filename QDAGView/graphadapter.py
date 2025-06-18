@@ -70,7 +70,7 @@ class GraphAdapter(QObject):
             if self.itemType(index) == GraphItemType.NODE:
                 yield index
 
-    def inlets(self, node:QModelIndex|QPersistentModelIndex=QModelIndex()) -> Iterable[QPersistentModelIndex]:
+    def inlets(self, node:QModelIndex|QPersistentModelIndex) -> Iterable[QPersistentModelIndex]:
         """
         Get all inlets in the graph.
         This returns a list of QModelIndexes for the outlets in the graph.
@@ -81,7 +81,7 @@ class GraphAdapter(QObject):
             if self.itemType(index) == GraphItemType.INLET:
                 yield index
 
-    def outlets(self, node:QModelIndex|QPersistentModelIndex=QModelIndex()) -> Iterable[QPersistentModelIndex]:
+    def outlets(self, node:QModelIndex|QPersistentModelIndex) -> Iterable[QPersistentModelIndex]:
         """
         Get all outlets in the graph.
         This returns a list of QModelIndexes for the outlets in the graph.
@@ -92,7 +92,7 @@ class GraphAdapter(QObject):
             if self.itemType(index) == GraphItemType.OUTLET:
                 yield index
     
-    def inLinks(self, inlet:QModelIndex|QPersistentModelIndex=QModelIndex()) -> Iterable[QPersistentModelIndex]:
+    def inLinks(self, inlet:QModelIndex|QPersistentModelIndex) -> Iterable[QPersistentModelIndex]:
         """
         Get all links in the graph.
         This returns a list of QModelIndexes for the links in the graph.
@@ -103,14 +103,14 @@ class GraphAdapter(QObject):
             if self.itemType(index) == GraphItemType.LINK:
                 yield index
 
-    def outLinks(self, outlet:QModelIndex|QPersistentModelIndex=QModelIndex()) -> Iterable[QPersistentModelIndex]:
+    def outLinks(self, outlet:QModelIndex|QPersistentModelIndex) -> Iterable[QPersistentModelIndex]:
         """
         Get all links in the graph.
         This returns a list of QModelIndexes for the links in the graph.
         """
         ...
 
-    def linkSource(self, link:QModelIndex|QPersistentModelIndex=QModelIndex()) -> QPersistentModelIndex:
+    def linkSource(self, link:QModelIndex|QPersistentModelIndex) -> QPersistentModelIndex:
         """
         Get the source of a link in the graph.
         This returns the QModelIndex of the source of the link at the specified index.
@@ -122,7 +122,7 @@ class GraphAdapter(QObject):
         else:
             return QPersistentModelIndex()
     
-    def linkTarget(self, link:QModelIndex|QPersistentModelIndex=QModelIndex()) -> QPersistentModelIndex:
+    def linkTarget(self, link:QModelIndex|QPersistentModelIndex) -> QPersistentModelIndex:
         """
         Get the target of a link in the graph.
         This returns the QModelIndex of the target of the link at the specified index.
@@ -134,7 +134,7 @@ class GraphAdapter(QObject):
         else:
             return QPersistentModelIndex()
 
-    def data(self, index:QModelIndex|QPersistentModelIndex=QModelIndex(), role:int=Qt.ItemDataRole.DisplayRole) -> Any:
+    def data(self, index:QModelIndex|QPersistentModelIndex, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
         """
         Get the data for a node in the graph.
         This returns the data for the node at the specified column.
@@ -143,7 +143,7 @@ class GraphAdapter(QObject):
         return index.data(role)
     
     ## Helpers
-    def itemType(self, index:QPersistentModelIndex):
+    def itemType(self, index:QPersistentModelIndex)-> GraphItemType | None:
         row_kind = index.data(GraphDataRole.TypeRole)
         if not row_kind:
             row_kind = self._defaultItemType(index)
@@ -232,15 +232,20 @@ class GraphAdapter(QObject):
 
             
         # Add child to the selected item using generic methods
+        self._sourceModel.beginInsertRows(inlet, 0, 0)
+        self._sourceModel.blockSignals(True)
         if self._sourceModel.columnCount(inlet) == 0:
             # Make sure the parent has at least one column for children, otherwise the treeview won't show them
             self._sourceModel.insertColumns(0, 1, inlet)
         position = self._sourceModel.rowCount(inlet)
+
         if self._sourceModel.insertRows(position, 1, inlet):
             index = self._sourceModel.index(position, 0, inlet)
             self._sourceModel.setData(index, f"Child Item {position + 1}", role=Qt.ItemDataRole.DisplayRole)
             self._sourceModel.setData(index, QPersistentModelIndex(outlet), role=GraphDataRole.SourceRole)
-
+        self._sourceModel.blockSignals(False)
+        self._sourceModel.endInsertRows()
+        
     def removeLink(self, link:QPersistentModelIndex):
         """
         Remove a link from the graph.
@@ -433,6 +438,11 @@ class GraphAdapter(QObject):
         """
         assert self._sourceModel
 
+        print(f"onRowsAboutToBeRemoved: parent={parent}, first={first}, last={last}")
+        for row in range(first, last + 1):
+            index = self._sourceModel.index(row, 0, parent)
+            print(f"- {index.data(Qt.ItemDataRole.DisplayRole)}")
+
         def children(index:QModelIndex):
             for row in range(self._sourceModel.rowCount(parent=index)):
                 yield self._sourceModel.index(row, 0, index)        # Breadth-first search
@@ -447,19 +457,32 @@ class GraphAdapter(QObject):
             for child in children(index):
                 queue.append(child)
 
+        # sort indexes by depth adn row
+        def index_depth(idx: QModelIndex) -> int:
+            depth = 0
+            while idx.parent().isValid():
+                idx = idx.parent()
+                depth += 1
+            return depth
+
+        # Suppose `indexes` is a list of QModelIndex objects
+        sorted_indexes = sorted(
+            bfs_indexes,
+            key=lambda idx: (index_depth(idx), idx.row()),
+            reverse=True  # deepest and highest row first
+        )
+
         # remove links first
-        link_indexes = filter(lambda idx: self.itemType(idx) == GraphItemType.LINK, bfs_indexes)
+        # link_indexes = filter(lambda idx: self.itemType(idx) == GraphItemType.LINK, sorted_indexes)
         
-        for index in link_indexes:
-            self.linkAboutToBeRemoved.emit(QPersistentModelIndex(index))
-            # self._remove_link_widget(index.row(), index.parent())
+        # for index in link_indexes:
+        #     self.linkAboutToBeRemoved.emit(QPersistentModelIndex(index))
+        #     # self._remove_link_widget(index.row(), index.parent())
 
-        # remove widgets reversed depth order
-        non_link_indexes = filter(lambda idx: self.itemType(idx) != GraphItemType.LINK, reversed(bfs_indexes) )
-        for index in non_link_indexes:
-            row_kind = self.itemType(index)
-            match row_kind:
-
+        # # remove widgets reversed depth order
+        # non_link_indexes = filter(lambda idx: self.itemType(idx) != GraphItemType.LINK, sorted_indexes )
+        for index in sorted_indexes:
+            match self.itemType(index):
                 case None:
                     pass
                 case GraphItemType.NODE:
@@ -468,19 +491,36 @@ class GraphAdapter(QObject):
                     self.inletAboutToBeRemoved.emit(QPersistentModelIndex(index))
                 case GraphItemType.OUTLET:
                     self.outletAboutToBeRemoved.emit(QPersistentModelIndex(index))
+                case GraphItemType.LINK:
+                    self.linkAboutToBeRemoved.emit(QPersistentModelIndex(index))
                 case _:
-                    raise NotImplementedError(f"Row kind {row_kind} is not implemented!")
+                    raise NotImplementedError(f"Row kind '{self.itemType(index)}' is not implemented!")
 
     @Slot(QModelIndex, QModelIndex, list)
     def onDataChanged(self, topLeft:QModelIndex , bottomRight:QModelIndex , roles=[]):
         assert self._sourceModel
 
-        ## Update data cells
-        for row in range(topLeft.row(), bottomRight.row()+1):
-            index = topLeft.sibling(row, 0)
+        indexes = list(map(lambda row: QPersistentModelIndex(topLeft.sibling(row, 0)), range(topLeft.row(), bottomRight.row() + 1)))
 
+        if GraphDataRole.SourceRole in roles or roles == []:
+            for index in indexes:
+                if self.itemType(index) == GraphItemType.LINK:
+                    persistent_link_index = index
+                    
+                    new_outlet = self.linkSource(persistent_link_index)
+                    new_inlet = self.linkTarget(persistent_link_index)
+                    assert new_outlet.isValid(), "New outlet index must be valid"
+                    assert new_inlet.isValid(), "New inlet index must be valid"
+                    self.removeLink(persistent_link_index)
+                    indexes.remove(persistent_link_index)
+                    self.addLink(new_outlet, new_inlet)
+                    # self.linkAboutToBeRemoved.emit(persistent_link_index)
+                    # self.linkAdded.emit(persistent_link_index)
+
+        ## Update data cells
+        for index in indexes:
             for col in range(topLeft.column(), bottomRight.column()+1):
-                self.dataChanged.emit(QPersistentModelIndex(index), col, roles)
+                self.dataChanged.emit(index, col, roles)
 
 
         ## check if link source has changed
@@ -527,7 +567,6 @@ class GraphAdapter(QObject):
         return False
 
     def dropMimeData(self, data:QMimeData, action:Qt.DropAction, drop_target:QPersistentModelIndex) -> bool:
-        
         drop_target_type = self.itemType(drop_target)
         if data.hasFormat(GraphMimeData.OutletData):
             # outlet dropped
@@ -558,11 +597,19 @@ class GraphAdapter(QObject):
                 # ... on inlet
                 inlet_index = drop_target
                 self.removeLink(link_index)
-                self.addLink(link_index, inlet_index)
+                self.addLink(outlet_index, inlet_index)
+                return True
+            elif drop_target_type == GraphItemType.OUTLET:
+                # ... on outlet
+                # relink outlet
+                new_outlet_index = drop_target
+                current_inlet_index = self.linkTarget(link_index)
+                self.removeLink(link_index)
+                self.addLink(new_outlet_index, current_inlet_index)
                 return True
             else:
                 # ... on empty space
-                IsLinked = self.linkSource(link_index).isValid() and self.linkTarget().isValid()
+                IsLinked = self.linkSource(link_index).isValid() and self.linkTarget(link_index).isValid()
                 if IsLinked:
                     self.removeLink(link_index)
                     return True
@@ -578,9 +625,18 @@ class GraphAdapter(QObject):
                 self.removeLink(link_index)
                 self.addLink(outlet_index, link_index)
                 return True
+            
+            elif drop_target_type == GraphItemType.INLET:
+                # ... on inlet
+                # relink inlet
+                new_inlet_index = drop_target
+                current_outlet_index = self.linkSource(link_index)
+                self.removeLink(link_index)
+                self.addLink(current_outlet_index, new_inlet_index)
+                return True
             else:
                 # ... on empty space
-                IsLinked = self.linkSource(link_index).isValid() and self.linkTarget().isValid()
+                IsLinked = self.linkSource(link_index).isValid() and self.linkTarget(link_index).isValid()
                 if IsLinked:
                     self.removeLink(link_index)
                     return True
