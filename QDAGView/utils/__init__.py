@@ -1,5 +1,18 @@
 from typing import *
 from itertools import groupby
+from typing import Iterable, List, Callable
+
+def bfs(*root, children:Callable, reverse:bool=False) -> List:
+    queue:List = [*root]
+    result = list()
+    while queue:
+        index = queue.pop(0)  # Remove from front for proper BFS
+        result.append(index)
+        for child in children(index):
+            queue.append(child)
+
+
+    return reversed(result) if reverse else result
 
 def _group_consecutive_numbers_clever(numbers:Iterable[int])->Iterable[range]:
     from itertools import groupby

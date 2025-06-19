@@ -4,8 +4,10 @@ from PySide6.QtGui import *
 from collections import defaultdict
 
 from graphmodel import GraphModel, NodeItem, InletItem, OutletItem, BaseRowItem
-from graphview import GraphView, GraphAdapter
+from graphview import GraphView
+
 from core import GraphDataRole, GraphItemType
+
 
 class MainWindow(QWidget):
     def __init__(self):
@@ -48,19 +50,15 @@ class MainWindow(QWidget):
 
         # setup model and selection
         self._model:QStandardItemModel|None = None
-        self._adapter:GraphAdapter|None = None
         self._selection:QItemSelectionModel|None = None 
         self.setModel(QStandardItemModel())
         self.setSelectionModel(QItemSelectionModel(self.model()))
         
-
     def setModel(self, model: QAbstractItemModel):
         """Set the model for the treeview."""
         self._model = model
         self._treeview.setModel(model)
-        self._adapter = GraphAdapter()
-        self._adapter.setSourceModel(self._model)
-        self._graphview.setAdapter(self._adapter)
+        self._graphview.setModel(model)
         
     def model(self) -> QStandardItemModel:
         """Get the current model."""
@@ -117,7 +115,7 @@ class MainWindow(QWidget):
         menu = QMenu(self)
         # index = self.treeview.indexAt(pos)  # Ensure the context menu is shown at the correct position
         index = self.selection().currentIndex()
-        item_type = self._adapter.itemType(index)
+        item_type = self._graphview._delegate.itemType(index)
 
         match item_type:
             case GraphItemType.SUBGRAPH:
@@ -159,21 +157,15 @@ class MainWindow(QWidget):
 
     def remove_selected_items(self):
         """Remove all selected items from the model."""
-        assert self._model is not None
-
-        indexes = self._treeview.selectionModel().selectedRows()
+        selection = self.selection()
+        indexes = selection.selectedRows()
         if not indexes:
             return
-            
-        # Group indexes by parent to avoid shifting issues
-        parent_map = defaultdict(list)
-        for index in indexes:
-            parent_map[index.parent()].append(index.row())
-            
-        # Remove rows in reverse order to maintain correct row numbers
-        for parent, rows in parent_map.items():
-            for row in sorted(rows, reverse=True):
-                self._model.removeRows(row, 1, parent)
+
+        # Remove from bottom to top to avoid shifting row indices
+        for index in sorted(indexes, key=lambda x: (x.parent(), -x.row())):
+            parent = index.parent()
+            self._model.removeRow(index.row(), parent)
 
 
 if __name__ == "__main__":
