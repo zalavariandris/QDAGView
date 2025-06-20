@@ -12,25 +12,25 @@ class GraphDelegate(QObject):
     def __init__(self):
         super().__init__()
 
-    def linkSource(self, link_index:QModelIndex) -> QPersistentModelIndex|None:
+    def linkSource(self, link_index:QModelIndex|QPersistentModelIndex) -> QModelIndex|None:
         source_index = link_index.data(GraphDataRole.SourceRole)
-        assert isinstance(source_index, (QPersistentModelIndex, None)), "Source index must be a QPersistentModelIndex"
-        return source_index
+        assert source_index is None or source_index.isValid(), "Source index must be valid or None"
+        return QModelIndex(source_index)
     
-    def linkTarget(self, link_index:QModelIndex) -> QPersistentModelIndex:
+    def linkTarget(self, link_index:QModelIndex|QPersistentModelIndex) -> QModelIndex:
         assert link_index.isValid(), "Link index must be valid"
         target_index = link_index.parent()
         assert target_index.isValid(), "Target index must be valid"
-        return QPersistentModelIndex(target_index)
+        return target_index
     
-    def itemType(self, index:QPersistentModelIndex)-> GraphItemType | None:
+    def itemType(self, index:QModelIndex|QPersistentModelIndex)-> GraphItemType | None:
         row_kind = index.data(GraphDataRole.TypeRole)
         if not row_kind:
             row_kind = self._defaultItemType(index)
         assert self._validateItemType(index, row_kind), f"Invalid row kind {row_kind} for index {index}!"
         return row_kind
     
-    def _defaultItemType(self, index:QPersistentModelIndex) -> GraphItemType | None:
+    def _defaultItemType(self, index:QModelIndex|QPersistentModelIndex) -> GraphItemType | None:
         """
         Determine the kind of row based on the index.
         This is used to determine whether to create a Node, Inlet, Outlet or Link widget.
@@ -51,7 +51,7 @@ class GraphDelegate(QObject):
                 "Index must be a valid QModelIndex with a valid parent."
             )
         
-    def _validateItemType(self, index:QPersistentModelIndex, item_type: 'GraphItemType') -> bool:
+    def _validateItemType(self, index:QModelIndex|QPersistentModelIndex, item_type: 'GraphItemType') -> bool:
         """
         Validate the row kind based on the index.
         This is used to ensure that the row kind matches the expected kind
@@ -81,7 +81,7 @@ class GraphDelegate(QObject):
         row = model.rowCount(subgraph)
         model.insertRows(row, 1, subgraph) 
 
-    def addInlet(self, model:QAbstractItemModel, node:QPersistentModelIndex)->bool:
+    def addInlet(self, model:QAbstractItemModel, node:QModelIndex|QPersistentModelIndex)->bool:
         assert node.isValid(), "Node index must be valid"
         assert self.itemType(node) == GraphItemType.NODE, "Node index must be of type NODE"
         
@@ -98,7 +98,7 @@ class GraphDelegate(QObject):
             return True
         return False
 
-    def addOutlet(self, model:QAbstractItemModel, node:QPersistentModelIndex)->bool:
+    def addOutlet(self, model:QAbstractItemModel, node:QModelIndex|QPersistentModelIndex)->bool:
         assert node.isValid(), "Node index must be valid"
         assert self.itemType(node) == GraphItemType.NODE, "Node index must be of type NODE"
         
@@ -116,23 +116,22 @@ class GraphDelegate(QObject):
             return True
         return False
 
-    def addLink(self, model:QAbstractItemModel, outlet:QPersistentModelIndex, inlet:QPersistentModelIndex):
+    def addLink(self, model:QAbstractItemModel, outlet:QModelIndex|QPersistentModelIndex, inlet:QModelIndex|QPersistentModelIndex):
         """Add a child item to the currently selected item."""
         assert model is not None, "Source model must be set before adding child items"
-        assert isinstance(outlet, QPersistentModelIndex), f"Outlet must be a QPersistentModelIndex, got: {outlet}"
         assert outlet.isValid()
         assert self.itemType(outlet) == GraphItemType.OUTLET, "Outlet index must be of type OUTLET"
-        assert isinstance(inlet, QPersistentModelIndex), f"Inlet must be a QPersistentModelIndex, got: {inlet}"
         assert inlet.isValid()
         assert self.itemType(inlet) == GraphItemType.INLET, "Inlet index must be of type INLET"
 
         # Add child to the selected item using generic methods
-        model.beginInsertRows(inlet, 0, 0)
+        position = model.rowCount(inlet)
+        model.beginInsertRows(inlet, position, position)
         model.blockSignals(True)
         if model.columnCount(inlet) == 0:
             # Make sure the parent has at least one column for children, otherwise the treeview won't show them
             model.insertColumns(0, 1, inlet)
-        position = model.rowCount(inlet)
+        
 
         if model.insertRows(position, 1, inlet):
             link_index = model.index(position, 0, inlet)
@@ -142,12 +141,11 @@ class GraphDelegate(QObject):
         model.endInsertRows()
         
     ## DELETE
-    def removeLink(self, model:QAbstractItemModel, link:QPersistentModelIndex):
+    def removeLink(self, model:QAbstractItemModel, link:QModelIndex|QPersistentModelIndex):
         """
         Remove a link from the graph.
         This removes the link at the specified index from the model.
         """
         assert model, "Source model must be set before removing a link"
-        assert isinstance(link, QPersistentModelIndex), f"Link must be a QPersistentModelIndex, got: {link}"
         assert link.isValid(), "Link index must be valid"
         model.removeRows(link.row(), 1, link.parent())

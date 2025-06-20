@@ -47,6 +47,7 @@ class GraphView(QGraphicsView):
         self._selection_connections:List[Tuple[Signal, Callable]] = []
         # store model widget relations
         self._widgets: dict[QPersistentModelIndex, BaseRowWidget] = dict()
+        self._widgets_marked_for_removal: list[QPersistentModelIndex] = list()
         self._draft_link: QGraphicsLineItem | None = None
 
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
@@ -61,12 +62,12 @@ class GraphView(QGraphicsView):
         self.setAcceptDrops(True)
         self._delegate = GraphDelegate()
 
-    def indexFromWidget(self, widget:BaseRowWidget) -> QPersistentModelIndex|None:
+    def indexFromWidget(self, widget:BaseRowWidget) -> QModelIndex|None:
         """
         Get the index of the node widget in the model.
         This is used to identify the node in the model.
         """
-        return widget._index
+        return QModelIndex(widget._index)
     
     def widgetFromIndex(self, index:QModelIndex) -> BaseRowWidget|None:
         """
@@ -105,7 +106,7 @@ class GraphView(QGraphicsView):
     
     def onRowsInserted(self, parent:QModelIndex, start:int, end:int):
         assert self._model, "Model must be set before handling rows inserted!"
-        def children(index:QModelIndex) -> Iterable[QModelIndex]:
+        def children(index:QModelIndex|QPersistentModelIndex) -> Iterable[QModelIndex]:
             model = index.model()
             for row in range(model.rowCount(index)):
                 child_index = model.index(row, 0, index)
@@ -117,13 +118,13 @@ class GraphView(QGraphicsView):
                 case GraphItemType.SUBGRAPH:
                     raise NotImplementedError("Subgraphs are not yet supported in the graph view")
                 case GraphItemType.NODE:
-                    self._add_node_widget(QPersistentModelIndex(index))
+                    self._add_node_widget(index)
                 case GraphItemType.INLET:
-                    self._add_inlet_widget(QPersistentModelIndex(index))
+                    self._add_inlet_widget(index)
                 case GraphItemType.OUTLET:
-                    self._add_outlet_widget(QPersistentModelIndex(index))
+                    self._add_outlet_widget(index)
                 case GraphItemType.LINK:
-                    self._add_link_widget(QPersistentModelIndex(index))
+                    self._add_link_widget(index)
 
     def onRowsAboutToBeRemoved(self, parent:QModelIndex, start:int, end:int):
         ...
@@ -140,13 +141,13 @@ class GraphView(QGraphicsView):
                 case GraphItemType.SUBGRAPH:
                     raise NotImplementedError("Subgraphs are not yet supported in the graph view")
                 case GraphItemType.NODE:
-                    self._remove_node_widget(QPersistentModelIndex(index))
+                    self._remove_node_widget(index)
                 case GraphItemType.INLET:
-                    self._remove_inlet_widget(QPersistentModelIndex(index))
+                    self._remove_inlet_widget(index)
                 case GraphItemType.OUTLET:
-                    self._remove_outlet_widget(QPersistentModelIndex(index))
+                    self._remove_outlet_widget(index)
                 case GraphItemType.LINK:
-                    self._remove_link_widget(QPersistentModelIndex(index))
+                    self._remove_link_widget(index)
 
     def onRowsRemoved(self, parent:QModelIndex, start:int, end:int):
         ...
@@ -158,7 +159,7 @@ class GraphView(QGraphicsView):
         """
         for row in range(top_left.row(), bottom_right.row() + 1):
             index = self._model.index(row, top_left.column(), top_left.parent())
-            if widget := self._widgets.get(QPersistentModelIndex(index)):
+            if widget := self.widgetFromIndex(index):
                 widget.setLabel(index.data(Qt.ItemDataRole.DisplayRole))
 
     # # Selection
@@ -201,34 +202,34 @@ class GraphView(QGraphicsView):
         Handle selection changes in the selection model.
         This updates the selection in the graph view.
         """
-        assert self._selection, "Selection model must be set before handling selection changes!"
-        assert self._model, "Model must be set before handling selection changes!"
-        assert self._selection.model() == self._model, "Selection model must be for the same model as the graph view!"
-        print(f"onSelectionChanged: {selected.indexes()}, {deselected.indexes()}")
-        scene = self.scene()
-        scene.blockSignals(True)
+        # assert self._selection, "Selection model must be set before handling selection changes!"
+        # assert self._model, "Model must be set before handling selection changes!"
+        # assert self._selection.model() == self._model, "Selection model must be for the same model as the graph view!"
+        # print(f"onSelectionChanged: {selected.indexes()}, {deselected.indexes()}")
+        # scene = self.scene()
+        # scene.blockSignals(True)
         
-        selected_indexes = sorted([idx for idx in selected.indexes()], 
-                                  key= lambda idx: idx.row(), 
-                                  reverse= True)
+        # selected_indexes = sorted([idx for idx in selected.indexes()], 
+        #                           key= lambda idx: idx.row(), 
+        #                           reverse= True)
         
-        deselected_indexes = sorted([idx for idx in deselected.indexes()], 
-                                    key= lambda idx: idx.row(), 
-                                    reverse= True)
+        # deselected_indexes = sorted([idx for idx in deselected.indexes()], 
+        #                             key= lambda idx: idx.row(), 
+        #                             reverse= True)
         
-        for index in deselected_indexes:
-            if index.isValid() and index.column() == 0:
-                if widget:=self.widgetFromIndex(QPersistentModelIndex(index)):
-                    if widget.scene() and widget.isSelected():
-                        widget.setSelected(False)
+        # for index in deselected_indexes:
+        #     if index.isValid() and index.column() == 0:
+        #         if widget:=self.widgetFromIndex(index):
+        #             if widget.scene() and widget.isSelected():
+        #                 widget.setSelected(False)
 
-        for index in selected_indexes:
-            if index.isValid() and index.column() == 0:
-                if widget:=self.widgetFromIndex(QPersistentModelIndex(index)):
-                    if widget.scene() and not widget.isSelected():
-                        widget.setSelected(True)
+        # for index in selected_indexes:
+        #     if index.isValid() and index.column() == 0:
+        #         if widget:=self.widgetFromIndex(index):
+        #             if widget.scene() and not widget.isSelected():
+        #                 widget.setSelected(True)
         
-        scene.blockSignals(False)
+        # scene.blockSignals(False)
 
     def updateSelectionModel(self):
         """update selection model from scene selection"""
@@ -242,7 +243,7 @@ class GraphView(QGraphicsView):
             selected_indexes = filter(lambda idx: idx is not None and idx.isValid(), selected_indexes)
             
             assert self._model
-            def selectionFromIndexes(selected_indexes:Iterable[QPersistentModelIndex]) -> QItemSelection:
+            def selectionFromIndexes(selected_indexes:Iterable[QModelIndex|QPersistentModelIndex]) -> QItemSelection:
                 """Create a QItemSelection from a list of selected indexes."""
                 item_selection = QItemSelection()
                 for index in selected_indexes:
@@ -261,12 +262,13 @@ class GraphView(QGraphicsView):
                 )
                 
     # Manage Widgets
-    def _add_node_widget(self, index:QPersistentModelIndex):
+    def _add_node_widget(self, index:QModelIndex|QPersistentModelIndex):
         #add widget to view
-        assert isinstance(index, QPersistentModelIndex), f"Index must be a QPersistentModelIndex, got: {index}"
+        assert index.isValid()
         assert index.column()==0, "Index must be in the first column"
+
         widget = NodeWidget(graphview=self)
-        self._widgets[index] = widget
+        self._widgets[QPersistentModelIndex(index)] = widget
         widget._index = QPersistentModelIndex(index)
         self._set_data(index, 0)
 
@@ -277,13 +279,13 @@ class GraphView(QGraphicsView):
             self.scene().addItem(widget)
         return widget
 
-    def _add_inlet_widget(self, index:QPersistentModelIndex):
+    def _add_inlet_widget(self, index:QModelIndex|QPersistentModelIndex):
         #add widget to view
-        assert isinstance(index, QPersistentModelIndex), "Index must be a QPersistentModelIndex"
+        assert index.isValid(), "Index must be valid"
         assert index.column()==0, "Index must be in the first column"
         # add widget
         widget = InletWidget(graphview=self)
-        self._widgets[index] = widget
+        self._widgets[QPersistentModelIndex(index)] = widget
         widget._index = QPersistentModelIndex(index)
         self._set_data(index, 0)
 
@@ -299,10 +301,10 @@ class GraphView(QGraphicsView):
         
     def _add_outlet_widget(self, index:QPersistentModelIndex):
         """add widget to view"""
-        assert isinstance(index, QPersistentModelIndex), "Index must be a QPersistentModelIndex"
+        assert index.isValid(), "Index must be valid"
         assert index.column()==0, "Index must be in the first column"
         widget = OutletWidget(graphview=self)
-        self._widgets[index] = widget
+        self._widgets[QPersistentModelIndex(index)] = widget
         widget._index = QPersistentModelIndex(index)
         self._set_data(index, 0)
 
@@ -317,22 +319,23 @@ class GraphView(QGraphicsView):
         """
         Try to add a link widget to the graph view.
         """
-        assert isinstance(index, QPersistentModelIndex), "Index must be a QPersistentModelIndex"
+        assert index.isValid(), "Index must be valid"
         assert index.column()==0, "Index must be in the first column"
 
         widget = LinkWidget(graphview=self)
-        self._widgets[index] = widget
+        self._widgets[QPersistentModelIndex(index)] = widget
         widget._index = QPersistentModelIndex(index)
         self.scene().addItem(widget)
-        source_index = self._delegate.linkSource(index)
-        source_outlet = self._widgets[QPersistentModelIndex(source_index)] if source_index.isValid() else None
-        target_index = self._delegate.linkTarget(index)
-        target_inlet = self._widgets[QPersistentModelIndex(target_index)] if target_index.isValid() else None
-        widget.link(source_outlet, target_inlet)
 
-    def _remove_node_widget(self, index:QPersistentModelIndex):
+        source_index = self._delegate.linkSource(index)
+        source_widget = self.widgetFromIndex(source_index)
+        target_index = self._delegate.linkTarget(index)
+        target_widget = self.widgetFromIndex(target_index)
+        widget.link(source_widget, target_widget)
+
+    def _remove_node_widget(self, index:QModelIndex|QPersistentModelIndex):
         """Remove a node widget"""
-        assert isinstance(index, QPersistentModelIndex), "Index must be a QPersistentModelIndex"
+        assert index.isValid(), "Index must be valid"
         assert index.column()==0, "Index must be in the first column"
 
         self.scene().blockSignals(True) #Block signals to prevent unnecessary updates during removal, eg selection
@@ -340,7 +343,7 @@ class GraphView(QGraphicsView):
         widget = self.widgetFromIndex(index)
 
         # remove widget from graphview
-        del self._widgets[index]
+        del self._widgets[QPersistentModelIndex(index)]
 
         # detach from scene or parent widget
         if index.parent().isValid():
@@ -350,9 +353,9 @@ class GraphView(QGraphicsView):
         print(f"Removed node widget")
         self.scene().blockSignals(False)  # Unblock signals after removal
         
-    def _remove_inlet_widget(self, index:QPersistentModelIndex):
+    def _remove_inlet_widget(self, index:QModelIndex|QPersistentModelIndex):
         """Remove an inlet widget and its associated cell widgets."""
-        assert isinstance(index, QPersistentModelIndex), "Index must be a QPersistentModelIndex"
+        assert index.isValid()
         assert index.column()==0, "Index must be in the first column"
         
         self.scene().blockSignals(True)  # Block signals to prevent unnecessary updates during removal, eg selection
@@ -360,21 +363,20 @@ class GraphView(QGraphicsView):
         widget = self.widgetFromIndex(index)
 
         # remove widget from graphview
-        del self._widgets[index]
+        del self._widgets[QPersistentModelIndex(index)]
 
         # detach widget from scene (or parent widget)
         if index.parent().isValid():
-            parent_widget = self._widgets[QPersistentModelIndex(index.parent())]
-            parent_widget = cast(NodeWidget, parent_widget)
+            parent_widget = cast(NodeWidget, self.widgetFromIndex(index.parent()))
             parent_widget.removeInlet(widget)
         else:
             raise NotImplementedError("support inlets attached to the root graph")
         print(f"Removed inlet widget")
         self.scene().blockSignals(False)  # Unblock signals after removal
 
-    def _remove_outlet_widget(self, index:QPersistentModelIndex):
+    def _remove_outlet_widget(self, index:QModelIndex|QPersistentModelIndex):
         """Remove an outlet widget and its associated cell widgets."""
-        assert isinstance(index, QPersistentModelIndex), "Index must be a QPersistentModelIndex"
+        assert index.isValid()
         assert index.column()==0, "Index must be in the first column"
         
         self.scene().blockSignals(True)  # Block signals to prevent unnecessary updates during removal, eg selection
@@ -382,12 +384,11 @@ class GraphView(QGraphicsView):
         widget = self.widgetFromIndex(index)
 
         # remove widget from graphview
-        del self._widgets[index]
+        del self._widgets[QPersistentModelIndex(index)]
 
         # detach widget from scene (or parent widget)
         if index.parent().isValid():
-            parent_widget = self._widgets[QPersistentModelIndex(index.parent())]
-            parent_widget = cast(NodeWidget, parent_widget)
+            parent_widget = cast(NodeWidget, self.widgetFromIndex(index.parent()))
             parent_widget.removeOutlet(widget)
         else:
             raise NotImplementedError("support inlets attached to the root graph")
@@ -396,9 +397,9 @@ class GraphView(QGraphicsView):
         print(f"Removed outlet widget")
         self.scene().blockSignals(False)  # Unblock signals after removal
         
-    def _remove_link_widget(self, index:QPersistentModelIndex):
+    def _remove_link_widget(self, index:QModelIndex|QPersistentModelIndex):
         """Remove an inlet widget and its associated cell widgets."""
-        assert isinstance(index, QPersistentModelIndex), "Index must be a QPersistentModelIndex"
+        assert index.isValid()
         assert index.column()==0, "Index must be in the first column"
         
         self.scene().blockSignals(True)  # Block signals to prevent unnecessary updates during removal, eg selection
@@ -406,7 +407,7 @@ class GraphView(QGraphicsView):
         widget = self.widgetFromIndex(index)
 
         # remove widget from graphview
-        del self._widgets[index]
+        del self._widgets[QPersistentModelIndex(index)]
 
         # detach widget from scene (or parent widget)
         assert isinstance(widget, LinkWidget), "Link widget must be of type LinkWidget"
@@ -419,16 +420,16 @@ class GraphView(QGraphicsView):
         print(f"Removed link widget")
         self.scene().blockSignals(False)  # Unblock signals after removal
 
-    def _set_data(self, index:QPersistentModelIndex, column:int, roles:list=[]):
+    def _set_data(self, index:QModelIndex|QPersistentModelIndex, column:int, roles:list=[]):
         """Set the data for a node widget."""
-        assert isinstance(index, QPersistentModelIndex), "Index must be a QPersistentModelIndex"
+        assert index.isValid(), "Index must be valid"
         assert index.column() == 0, "Index must be in the first column"
 
         if widget := self.widgetFromIndex(index):
             widget.setLabel(index.data(Qt.ItemDataRole.DisplayRole))
 
     ## INTERNAL DRAG AND DROP
-    def _inletMimeData(self, inlet:QPersistentModelIndex)->QMimeData:
+    def _inletMimeData(self, inlet:QModelIndex|QPersistentModelIndex)->QMimeData:
         """
         Create a QMimeData object for an inlet.
         This is used to provide data for drag-and-drop operations.
@@ -445,7 +446,7 @@ class GraphView(QGraphicsView):
         mime.setData(GraphMimeData.InletData, path.encode("utf-8"))
         return mime
 
-    def _decodeInletMimeData(self, mime:QMimeData) -> QPersistentModelIndex:
+    def _decodeInletMimeData(self, mime:QMimeData) -> QModelIndex:
         """
         Decode a QMimeData object to a persistent model index.
         This is used to get the original index from the mime data.
@@ -459,9 +460,9 @@ class GraphView(QGraphicsView):
         idx = self._model.index(path[0], 0, QModelIndex())
         for row in path[1:]:
             idx = self._model.index(row, 0, idx)
-        return QPersistentModelIndex(idx)
+        return idx
     
-    def _outletMimeData(self, outlet:QPersistentModelIndex):
+    def _outletMimeData(self, outlet:QModelIndex|QPersistentModelIndex):
         """
         Create a QMimeData object for an inlet.
         This is used to provide data for drag-and-drop operations.
@@ -478,13 +479,13 @@ class GraphView(QGraphicsView):
         mime.setData(GraphMimeData.OutletData, path.encode("utf-8"))
         return mime
     
-    def _decodeOutletMimeData(self, mime:QMimeData) -> QPersistentModelIndex:
+    def _decodeOutletMimeData(self, mime:QMimeData) -> QModelIndex:
         """
         Decode a QMimeData object to a persistent model index.
         This is used to get the original index from the mime data.
         """
         if not mime.hasFormat(GraphMimeData.OutletData):
-            return QPersistentModelIndex()
+            return QModelIndex()
         
         path = mime.data(GraphMimeData.OutletData).data().decode("utf-8")
         path = list(map(int, path.split("/")))
@@ -492,7 +493,7 @@ class GraphView(QGraphicsView):
         idx = self._model.index(path[0], 0, QModelIndex())
         for row in path[1:]:
             idx = self._model.index(row, 0, idx)
-        return QPersistentModelIndex(idx)
+        return idx
     
     def _linkTailMimeData(self, link:QPersistentModelIndex) -> QMimeData:
         """
@@ -512,13 +513,13 @@ class GraphView(QGraphicsView):
         mime.setData(GraphMimeData.LinkTailData, path.encode("utf-8"))
         return mime
     
-    def _decodeLinkTailMimeData(self, mime:QMimeData) -> QPersistentModelIndex:
+    def _decodeLinkTailMimeData(self, mime:QMimeData) -> QModelIndex:
         """
         Decode a QMimeData object to a persistent model index.
         This is used to get the original index from the mime data.
         """
         if not mime.hasFormat(GraphMimeData.LinkTailData):
-            return QPersistentModelIndex()
+            return QModelIndex()
         
         path = mime.data(GraphMimeData.LinkTailData).data().decode("utf-8")
         path = list(map(int, path.split("/")))
@@ -526,9 +527,9 @@ class GraphView(QGraphicsView):
         idx = self._model.index(path[0], 0, QModelIndex())
         for row in path[1:]:
             idx = self._model.index(row, 0, idx)
-        return QPersistentModelIndex(idx)
+        return idx
     
-    def _linkHeadMimeData(self, link:QPersistentModelIndex) -> QMimeData:
+    def _linkHeadMimeData(self, link:QModelIndex|QPersistentModelIndex) -> QMimeData:
         """
         Create a QMimeData object for a link head.
         This is used to provide data for drag-and-drop operations.
@@ -545,13 +546,13 @@ class GraphView(QGraphicsView):
         mime.setData(GraphMimeData.LinkHeadData, path.encode("utf-8"))
         return mime
 
-    def _decodeLinkHeadMimeData(self, mime:QMimeData) -> QPersistentModelIndex:
+    def _decodeLinkHeadMimeData(self, mime:QMimeData) -> QModelIndex:
         """
         Decode a QMimeData object to a persistent model index.
         This is used to get the original index from the mime data.
         """
         if not mime.hasFormat(GraphMimeData.LinkHeadData):
-            return QPersistentModelIndex()
+            return QModelIndex()
         
         path = mime.data(GraphMimeData.LinkHeadData).data().decode("utf-8")
         path = list(map(int, path.split("/")))
@@ -559,10 +560,10 @@ class GraphView(QGraphicsView):
         idx = self._model.index(path[0], 0, QModelIndex())
         for row in path[1:]:
             idx = self._model.index(row, 0, idx)
-        return QPersistentModelIndex(idx)
+        return idx
 
     ## Handle drag and drop
-    def _canDropMimeData(self, data:QMimeData, action:Qt.DropAction, drop_target:QPersistentModelIndex) -> bool:
+    def _canDropMimeData(self, data:QMimeData, action:Qt.DropAction, drop_target:QModelIndex|QPersistentModelIndex) -> bool:
         """
         Check if the mime data can be dropped on the graph view.
         This is used to determine if the drag-and-drop operation is valid.
@@ -582,7 +583,8 @@ class GraphView(QGraphicsView):
         
         return False
 
-    def _dropMimeData(self, data:QMimeData, action:Qt.DropAction, drop_target:QPersistentModelIndex) -> bool:
+    def _dropMimeData(self, data:QMimeData, action:Qt.DropAction, drop_target:QModelIndex|QPersistentModelIndex) -> bool:
+        drop_target = QModelIndex(drop_target)
         drop_target_type = self._delegate.itemType(drop_target)
         
         if data.hasFormat(GraphMimeData.OutletData):
@@ -624,7 +626,7 @@ class GraphView(QGraphicsView):
                 # ... on outlet
                 # relink outlet
                 new_outlet_index = drop_target
-                current_inlet_index = self.linkTarget(link_index)
+                current_inlet_index = self._delegate.linkTarget(link_index)
                 self._delegate.removeLink(self._model, link_index)
                 self._delegate.addLink(self._model, new_outlet_index, current_inlet_index)
                 return True
@@ -796,7 +798,7 @@ class GraphView(QGraphicsView):
         # super().dragLeaveEvent(event)
         # self._cleanupDraftLink()
     
-    def indexAt(self, pos:QPointF) -> QPersistentModelIndex:
+    def indexAt(self, pos:QPointF) -> QModelIndex:
         """
         Find the index at the given position.
         This is used to determine if a drag operation is valid.
@@ -804,9 +806,9 @@ class GraphView(QGraphicsView):
         for item in self.items(pos):
             if item in self._widgets.values():
                 index = self.indexFromWidget(item)
-                return QPersistentModelIndex(index)
+                return QModelIndex(index)
 
-        return QPersistentModelIndex()
+        return QModelIndex()
 
 
 class CellWidget(QGraphicsProxyWidget):
