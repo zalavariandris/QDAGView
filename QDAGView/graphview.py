@@ -18,7 +18,7 @@ from collections import defaultdict
 from bidict import bidict
 
 from utils import group_consecutive_numbers
-from utils.geo import makeLineBetweenShapes, makeLineToShape, makeArrowShape
+from utils.geo import makeLineBetweenShapes, makeLineToShape, makeArrowShape, getShapeCenter
 # from pylive.utils.geo import makeLineBetweenShapes, makeLineToShape
 # from pylive.utils.qt import distribute_items_horizontal
 # from pylive.utils.unique import make_unique_name
@@ -558,7 +558,9 @@ class GraphView(QGraphicsView):
                 return True
             else:
                 # ... on empty space
-                IsLinked = self._delegate.linkSource(link_index).isValid() and self._delegate.linkTarget(link_index).isValid()
+                link_source = self._delegate.linkSource(link_index)
+                link_target = self._delegate.linkTarget(link_index)
+                IsLinked = link_source and link_source.isValid() and link_target and link_target.isValid()
                 if IsLinked:
                     self._delegate.removeLink(self._model, link_index)
                     return True
@@ -667,7 +669,6 @@ class GraphView(QGraphicsView):
                 
                 source_index = self._delegate.linkSource(index)
                 target_index = self._delegate.linkTarget(index)
-                print(f"Link source: {source_index.isValid()}, target: {target_index.isValid()}")
                 
                 if source_index and source_index.isValid() and target_index and target_index.isValid():
                     """Both source and target are valid, determine which end to drag"""
@@ -1023,13 +1024,18 @@ class LinkWidget(BaseRowWidget):
             line = QLineF(self.mapFromScene(line.p1()), self.mapFromScene(line.p2()))
             self.setLine(line)
         elif self._source:
-            source_pos = self._source.scenePos()-self.scenePos()
-            line = QLineF(source_pos, source_pos+QPointF(24,24))
+            source_center = getShapeCenter(self._source)
+            source_size = self._source.boundingRect().size()
+            origin = QPointF(source_center.x() - source_size.width()/2, source_center.y() - source_size.height()/2)+QPointF(24,24)
+            line = makeLineToShape(origin, self._source)
             line = QLineF(self.mapFromScene(line.p1()), self.mapFromScene(line.p2()))
+            line = QLineF(line.p2(), line.p1())  # Reverse the line direction
             self.setLine(line)
         elif self._target:
-            target_pos = self._target.scenePos()-self.scenePos()
-            line = QLineF(target_pos-QPointF(24,24), target_pos)
+            target_center = getShapeCenter(self._target)
+            target_size = self._target.boundingRect().size()
+            origin = QPointF(target_center.x() - target_size.width()/2, target_center.y() - target_size.height()/2)-QPointF(24,24)
+            line = makeLineToShape(origin, self._target)
             line = QLineF(self.mapFromScene(line.p1()), self.mapFromScene(line.p2()))
             self.setLine(line)
         else:

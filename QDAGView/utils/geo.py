@@ -252,7 +252,11 @@ def getShapeLeft(shape:QGraphicsItem | QPainterPath | QRectF | QPointF)->QPointF
             raise ValueError()
 
 
-def getShapeCenter(shape: QPointF | QRectF | QPainterPath | QGraphicsItem):
+def getShapeCenter(shape: QPointF | QRectF | QPainterPath | QGraphicsItem)->QPointF:
+    """
+    Get the center point in scene coordinates of a shape, 
+    which can be a QPointF, QRectF, QPainterPath, or QGraphicsItem.
+    """
     match shape:
         case QPointF():
             return shape
@@ -264,14 +268,18 @@ def getShapeCenter(shape: QPointF | QRectF | QPainterPath | QGraphicsItem):
             sceneShape = shape.sceneTransform().map(shape.shape())
             return sceneShape.boundingRect().center()
         case _:
-            raise ValueError
+            raise ValueError(f"Unsupported shape type for getting center point. got: {shape}")
 
 
 def makeLineToShape(
     origin: QPointF, shape: QPointF | QRectF | QPainterPath | QGraphicsItem
-):
-    center = getShapeCenter(shape)
+)->QLineF:
+    """
+    Make a line - in scene coordinates - from the origin to the center of the shape.
+    The line will intersect the shape at its center or closest point.
+    """
 
+    center = getShapeCenter(shape)
     match shape:
         case QPointF():
             intersection = center
@@ -317,6 +325,11 @@ def makeLineBetweenShapes(
     B: QPointF | QRectF | QPainterPath | QGraphicsItem,
     distance:float=10
 ) -> QLineF:
+    """
+    Make a line (in scene coordinates) between two shapes, offset by a specified distance.
+    The line will be adjusted to avoid overlap and ensure a clear connection.
+    """
+    
     Ac = getShapeCenter(A)
     Bc = getShapeCenter(B)
 

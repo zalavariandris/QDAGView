@@ -9,11 +9,11 @@ from graphview import GraphView
 from core import GraphDataRole, GraphItemType
 
 
-class MainWindow(QWidget):
+class GraphWithQStandardItemModel(QWidget):
     def __init__(self):
         super().__init__()
         # setup view
-        self.setWindowTitle("Graph Model Example")
+        self.setWindowTitle("Graph with QStandardItemModel Example")
 
         # toolbar
         button_layout = QHBoxLayout()
@@ -170,6 +170,6 @@ if __name__ == "__main__":
     from qt_material import apply_stylesheet
     app = QApplication(sys.argv)
 
-    window = MainWindow()
+    window = GraphWithQStandardItemModel()
     window.show()
     sys.exit(app.exec())
