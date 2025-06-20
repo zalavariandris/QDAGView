@@ -1,9 +1,9 @@
-from PySide6.QtWidgets import *
-from PySide6.QtCore import *
-from PySide6.QtGui import *
+from qtpy.QtWidgets import *
+from qtpy.QtCore import *
+from qtpy.QtGui import *
 from collections import defaultdict
 
-from graphmodel import GraphModel, NodeItem, InletItem, OutletItem, BaseRowItem
+from standardgraphmodel import StandardGraphModel, NodeItem, InletItem, OutletItem, BaseRowItem
 from graphview import GraphView
 
 from core import GraphDataRole, GraphItemType

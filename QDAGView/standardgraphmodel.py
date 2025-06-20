@@ -1,7 +1,7 @@
 from __future__ import annotations
-from PySide6.QtCore import *
-from PySide6.QtGui import *
-from PySide6.QtWidgets import *
+from qtpy.QtCore import *
+from qtpy.QtGui import *
+from qtpy.QtWidgets import *
 from collections import defaultdict
 from typing import *
 from core import GraphDataRole, GraphItemType
@@ -21,13 +21,13 @@ class BaseRowItem:
         
         self._parent_item: Self|None = None
         self._child_items: List[Self] = []
-        self._model: Optional['GraphModel'] = None
+        self._model: Optional['StandardGraphModel'] = None
         
     # def type(self) -> GraphItemType:
     #     """Return the type of this item."""
     #     return GraphItemType.BASE
 
-    def model(self) -> Optional['GraphModel']:
+    def model(self) -> Optional['StandardGraphModel']:
         """Return the model associated with this item."""
         return self._model
     
@@ -251,7 +251,7 @@ class SubGraphItem(BaseRowItem):
         return self.remove_child(node)
 
 
-class GraphModel(QAbstractItemModel):
+class StandardGraphModel(QAbstractItemModel):
     def __init__(self, parent: QObject|None = None) -> None:
         """Initialize TreeModel with list headers."""
         super().__init__(parent)

@@ -10,9 +10,9 @@ import traceback
 
 from enum import Enum
 from typing import *
-from PySide6.QtGui import *
-from PySide6.QtCore import *
-from PySide6.QtWidgets import *
+from qtpy.QtGui import *
+from qtpy.QtCore import *
+from qtpy.QtWidgets import *
 
 from collections import defaultdict
 from bidict import bidict
@@ -104,50 +104,122 @@ class GraphView(QGraphicsView):
     def model(self) -> QAbstractItemModel | None:
         return self._model
     
+    def createWidget(self, parent:QGraphicsItem|None, index:QModelIndex|QPersistentModelIndex) -> BaseRowWidget:
+        match self._delegate.itemType(index):
+            case GraphItemType.SUBGRAPH:
+                raise NotImplementedError("Subgraphs are not yet supported in the graph view")
+            case GraphItemType.NODE:
+                widget = NodeWidget(graphview=self)
+            case GraphItemType.INLET:
+                widget = InletWidget(graphview=self)
+            case GraphItemType.OUTLET:
+                widget =  OutletWidget(graphview=self)
+            case GraphItemType.LINK:
+                widget = LinkWidget(graphview=self)
+            case _:
+                raise ValueError(f"Unknown item type: {self._delegate.itemType(index)}")
+        
+        match parent:
+            case None:
+                # attach to scene
+                self.scene().addItem(widget)
+            case NodeWidget():
+                match widget:
+                    case OutletWidget():
+                        parent.addOutlet(widget)
+                    case InletWidget():
+                        parent.addInlet(widget)
+                    case _:
+                        ...
+            case InletWidget():
+                match widget:
+                    case LinkWidget():
+                        widget.setParentItem(parent)
+                        source_index = self._delegate.linkSource(index)
+                        source_widget = self.widgetFromIndex(source_index)
+                        target_index = self._delegate.linkTarget(index)
+                        target_widget = self.widgetFromIndex(target_index)
+                        widget.link(source_widget, target_widget)
+        return widget
+    
+    def destroyWidget(self, widget:QGraphicsItem, index:QModelIndex|QPersistentModelIndex):
+        parent_widget = widget.parentItem()
+        match parent_widget:
+            case None:
+                # attach to scene
+                self.scene().removeItem(widget)
+            case NodeWidget():
+                match widget:
+                    case OutletWidget():
+                        parent_widget.removeOutlet(widget)
+                    case InletWidget():
+                        parent_widget.removeInlet(widget)
+                    case _:
+                        widget.setParentItem(None)
+                        self.scene().removeItem(widget)
+            case InletWidget():
+                match widget:
+                    case LinkWidget():
+                        widget.unlink()
+                        widget.setParentItem(parent_widget)
+                        self.scene().removeItem(widget)
+                    case _:
+                        widget.setParentItem(None)
+                        self.scene().removeItem(widget)
+            case _:
+                raise ValueError(f"Unknown parent widget type: {type(parent_widget)}")
+
     def onRowsInserted(self, parent:QModelIndex, start:int, end:int):
         assert self._model, "Model must be set before handling rows inserted!"
-        def children(index:QModelIndex|QPersistentModelIndex) -> Iterable[QModelIndex]:
+
+        def get_children(index:QModelIndex|QPersistentModelIndex) -> Iterable[QModelIndex]:
             model = index.model()
             for row in range(model.rowCount(index)):
                 child_index = model.index(row, 0, index)
                 yield child_index
             return []
         
-        for index in bfs(*[self._model.index(row, 0, parent) for row in range(start, end + 1)], children=children, reverse=False):
-            match self._delegate.itemType(index):
-                case GraphItemType.SUBGRAPH:
-                    raise NotImplementedError("Subgraphs are not yet supported in the graph view")
-                case GraphItemType.NODE:
-                    self._add_node_widget(index)
-                case GraphItemType.INLET:
-                    self._add_inlet_widget(index)
-                case GraphItemType.OUTLET:
-                    self._add_outlet_widget(index)
-                case GraphItemType.LINK:
-                    self._add_link_widget(index)
+        sorted_indexes = bfs(
+            *[self._model.index(row, 0, parent) for row in range(start, end + 1)], 
+            children=get_children, 
+            reverse=False
+        )
+                
+        parent_widget = self.widgetFromIndex(parent) if parent.isValid() else None
+        for index in sorted_indexes:
+            try:
+                widget = self.createWidget(parent_widget, index)
+            except NotImplementedError as e:
+                logger.error(f"Error creating widget for index {index}: {e}")
+                traceback.print_exc()
+                continue
+
+            self._widgets[QPersistentModelIndex(index)] = widget
+            widget._index = QPersistentModelIndex(index)
+
+            self._set_data(index, 0)
 
     def onRowsAboutToBeRemoved(self, parent:QModelIndex, start:int, end:int):
-        ...
-
-        def children(index:QModelIndex) -> Iterable[QModelIndex]:
+        def get_children(index:QModelIndex) -> Iterable[QModelIndex]:
             model = index.model()
             for row in range(model.rowCount(index)):
                 child_index = model.index(row, 0, index)
                 yield child_index
             return []
         
-        for index in bfs(*[self._model.index(row, 0, parent) for row in range(start, end + 1)], children=children, reverse=True):
-            match self._delegate.itemType(index):
-                case GraphItemType.SUBGRAPH:
-                    raise NotImplementedError("Subgraphs are not yet supported in the graph view")
-                case GraphItemType.NODE:
-                    self._remove_node_widget(index)
-                case GraphItemType.INLET:
-                    self._remove_inlet_widget(index)
-                case GraphItemType.OUTLET:
-                    self._remove_outlet_widget(index)
-                case GraphItemType.LINK:
-                    self._remove_link_widget(index)
+        sorted_indexes = bfs(
+            *[self._model.index(row, 0, parent) for row in range(start, end + 1)], 
+            children=get_children, 
+            reverse=True
+        )
+        
+        self.scene().blockSignals(True)
+        for index in sorted_indexes:
+            widget = self.widgetFromIndex(index)
+            del self._widgets[QPersistentModelIndex(index)]
+            self.destroyWidget(widget, index)
+                
+        self.scene().blockSignals(False)
 
     def onRowsRemoved(self, parent:QModelIndex, start:int, end:int):
         ...
@@ -260,165 +332,6 @@ class GraphView(QGraphicsView):
                     last_selected_index,
                     QItemSelectionModel.SelectionFlag.Current | QItemSelectionModel.SelectionFlag.Rows
                 )
-                
-    # Manage Widgets
-    def _add_node_widget(self, index:QModelIndex|QPersistentModelIndex):
-        #add widget to view
-        assert index.isValid()
-        assert index.column()==0, "Index must be in the first column"
-
-        widget = NodeWidget(graphview=self)
-        self._widgets[QPersistentModelIndex(index)] = widget
-        widget._index = QPersistentModelIndex(index)
-        self._set_data(index, 0)
-
-        # attach to scene or parent widget
-        if index.parent().isValid():
-            raise NotImplementedError()
-        else:
-            self.scene().addItem(widget)
-        return widget
-
-    def _add_inlet_widget(self, index:QModelIndex|QPersistentModelIndex):
-        #add widget to view
-        assert index.isValid(), "Index must be valid"
-        assert index.column()==0, "Index must be in the first column"
-        # add widget
-        widget = InletWidget(graphview=self)
-        self._widgets[QPersistentModelIndex(index)] = widget
-        widget._index = QPersistentModelIndex(index)
-        self._set_data(index, 0)
-
-        # attach to parent widget
-        if index.parent().isValid():
-            parent_widget = self.widgetFromIndex(index.parent())
-            if not isinstance(parent_widget, NodeWidget):
-                raise ValueError("inlets must have a Node parent")
-            parent_widget = cast(NodeWidget, parent_widget)
-            parent_widget.addInlet(widget)
-        else:
-            raise NotImplementedError("root graph inlets are not yet implemented!")
-        
-    def _add_outlet_widget(self, index:QPersistentModelIndex):
-        """add widget to view"""
-        assert index.isValid(), "Index must be valid"
-        assert index.column()==0, "Index must be in the first column"
-        widget = OutletWidget(graphview=self)
-        self._widgets[QPersistentModelIndex(index)] = widget
-        widget._index = QPersistentModelIndex(index)
-        self._set_data(index, 0)
-
-        # attach to parent widget
-        self.scene().addItem(widget)
-        if index.parent().isValid():
-            parent_widget = self.widgetFromIndex(index.parent())
-            parent_widget = cast(NodeWidget, parent_widget)
-            parent_widget.addOutlet(widget)
-
-    def _add_link_widget(self, index:QPersistentModelIndex):
-        """
-        Try to add a link widget to the graph view.
-        """
-        assert index.isValid(), "Index must be valid"
-        assert index.column()==0, "Index must be in the first column"
-
-        widget = LinkWidget(graphview=self)
-        self._widgets[QPersistentModelIndex(index)] = widget
-        widget._index = QPersistentModelIndex(index)
-        self.scene().addItem(widget)
-
-        source_index = self._delegate.linkSource(index)
-        source_widget = self.widgetFromIndex(source_index)
-        target_index = self._delegate.linkTarget(index)
-        target_widget = self.widgetFromIndex(target_index)
-        widget.link(source_widget, target_widget)
-
-    def _remove_node_widget(self, index:QModelIndex|QPersistentModelIndex):
-        """Remove a node widget"""
-        assert index.isValid(), "Index must be valid"
-        assert index.column()==0, "Index must be in the first column"
-
-        self.scene().blockSignals(True) #Block signals to prevent unnecessary updates during removal, eg selection
-        # store widget
-        widget = self.widgetFromIndex(index)
-
-        # remove widget from graphview
-        del self._widgets[QPersistentModelIndex(index)]
-
-        # detach from scene or parent widget
-        if index.parent().isValid():
-            raise NotImplementedError()
-        else:
-            self.scene().removeItem(widget)
-        print(f"Removed node widget")
-        self.scene().blockSignals(False)  # Unblock signals after removal
-        
-    def _remove_inlet_widget(self, index:QModelIndex|QPersistentModelIndex):
-        """Remove an inlet widget and its associated cell widgets."""
-        assert index.isValid()
-        assert index.column()==0, "Index must be in the first column"
-        
-        self.scene().blockSignals(True)  # Block signals to prevent unnecessary updates during removal, eg selection
-        # store widget
-        widget = self.widgetFromIndex(index)
-
-        # remove widget from graphview
-        del self._widgets[QPersistentModelIndex(index)]
-
-        # detach widget from scene (or parent widget)
-        if index.parent().isValid():
-            parent_widget = cast(NodeWidget, self.widgetFromIndex(index.parent()))
-            parent_widget.removeInlet(widget)
-        else:
-            raise NotImplementedError("support inlets attached to the root graph")
-        print(f"Removed inlet widget")
-        self.scene().blockSignals(False)  # Unblock signals after removal
-
-    def _remove_outlet_widget(self, index:QModelIndex|QPersistentModelIndex):
-        """Remove an outlet widget and its associated cell widgets."""
-        assert index.isValid()
-        assert index.column()==0, "Index must be in the first column"
-        
-        self.scene().blockSignals(True)  # Block signals to prevent unnecessary updates during removal, eg selection
-        # store widget  
-        widget = self.widgetFromIndex(index)
-
-        # remove widget from graphview
-        del self._widgets[QPersistentModelIndex(index)]
-
-        # detach widget from scene (or parent widget)
-        if index.parent().isValid():
-            parent_widget = cast(NodeWidget, self.widgetFromIndex(index.parent()))
-            parent_widget.removeOutlet(widget)
-        else:
-            raise NotImplementedError("support inlets attached to the root graph")
-        
-        
-        print(f"Removed outlet widget")
-        self.scene().blockSignals(False)  # Unblock signals after removal
-        
-    def _remove_link_widget(self, index:QModelIndex|QPersistentModelIndex):
-        """Remove an inlet widget and its associated cell widgets."""
-        assert index.isValid()
-        assert index.column()==0, "Index must be in the first column"
-        
-        self.scene().blockSignals(True)  # Block signals to prevent unnecessary updates during removal, eg selection
-        # store widget
-        widget = self.widgetFromIndex(index)
-
-        # remove widget from graphview
-        del self._widgets[QPersistentModelIndex(index)]
-
-        # detach widget from scene (or parent widget)
-        assert isinstance(widget, LinkWidget), "Link widget must be of type LinkWidget"
-        link_widget = cast(LinkWidget, widget)
-        link_widget.unlink()  # Unlink the link widget from its source and target items
-        link_widget.setParentItem(None)
-        self.scene().removeItem(link_widget)  # Remove from scene immediately
-
-        
-        print(f"Removed link widget")
-        self.scene().blockSignals(False)  # Unblock signals after removal
 
     def _set_data(self, index:QModelIndex|QPersistentModelIndex, column:int, roles:list=[]):
         """Set the data for a node widget."""
@@ -885,7 +798,7 @@ class InletWidget(PortWidget):
         self.setAcceptDrops(True)
 
     def paint(self, painter:QPainter, option, /, widget:QWidget|None = None):
-        painter.setBrush("lightblue")
+        painter.setBrush(QColor("lightblue"))
         painter.drawRect(option.rect)
 
     def mousePressEvent(self, event:QGraphicsSceneMouseEvent) -> None:
@@ -914,7 +827,7 @@ class OutletWidget(PortWidget):
         self.setAcceptDrops(True)
 
     def paint(self, painter, option, /, widget:QWidget|None = None):
-        painter.setBrush("purple")
+        painter.setBrush(QColor("purple"))
         painter.drawRect(option.rect)
 
     def mousePressEvent(self, event:QGraphicsSceneMouseEvent) -> None:

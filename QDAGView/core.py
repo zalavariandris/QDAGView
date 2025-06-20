@@ -1,4 +1,4 @@
-from PySide6.QtCore import *
+from qtpy.QtCore import *
 from enum import IntEnum, StrEnum
 
 

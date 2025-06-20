@@ -18,6 +18,7 @@ keywords = ["python", "livecode", "livecoding"]
 requires-python = ">=3.8"
 
 dependencies = [
+    "QtPy",
     "PySide6",
     "numpy ~= 2.1.0",
     "humanize ~= 4.11.0",
