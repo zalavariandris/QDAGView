@@ -52,7 +52,7 @@ class GraphWithQStandardItemModel(QWidget):
         self.setModel(QStandardItemModel())
         self.setSelectionModel(QItemSelectionModel(self.model()))
         
-    def setModel(self, model: QAbstractItemModel):
+    def setModel(self, model: QStandardItemModel):
         """Set the model for the treeview."""
         self._model = model
         self._treeview.setModel(model)
@@ -69,7 +69,7 @@ class GraphWithQStandardItemModel(QWidget):
         self._treeview.setSelectionModel(self._selection)
         self._graphview.setSelectionModel(self._selection)
 
-    def selection(self) -> QItemSelectionModel:
+    def selectionModel(self) -> QItemSelectionModel:
         """Get the current selection model."""
         assert self._selection is not None, "Selection model must be set before accessing it"
         return self._selection
@@ -94,7 +94,7 @@ class GraphWithQStandardItemModel(QWidget):
         """Show context-aware menu based on the current selection."""
         menu = QMenu(self)
         # index = self.treeview.indexAt(pos)  # Ensure the context menu is shown at the correct position
-        index = self.selection().currentIndex()
+        index = self.selectionModel().currentIndex()
         item_type = self._graphview._delegate.itemType(index)
 
         match item_type:
@@ -117,18 +117,23 @@ class GraphWithQStandardItemModel(QWidget):
     
     def add_node(self):
         """Add a new node to the model."""
+        assert self._model
         node_item = QStandardItem("New Node")
         self._model.appendRow(node_item)
 
     def add_inlet(self, parent:QModelIndex):
         """Add an inlet to the specified node."""
+        assert self._model
         inlet_item = QStandardItem("in")
         parent_node_item = self._model.itemFromIndex(parent)
+        assert parent_node_item
         parent_node_item.appendRow(inlet_item)
 
     def add_outlet(self, parent:QModelIndex):
         """Add an inlet to the specified node."""
+        assert self._model
         node_item = self._model.itemFromIndex(parent)
+        assert node_item
         outlet_item = QStandardItem("out")
         outlet_item.setData(GraphItemType.OUTLET, GraphDataRole.TypeRole)
         node_item.appendRow(outlet_item)
@@ -155,7 +160,8 @@ class GraphWithQStandardItemModel(QWidget):
 
     def remove_selected_items(self):
         """Remove all selected items from the model."""
-        selection = self.selection()
+        assert self._model
+        selection = self.selectionModel()
         indexes = selection.selectedRows()
         if not indexes:
             return

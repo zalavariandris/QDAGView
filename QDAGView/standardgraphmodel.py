@@ -23,10 +23,6 @@ class BaseRowItem:
         self._child_items: List[Self] = []
         self._model: Optional['StandardGraphModel'] = None
         
-    # def type(self) -> GraphItemType:
-    #     """Return the type of this item."""
-    #     return GraphItemType.BASE
-
     def model(self) -> Optional['StandardGraphModel']:
         """Return the model associated with this item."""
         return self._model
