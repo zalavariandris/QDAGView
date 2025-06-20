@@ -40,8 +40,6 @@ class MainWindow(QWidget):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(self._treeview)
         splitter.addWidget(self._graphview)
-        # splitter.setStretchFactor(0, 1)
-        # splitter.setStretchFactor(1, 3)
 
         layout = QVBoxLayout(self)
         layout.addLayout(button_layout)
@@ -92,24 +90,6 @@ class MainWindow(QWidget):
         # For other events or if the index is valid, let the default processing happen
         return super().eventFilter(obj, event)
     
-    def add_node(self):
-        """Add a new node to the model."""
-        node_item = QStandardItem("New Node")
-        self._model.appendRow(node_item)
-
-    def add_inlet(self, index:QModelIndex):
-        """Add an inlet to the specified node."""
-        node_item = self._model.itemFromIndex(index)
-        inlet_item = QStandardItem("in")
-        node_item.appendRow(inlet_item)
-
-    def add_outlet(self, index:QModelIndex):
-        """Add an inlet to the specified node."""
-        node_item = self._model.itemFromIndex(index)
-        outlet_item = QStandardItem("out")
-        outlet_item.setData(GraphItemType.OUTLET, GraphDataRole.TypeRole)
-        node_item.appendRow(outlet_item)
-    
     def showContextMenu(self, pos):
         """Show context-aware menu based on the current selection."""
         menu = QMenu(self)
@@ -134,7 +114,25 @@ class MainWindow(QWidget):
 
         menu.addAction("Remove Selected Items", self.remove_selected_items)
         menu.exec(self._treeview.viewport().mapToGlobal(pos))
-        
+    
+    def add_node(self):
+        """Add a new node to the model."""
+        node_item = QStandardItem("New Node")
+        self._model.appendRow(node_item)
+
+    def add_inlet(self, parent:QModelIndex):
+        """Add an inlet to the specified node."""
+        inlet_item = QStandardItem("in")
+        parent_node_item = self._model.itemFromIndex(parent)
+        parent_node_item.appendRow(inlet_item)
+
+    def add_outlet(self, parent:QModelIndex):
+        """Add an inlet to the specified node."""
+        node_item = self._model.itemFromIndex(parent)
+        outlet_item = QStandardItem("out")
+        outlet_item.setData(GraphItemType.OUTLET, GraphDataRole.TypeRole)
+        node_item.appendRow(outlet_item)
+    
     def add_child(self):
         """Add a child item to the currently selected item."""
         assert self._model is not None, "Model must be set before adding child items"
@@ -167,19 +165,11 @@ class MainWindow(QWidget):
             parent = index.parent()
             self._model.removeRow(index.row(), parent)
 
-
 if __name__ == "__main__":
     import sys
-
-
+    from qt_material import apply_stylesheet
     app = QApplication(sys.argv)
-    # app.setStyle("Fusion")  # Optional: Set a style for the application
-    
+
     window = MainWindow()
-
-
-    
-    
     window.show()
-
     sys.exit(app.exec())

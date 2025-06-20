@@ -78,22 +78,31 @@ class GraphDelegate(QObject):
 
     ## CREATE
     def addNode(self, model:QAbstractItemModel, subgraph:QModelIndex|QPersistentModelIndex=QModelIndex()):
-        row = model.rowCount(subgraph)
-        model.insertRows(row, 1, subgraph) 
+        position = model.rowCount(subgraph)
+        if model.insertRows(position, 1, subgraph):
+            new_index = model.index(position, 0, subgraph)
+            assert new_index.isValid(), "Created index is not valid"
+            new_node_name = f"{'Node'}#{position + 1}"
+            success = model.setData(new_index, new_node_name, Qt.ItemDataRole.DisplayRole)
+            assert success, "Failed to set data for the new child item"
+            return True
+        return False
 
     def addInlet(self, model:QAbstractItemModel, node:QModelIndex|QPersistentModelIndex)->bool:
         assert node.isValid(), "Node index must be valid"
         assert self.itemType(node) == GraphItemType.NODE, "Node index must be of type NODE"
         
+        # Make sure the parent has at least one column for children, otherwise the treeview won't show them
         if model.columnCount(node) == 0:
-            # Make sure the parent has at least one column for children, otherwise the treeview won't show them
             model.insertColumns(0, 1, node)
 
+        # Append child to the selected item using generic methods
         position = model.rowCount(node)
         if model.insertRows(position, 1, node):
             new_index = model.index(position, 0, node)
             assert new_index.isValid(), "Created index is not valid"
-            success = model.setData(new_index, f"{'Child Item' if node.isValid() else 'Item'} {position + 1}", Qt.ItemDataRole.DisplayRole)
+            new_inlet_name = f"{'in'}#{position + 1}"
+            success = model.setData(new_index, new_inlet_name, Qt.ItemDataRole.DisplayRole)
             assert success, "Failed to set data for the new child item"
             return True
         return False
@@ -110,7 +119,8 @@ class GraphDelegate(QObject):
         if model.insertRows(position, 1, node):
             new_index = model.index(position, 0, node)
             assert new_index.isValid(), "Created index is not valid"
-            success = model.setData(new_index, f"{'Child Item' if node.isValid() else 'Item'} {position + 1}", Qt.ItemDataRole.DisplayRole)
+            new_outlet_name = f"{'out'}#{position + 1}"
+            success = model.setData(new_index, new_outlet_name, Qt.ItemDataRole.DisplayRole)
             success = model.setData(new_index, GraphItemType.OUTLET, GraphDataRole.TypeRole)
             assert success, "Failed to set data for the new child item"
             return True
@@ -128,14 +138,15 @@ class GraphDelegate(QObject):
         position = model.rowCount(inlet)
         model.beginInsertRows(inlet, position, position)
         model.blockSignals(True)
+
+        # Make sure the parent has at least one column for children, otherwise the treeview won't show them
         if model.columnCount(inlet) == 0:
-            # Make sure the parent has at least one column for children, otherwise the treeview won't show them
             model.insertColumns(0, 1, inlet)
         
-
         if model.insertRows(position, 1, inlet):
             link_index = model.index(position, 0, inlet)
-            model.setData(link_index, f"Child Item {position + 1}", role=Qt.ItemDataRole.DisplayRole)
+            new_link_name = f"{'Link'}#{position + 1}"
+            model.setData(link_index, new_link_name, role=Qt.ItemDataRole.DisplayRole)
             model.setData(link_index, outlet, role=GraphDataRole.SourceRole)
         model.blockSignals(False)
         model.endInsertRows()
