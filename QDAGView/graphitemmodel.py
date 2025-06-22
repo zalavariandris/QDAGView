@@ -94,6 +94,22 @@ class NodeItem(Item):
             self.outlets.append(outlet)
             outlet.node = self
         return True
+    
+    def removeInlet(self, inlet: InletItem)->bool:
+        """Remove an inlet from the node."""
+        position = self.inlets.index(inlet)
+        with self.removingRows(position, position):
+            self.inlets.remove(inlet)
+            inlet.node = None
+        return True
+
+    def removeOutlet(self, outlet: OutletItem)->bool:
+        """Remove an outlet from the node."""
+        position = len(self.inlets) + self.outlets.index(outlet)
+        with self.removingRows(position, position):
+            self.outlets.remove(outlet)
+            outlet.node = None
+        return True
 
 class InletItem(Item):
     def __init__(self, name: str = "Inlet"):
@@ -445,29 +461,31 @@ class GraphItemModel(QAbstractItemModel):
         match parent_item:
             case GraphItem():
                 graph = parent_item
-                for row in range(row, row + count):
-                    if not graph.removeNode(graph.nodes[row]):
+                for i in reversed(range(row, row + count)):
+                    print(f"Removing node at index {i}")
+                    node = graph.nodes[i]
+                    if not graph.removeNode(node):
                         return False
                 return True
             
             case NodeItem():
                 node = parent_item
 
-                for row in reversed(range(row, row + count)):
-                    if row < len(node.inlets):
+                for i in reversed(range(row, row + count)):
+                    if i < len(node.inlets):
                         # Remove inlet
-                        if not node.removeInlet(node.inlets[row]):
+                        if not node.removeInlet(node.inlets[i]):
                             return False
                     else:
                         # Remove outlet
-                        if not node.removeOutlet(node.outlets[row - len(node.inlets)]):
+                        if not node.removeOutlet(node.outlets[i - len(node.inlets)]):
                             return False
                 return True
             
             case InletItem():
                 inlet = parent_item
-                for row in reversed(range(row, row + count)):
-                    if not inlet.removeLink(inlet.links[row]):
+                for i in reversed(range(row, row + count)):
+                    if not inlet.removeLink(inlet.links[i]):
                         return False
                 return True
             case _:
