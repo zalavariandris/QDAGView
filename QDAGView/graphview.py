@@ -87,7 +87,8 @@ class GraphView(QGraphicsView):
         assert scene
         scene.clear()
         self._widgets.clear()
-        self.onRowsInserted(QModelIndex(), 0, self._model.rowCount(QModelIndex()) - 1)
+        if self._model.rowCount(QModelIndex()) > 0:
+            self.onRowsInserted(QModelIndex(), 0, self._model.rowCount(QModelIndex()) - 1)
 
     def model(self) -> QAbstractItemModel | None:
         return self._model
@@ -106,19 +107,19 @@ class GraphView(QGraphicsView):
         """
         return self._widgets.get(QPersistentModelIndex(index), None)
 
-    def indexAt(self, pos:QPointF) -> QModelIndex:
+    def indexAt(self, point:QPoint) -> QModelIndex:
         """
         Find the index at the given position.
         This is used to determine if a drag operation is valid.
         """
-        for item in self.items(pos.toPoint()):
+        for item in self.items(point):
             if item in self._widgets.values():
                 index = self.indexFromWidget(item)
                 return QModelIndex(index) if index else QModelIndex()
 
         return QModelIndex()
 
-    def createWidget(self, parent:QGraphicsItem|QGraphicsScene|None, index:QModelIndex|QPersistentModelIndex) -> BaseRowWidget:
+    def createWidget(self, parent:QGraphicsItem|QGraphicsScene, index:QModelIndex|QPersistentModelIndex) -> BaseRowWidget:
         match self._delegate.itemType(index):
             case GraphItemType.SUBGRAPH:
                 raise NotImplementedError("Subgraphs are not yet supported in the graph view")
@@ -137,6 +138,7 @@ class GraphView(QGraphicsView):
             case QGraphicsScene():
                 # attach to scene
                 parent.addItem(widget)
+
             case NodeWidget():
                 match widget:
                     case OutletWidget():
@@ -154,12 +156,14 @@ class GraphView(QGraphicsView):
                         target_index = self._delegate.linkTarget(index)
                         target_widget = self.widgetFromIndex(target_index)
                         widget.link(source_widget, target_widget)
+            case _:
+                raise ValueError(f"Unknown parent widget type: {type(parent)}")
         return widget
     
     def destroyWidget(self, widget:QGraphicsItem, index:QModelIndex|QPersistentModelIndex):
-        parent_widget = widget.parentItem()
         scene = widget.scene()
         assert scene is not None
+        parent_widget = widget.parentItem()
         match parent_widget:
             case None:
                 # attach to scene
@@ -189,8 +193,9 @@ class GraphView(QGraphicsView):
         assert self._model, "Model must be set before handling rows inserted!"
 
         def get_children(index:QModelIndex) -> Iterable[QModelIndex]:
+            if not isinstance(index, QModelIndex):
+                raise TypeError(f"Expected QModelIndex, got {type(index)}")
             model = index.model()
-            assert model is not None
             for row in range(model.rowCount(index)):
                 child_index = model.index(row, 0, index)
                 yield child_index
@@ -202,7 +207,7 @@ class GraphView(QGraphicsView):
             reverse=False
         )
                 
-        parent_widget = self.widgetFromIndex(parent) if parent.isValid() else None
+        parent_widget = self.widgetFromIndex(parent) if parent.isValid() else self.scene()
         for index in sorted_indexes:
             try:
                 widget = self.createWidget(parent_widget, index)
@@ -220,11 +225,13 @@ class GraphView(QGraphicsView):
         assert self._model, "Model must be set before handling rows removed!"
 
         def get_children(index:QModelIndex) -> Iterable[QModelIndex]:
+            if not index.isValid():
+                return []
             model = index.model()
-            assert model is not None
             for row in range(model.rowCount(index)):
                 child_index = model.index(row, 0, index)
                 yield child_index
+
             return []
         
         sorted_indexes = bfs(
@@ -637,7 +644,8 @@ class GraphView(QGraphicsView):
         self._draft_link = None
 
     def mousePressEvent(self, event):
-        index = self.indexAt(event.position().toPoint())  # Ensure the index is updated
+        pos = event.position()
+        index = self.indexAt(QPoint(int(pos.x()), int(pos.y())))  # Ensure the index is updated
         assert index
         match self._delegate.itemType(index):
             case GraphItemType.INLET:
@@ -722,7 +730,8 @@ class GraphView(QGraphicsView):
 
     def dragMoveEvent(self, event)->None:
         """Handle drag move events to update draft link position"""
-        drop_target_index = self.indexAt(event.position().toPoint())
+        pos = event.position()
+        drop_target_index = self.indexAt(QPoint(int(pos.x()), int(pos.y())))  # Ensure the index is updated
         if self._canDropMimeData(event.mimeData(), event.dropAction(), drop_target_index):
             if event.mimeData().hasFormat(GraphMimeData.OutletData):
                 # Outlet dragged
@@ -801,7 +810,8 @@ class GraphView(QGraphicsView):
                     return
             
     def dropEvent(self, event: QDropEvent) -> None:
-        drop_target = self.indexAt(event.position().toPoint())
+        pos = event.position()
+        drop_target = self.indexAt(QPoint(int(pos.x()), int(pos.y())))  # Ensure the index is updated
         if self._dropMimeData(event.mimeData(), event.dropAction(), drop_target):
             event.acceptProposedAction()
         else:

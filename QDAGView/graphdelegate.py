@@ -14,7 +14,7 @@ class GraphDelegate(QObject):
 
     def linkSource(self, link_index:QModelIndex|QPersistentModelIndex) -> QModelIndex|None:
         source_index = link_index.data(GraphDataRole.SourceRole)
-        assert source_index is None or source_index.isValid(), "Source index must be valid or None"
+        assert source_index is None or source_index.isValid(), f"Source index must be valid or None, got: {source_index}"
         return QModelIndex(source_index) if source_index else None
     
     def linkTarget(self, link_index:QModelIndex|QPersistentModelIndex) -> QModelIndex:
