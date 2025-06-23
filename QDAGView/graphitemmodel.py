@@ -13,7 +13,7 @@ class Operator:
         pass
 
 
-class Item:
+class BaseItem:
     def model(self) -> QAbstractItemModel | None:
         return None
     
@@ -44,7 +44,7 @@ class Item:
                 model.endRemoveRows()
 
 
-class GraphItem(Item):
+class GraphItem(BaseItem):
     def __init__(self, name: str = "Graph"):
         self._name = name
         self.nodes: List[NodeItem] = []  # List of nodes in the graph
@@ -69,7 +69,7 @@ class GraphItem(Item):
         return self._model
     
 
-class NodeItem(Item):
+class NodeItem(BaseItem):
     def __init__(self, name: str = "Node", operator: Operator | None = None):
         self._name = name
         self.inlets = []
@@ -111,7 +111,7 @@ class NodeItem(Item):
             outlet.node = None
         return True
 
-class InletItem(Item):
+class InletItem(BaseItem):
     def __init__(self, name: str = "Inlet"):
         self._name = name
         self.links = []  # List of links connected to this inlet
@@ -141,7 +141,7 @@ class InletItem(Item):
         return True
 
 
-class OutletItem(Item):
+class OutletItem(BaseItem):
     def __init__(self, name: str = "Outlet"):
         self._name = name
         self.links = []
@@ -151,7 +151,7 @@ class OutletItem(Item):
         return self.node.model()
 
 
-class LinkItem(Item):
+class LinkItem(BaseItem):
     def __init__(self, source: OutletItem|None, target: InletItem):
         self.source = source
         self.target = target

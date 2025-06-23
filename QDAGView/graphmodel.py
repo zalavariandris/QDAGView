@@ -9,11 +9,6 @@ from core import GraphDataRole, GraphItemType
 from contextlib import contextmanager
 
 
-class Operator:
-    def __call__(self, *args, **kwds):
-        pass
-
-
 class Graph:
     def __init__(self, name: str = "Graph"):
         self._name = name
@@ -21,11 +16,10 @@ class Graph:
 
 
 class Node:
-    def __init__(self, name: str = "Node", operator: Operator | None = None):
+    def __init__(self, name: str = "Node"):
         self._name = name
         self.inlets = []
         self.outlets = []
-        self.operator:Operator | None = None
 
 
 class Inlet:
@@ -219,7 +213,7 @@ class GraphModel(QAbstractItemModel):
                     case GraphDataRole.TypeRole:
                         return GraphItemType.NODE
                     case Qt.ItemDataRole.DisplayRole:
-                        return f"{node._name} ({item.operator.__class__.__name__})" if item.operator else node._name
+                        return f"{node._name}"
                     case Qt.ItemDataRole.EditRole:
                         return node._name
                     case _:
@@ -369,14 +363,14 @@ class GraphModel(QAbstractItemModel):
                 raise Exception(f"Invalid parent item type: {type(parent_item)}")
     
     ## Helper methods for managing nodes, inlets, outlets, and links
-    def appendNode(self, name: str = "New Node", operator: Operator | None = None) -> bool:
+    def appendNode(self, name: str = "New Node") -> bool:
         """Add a new node to the graph."""
         graph = self._root
         if not isinstance(graph, Graph):
             raise ValueError("Root item must be a Graph.")
         
         position = len(graph.nodes)
-        new_node = Node(f"{name}{position}", operator)
+        new_node = Node(f"{name}{position}")
         
         self.beginInsertRows(QModelIndex(), position, position)
         graph.nodes.append(new_node)
@@ -572,7 +566,7 @@ class MainWindow(QWidget):
 
     @Slot()
     def createNode(self):
-        self._model.appendNode(name="New Node", operator=None)
+        self._model.appendNode(name="New Node")
 
     @Slot()
     def createInlet(self):
@@ -608,15 +602,6 @@ class MainWindow(QWidget):
 
 if __name__ == "__main__":
     import sys
-    # Example usage of the Operator class
-    class AddOperator(Operator):
-        def __call__(self, a, b):
-            return a + b
-
-    add_op = AddOperator()
-    result = add_op(3, 5)
-    print(f"Result of addition: {result}")  # Output: Result of addition: 8
-
     app = QApplication(sys.argv)
 
     window = MainWindow()

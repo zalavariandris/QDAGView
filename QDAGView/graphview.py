@@ -260,7 +260,7 @@ class GraphView(QGraphicsView):
         This updates the widgets in the graph view.
         """
         assert self._model
-
+        print("on data changed")
         for row in range(top_left.row(), bottom_right.row() + 1):
             index = self._model.index(row, top_left.column(), top_left.parent())
             if widget := self.widgetFromIndex(index):
