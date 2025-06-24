@@ -119,7 +119,7 @@ class GraphView(QGraphicsView):
 
         return QModelIndex()
 
-    def createWidget(self, parent:QGraphicsItem|QGraphicsScene, index:QModelIndex|QPersistentModelIndex) -> BaseRowWidget:
+    def createWidget(self, parent_widget:QGraphicsItem|QGraphicsScene, index:QModelIndex|QPersistentModelIndex) -> BaseRowWidget:
         match self._delegate.itemType(index):
             case GraphItemType.SUBGRAPH:
                 raise NotImplementedError("Subgraphs are not yet supported in the graph view")
@@ -134,30 +134,30 @@ class GraphView(QGraphicsView):
             case _:
                 raise ValueError(f"Unknown item type: {self._delegate.itemType(index)}")
         
-        match parent:
+        match parent_widget:
             case QGraphicsScene():
                 # attach to scene
-                parent.addItem(widget)
+                parent_widget.addItem(widget)
 
             case NodeWidget():
                 match widget:
                     case OutletWidget():
-                        parent.addOutlet(widget)
+                        parent_widget.addOutlet(widget)
                     case InletWidget():
-                        parent.addInlet(widget)
+                        parent_widget.addInlet(widget)
                     case _:
                         ...
             case InletWidget():
                 match widget:
                     case LinkWidget():
-                        widget.setParentItem(parent)
+                        widget.setParentItem(parent_widget)
                         source_index = self._delegate.linkSource(index)
                         source_widget = self.widgetFromIndex(source_index) if source_index is not None else None
                         target_index = self._delegate.linkTarget(index)
                         target_widget = self.widgetFromIndex(target_index)
                         widget.link(source_widget, target_widget)
             case _:
-                raise ValueError(f"Unknown parent widget type: {type(parent)}")
+                raise ValueError(f"Unknown parent widget type: {type(parent_widget)}")
         return widget
     
     def destroyWidget(self, widget:QGraphicsItem, index:QModelIndex|QPersistentModelIndex):
@@ -192,34 +192,67 @@ class GraphView(QGraphicsView):
     def onRowsInserted(self, parent:QModelIndex, start:int, end:int):
         assert self._model, "Model must be set before handling rows inserted!"
 
-        def get_children(index:QModelIndex) -> Iterable[QModelIndex]:
-            if not isinstance(index, QModelIndex):
-                raise TypeError(f"Expected QModelIndex, got {type(index)}")
-            model = index.model()
-            for row in range(model.rowCount(index)):
-                child_index = model.index(row, 0, index)
-                yield child_index
-            return []
-        
-        sorted_indexes = bfs(
-            *[self._model.index(row, 0, parent) for row in range(start, end + 1)], 
-            children=get_children, 
-            reverse=False
-        )
+        def make_child_widgets(parent_widget:QGraphicsItem|QGraphicsScene, parent:QModelIndex, start:int, end:int):
+            """
+            Create widgets for the given range of rows in the model.
+            This is used to populate the graph view with nodes, inlets, outlets and links.
+            """
+            print("make child widgets", start, end, parent_widget)
+            for row in range(start, end + 1):
+                index = self._model.index(row, 0, parent)
+                if not index.isValid():
+                    logger.warning(f"Invalid index at row {row} for parent {parent}")
+                    continue
                 
-        parent_widget = self.widgetFromIndex(parent) if parent.isValid() else self.scene()
-        for index in sorted_indexes:
-            try:
                 widget = self.createWidget(parent_widget, index)
-            except NotImplementedError as e:
-                logger.error(f"Error creating widget for index {index}: {e}")
-                traceback.print_exc()
-                continue
+                self._widgets[QPersistentModelIndex(index)] = widget
+                widget._index = QPersistentModelIndex(index)
+                self._set_widget_data(index, 0)
 
-            self._widgets[QPersistentModelIndex(index)] = widget
-            widget._index = QPersistentModelIndex(index)
+                make_child_widgets(
+                    parent_widget=widget, 
+                    parent=index, 
+                    start=0, 
+                    end=self._model.rowCount(index) - 1
+                )
 
-            self._set_data(index, 0)
+        parent_widget = self.widgetFromIndex(parent) if parent.isValid() else self.scene()
+        make_child_widgets(
+            parent_widget=parent_widget, 
+            parent=parent, 
+            start=start, 
+            end=end
+        )
+
+        # def get_children(index:QModelIndex) -> Iterable[QModelIndex]:
+        #     if not isinstance(index, QModelIndex):
+        #         raise TypeError(f"Expected QModelIndex, got {type(index)}")
+        #     model = index.model()
+        #     for row in range(model.rowCount(index)):
+        #         child_index = model.index(row, 0, index)
+        #         yield child_index
+        #     return []
+        
+        # sorted_indexes = bfs(
+        #     *[self._model.index(row, 0, parent) for row in range(start, end + 1)], 
+        #     children=get_children, 
+        #     reverse=False
+        # )
+
+        
+        # for index in sorted_indexes:
+        #     try:
+        #         parent_widget = self.widgetFromIndex(index.parent()) if index.parent().isValid() else self.scene()
+        #         widget = self.createWidget(parent_widget, index)
+        #     except NotImplementedError as e:
+        #         logger.error(f"Error creating widget for index {index}: {e}")
+        #         traceback.print_exc()
+        #         continue
+
+        #     self._widgets[QPersistentModelIndex(index)] = widget
+        #     widget._index = QPersistentModelIndex(index)
+
+        #     self._set_data(index, 0)
 
     def onRowsAboutToBeRemoved(self, parent:QModelIndex, start:int, end:int):
         assert self._model, "Model must be set before handling rows removed!"
@@ -373,7 +406,7 @@ class GraphView(QGraphicsView):
                 self._selection.clearSelection()
                 self._selection.setCurrentIndex(QModelIndex(), QItemSelectionModel.SelectionFlag.Current | QItemSelectionModel.SelectionFlag.Rows)
 
-    def _set_data(self, index:QModelIndex|QPersistentModelIndex, column:int, roles:list=[]):
+    def _set_widget_data(self, index:QModelIndex|QPersistentModelIndex, column:int, roles:list=[]):
         """Set the data for a node widget."""
         assert index.isValid(), "Index must be valid"
         assert index.column() == 0, "Index must be in the first column"
@@ -733,6 +766,7 @@ class GraphView(QGraphicsView):
         pos = event.position()
         drop_target_index = self.indexAt(QPoint(int(pos.x()), int(pos.y())))  # Ensure the index is updated
         if self._canDropMimeData(event.mimeData(), event.dropAction(), drop_target_index):
+            print("drag move event", drop_target_index, self._delegate.itemType(drop_target_index))
             if event.mimeData().hasFormat(GraphMimeData.OutletData):
                 # Outlet dragged
                 outlet_index = self._decodeOutletMimeData(event.mimeData())
@@ -842,7 +876,7 @@ class CellWidget(QGraphicsProxyWidget):
         self._label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._label.setStyleSheet("background: orange;")
         self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        # self._label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setWidget(self._label)
         self.setAutoFillBackground(False)
         

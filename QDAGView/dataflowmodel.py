@@ -11,19 +11,18 @@ from collections import defaultdict
 from core import GraphDataRole, GraphItemType
 
 class Operator:
-    def __init__(self, name:str, expression: str = "Operator"):
-        self._name = name
+    def __init__(self, expression: str = "Operator"):
         self._expression = expression
+        self._inlets: List[Inlet] = [Inlet("in1", self), Inlet("in2", self)] 
+        self._outlets: List[Outlet] = [Outlet("out", self)]
 
-    def name(self) -> str:
+    def expression(self) -> str:
+        """Return the expression of the operator."""
+        return self._expression
+
+    def setExpression(self) -> str:
         """Return the name of the operator."""
-        return self._name
-    
-    def setName(self, name: str):
-        """Set the name of the operator."""
-        if not isinstance(name, str):
-            raise TypeError("Name must be a string.")
-        self._name = name
+        return self._expression
     
     def expression(self) -> str:
         """Return the expression of the operator."""
@@ -34,26 +33,40 @@ class Operator:
 
     def inlets(self) -> List[Inlet]:
         """Return the list of inlets for this operator."""
-        return [Inlet("in1", self), Inlet("in2", self)]
+        return self._inlets
     
     def outlets(self) -> List[Outlet]:
         """Return the list of outlets for this operator."""
-        return [Outlet("out", self)]
+        return self._outlets
+
+    # def __hash__(self):
+    #     return hash((self._expression))
 
 @dataclass
 class Inlet:
     name: str = "Inlet"
-    operator: Operator = None
+    operator: Operator|None = None
+
+    def __hash__(self):
+        return hash((self.name, self.operator))
+
 
 @dataclass
 class Outlet:
     name: str = "Outlet"
-    operator: Operator = None
+    operator: Operator|None = None
 
-@dataclass
+    def __hash__(self):
+        return hash((self.name, self.operator))
+
+
+@dataclass()
 class Link:
     source: Outlet = None
     target: Inlet = None
+
+    def __hash__(self):
+        return hash((self.source, self.target))
 
 
 class FlowGraph:
@@ -88,8 +101,8 @@ class FlowGraph:
         """Link an outlet of a source operator to an inlet of a target operator."""
         link = Link(source, target)
         if source is not None:
-            self._out_links[source] = link
-        self._in_links[target] = link
+            self._out_links[source].append(link)
+        self._in_links[target].append(link)
         return True
     
     def relink(self, link: Link, source: Outlet | None) -> bool:
@@ -110,7 +123,7 @@ class FlowGraph:
         return [(link.source, link.target) for link in links]
 
 
-class GraphItemModel(QAbstractItemModel):
+class FlowGraphModel(QAbstractItemModel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._root = FlowGraph()
@@ -121,9 +134,9 @@ class GraphItemModel(QAbstractItemModel):
         return self._root
     
     def index(self, row, column, parent=QModelIndex())-> QModelIndex:
+        parent = QModelIndex(parent)  # Ensure parent is a valid QModelIndex
         parent_item:FlowGraph | Operator | Inlet = self.invisibleRootItem() if not parent.isValid() else parent.internalPointer()
         assert column == 0, "This model only supports one column."
-
         match parent_item:
             case FlowGraph():
                 graph = parent_item
@@ -141,9 +154,11 @@ class GraphItemModel(QAbstractItemModel):
                 if 0 <= row < n_inlets + n_outlets:
                     # Determine if the row corresponds to an inlet or outlet
                     if row < n_inlets:
-                        return self.createIndex(row, column, operator.inlets()[row])
+                        inlet = operator.inlets()[row]
+                        return self.createIndex(row, column, inlet)
                     else:
-                        return self.createIndex(row, column, operator.outlets()[row - n_inlets])
+                        outlet = operator.outlets()[row - n_inlets]
+                        return self.createIndex(row, column, outlet)
                 else:
                     return QModelIndex()
                 
@@ -176,23 +191,27 @@ class GraphItemModel(QAbstractItemModel):
             case Inlet():
                 inlet = item
                 operator = inlet.operator
-                if operator is not None:
-                    row = operator.inlets().index(inlet)
-                    return self.createIndex(row, 0, inlet)
+                assert isinstance(operator, Operator), "Inlet must have a parent operator."
+                row = operator.inlets().index(inlet)
+                return self.createIndex(row, 0, inlet)
 
             case Outlet():
-                parent_node = item.node
-                if parent_node is not None:
-                    row = len(parent_node.inlets) + parent_node.outlets.index(item)
-                    return self.createIndex(row, 0, item)
+                operator = item.node
+                assert isinstance(operator, Operator), "Outlet must have a parent operator."
+                inlets = operator.inlets()
+                outlets = operator.outlets()
+                row = len(inlets) + outlets.index(item)
+                return self.createIndex(row, 0, item)
                 
             case Link():
                 parent_inlet = item.target
-                if parent_inlet is not None:
-                    parent_node = parent_inlet.node
-                    if parent_node is not None:
-                        row = parent_node.inlets.index(parent_inlet)
-                        return self.createIndex(row, 0, item)
+                assert isinstance(parent_inlet, Inlet), "Link must have a target inlet."
+                parent_node = parent_inlet.operator
+                assert isinstance(parent_node, Operator), "Link must have a parent operator."
+                inlets = parent_node.inlets()
+                row = inlets.index(parent_inlet)
+                return self.createIndex(row, 0, item)
+
             case _:
                 raise ValueError(f"Unsupported item type: {type(item)}")
     
@@ -205,8 +224,10 @@ class GraphItemModel(QAbstractItemModel):
         return item
 
     def parent(self, index: QModelIndex) -> QModelIndex:
+        index = QModelIndex(index)  # Ensure index is a valid QModelIndex
         if not index.isValid():
             return QModelIndex()
+        
         item = index.internalPointer()
         match item:
             case Operator():
@@ -214,18 +235,21 @@ class GraphItemModel(QAbstractItemModel):
                 return QModelIndex()
 
             case Inlet():
-                parent_operator = item.operator
-                if parent_operator is not None:
-                    row = parent_operator.inlets().index(item)
-                    return self.createIndex(row, 0, parent_operator)
-                return QModelIndex()
+                inlet = item
+                assert isinstance(inlet, Inlet), "Inlet must have a parent operator."
+                parent_operator = inlet.operator
+                assert isinstance(parent_operator, Operator), "Inlet must have a parent operator."
+                inlets = parent_operator.inlets()
+                row = parent_operator.inlets().index(inlet)
+                return self.createIndex(row, 0, parent_operator)
 
             case Outlet():
                 parent_operator = item.operator
-                if parent_operator is not None:
-                    row = parent_operator.outlets().index(item)
-                    return self.createIndex(row, 0, parent_operator)
-                return QModelIndex()
+                assert isinstance(parent_operator, Operator), "Inlet must have a parent operator."
+                inlets = parent_operator.inlets()
+                outlets = parent_operator.outlets()
+                i = outlets.index(item)
+                return self.createIndex(len(inlets)+i, 0, parent_operator)
 
             case Link():
                 parent_inlet = item.target
@@ -238,6 +262,7 @@ class GraphItemModel(QAbstractItemModel):
                 return QModelIndex()
             
     def rowCount(self, parent=QModelIndex())->int:
+        parent = QModelIndex(parent)  # Ensure parent is a valid QModelIndex
         parent_item:FlowGraph | Operator | Inlet | Outlet | Link = self.invisibleRootItem() if not parent.isValid() else parent.internalPointer()
         
         match parent_item:
@@ -247,8 +272,10 @@ class GraphItemModel(QAbstractItemModel):
             
             case Operator():
                 operator = parent_item
-                return len(operator.inlets()) + len(operator.outlets())
-            
+                n_inlets = len(operator.inlets())
+                n_outlets = len(operator.outlets())
+                return n_inlets + n_outlets
+
             case Inlet():
                 inlet = parent_item
                 graph:FlowGraph = self.invisibleRootItem()
@@ -271,12 +298,19 @@ class GraphItemModel(QAbstractItemModel):
             case FlowGraph():
                 return len(parent_item.operators())>0
             case Operator():
-                return len(parent_item.inlets()) + len(parent_item.outlets())>0
+                operator = parent_item
+                n_inlets = len(operator.inlets())
+                n_outlets = len(operator.outlets())
+                return n_inlets + n_outlets > 0
             case Inlet():
-                return len(parent_item.links)>0
+                inlet = parent_item
+                graph:FlowGraph = self.invisibleRootItem()
+                in_links = graph.inLinks(inlet)
+                return len(in_links) > 0
             case Outlet():
                 return False
             case _:
+                return False
                 raise Exception(f"Invalid parent item type: {type(parent_item)}")
 
     def columnCount(self, parent=QModelIndex()):
@@ -294,10 +328,12 @@ class GraphItemModel(QAbstractItemModel):
                 match role:
                     case GraphDataRole.TypeRole:
                         return GraphItemType.NODE
+                    
                     case Qt.ItemDataRole.DisplayRole:
-                        return f"{operator.name()}"
+                        return f"NODE {operator.setExpression()}"
+                    
                     case Qt.ItemDataRole.EditRole:
-                        return operator.name()
+                        return operator.setExpression()
                     case _:
                         return None
                 
@@ -306,8 +342,9 @@ class GraphItemModel(QAbstractItemModel):
                 match role:
                     case GraphDataRole.TypeRole:
                         return GraphItemType.INLET
+                    
                     case Qt.ItemDataRole.DisplayRole | Qt.ItemDataRole.EditRole:
-                        return inlet.name()
+                        return f"IN {inlet.name}"
                     case _:
                         return None
                 return None
@@ -318,7 +355,7 @@ class GraphItemModel(QAbstractItemModel):
                     case GraphDataRole.TypeRole:
                         return GraphItemType.OUTLET
                     case Qt.ItemDataRole.DisplayRole | Qt.ItemDataRole.EditRole:
-                        return outlet.name()
+                        return f"OUT {outlet.name}"
                     case _:
                         return None
             
@@ -332,9 +369,9 @@ class GraphItemModel(QAbstractItemModel):
                         return self.indexFromItem(link.source) if link.source else None
                     
                     case Qt.ItemDataRole.DisplayRole:
-                        source = f"{link.source.operator.name()}.{link.source.name()}" if link.source else "None"
-                        target = f"{link.target.operator.name()}.{link.target.name()}" if link.target else "None"
-                        return f"{source} -> {target}"
+                        source = f"{link.source.operator.expression()}.{link.source.expression()}" if link.source else "None"
+                        target = f"{link.target.operator.expression()}.{link.target.expression()}" if link.target else "None"
+                        return f"LINK {source} -> {target}"
                     
                     case _:
                         return None
@@ -416,13 +453,20 @@ class GraphItemModel(QAbstractItemModel):
             case _:
                 return Qt.ItemFlag.NoItemFlags
             
-    def insertRows(self, row, count, parent = ...):
+    def insertRows(self, row, count, parent:QModelIndex):
+        parent = QModelIndex(parent)  # Ensure parent is a valid QModelIndex
         parent_item:FlowGraph|Operator|Inlet|Outlet|Link = self.invisibleRootItem() if not parent.isValid() else parent.internalPointer()
         match parent_item:
             case FlowGraph():
                 graph = parent_item
-                return graph.addOperator(Operator(name=f"Operator {len(graph.operators()) + 1}"))
-            
+                success = True
+                self.beginInsertRows(parent, row, row + count - 1)
+                for _ in range(count):
+                    if not graph.addOperator(Operator(f"print")):
+                        success = False
+                self.endInsertRows()
+                return success
+
             case Operator():
                 return False # Cannot insert rows directly under an operator. It is dependent on the Operator expression
             
@@ -432,42 +476,111 @@ class GraphItemModel(QAbstractItemModel):
                 inlet = parent_item
                 target = inlet.operator
                 graph:FlowGraph = self.invisibleRootItem()
-                return graph.addLink(source=None, outlet=None, target=target, inlet=inlet.name)
+                success = True
+                self.beginInsertRows(parent, row, row + count - 1)
+                for _ in range(count):
+                    if not graph.addLink(source=None, target=inlet):
+                        success = False
+                self.endInsertRows()
+                return success
             case _:
                 raise Exception(f"Invalid parent item type: {type(parent_item)}")
             
     def removeRows(self, row:int, count:int, parent:QModelIndex)-> bool:
-        parent_item:GraphItem|NodeItem|InletItem|OutletItem|LinkItem = self.invisibleRootItem() if not parent.isValid() else parent.internalPointer()
+        parent_item:FlowGraph|Operator|Inlet|Outlet|Link = self.invisibleRootItem() if not parent.isValid() else parent.internalPointer()
         match parent_item:
-            case GraphItem():
+            case FlowGraph():
                 graph = parent_item
+                self.beginRemoveRows(parent, row, row + count - 1)
                 for i in reversed(range(row, row + count)):
-                    print(f"Removing node at index {i}")
-                    node = graph.nodes[i]
-                    if not graph.removeNode(node):
-                        return False
+                    print(f"Removing operator at index {i}")
+                    operators = graph.operators()
+                    if i < len(operators):
+                        operator = operators[i]
+                        if not graph.removeOperator(operator):
+                            self.endRemoveRows()
+                            return False
+                self.endRemoveRows()
                 return True
             
-            case NodeItem():
-                node = parent_item
-
-                for i in reversed(range(row, row + count)):
-                    if i < len(node.inlets):
-                        # Remove inlet
-                        if not node.removeInlet(node.inlets[i]):
-                            return False
-                    else:
-                        # Remove outlet
-                        if not node.removeOutlet(node.outlets[i - len(node.inlets)]):
-                            return False
-                return True
+            case Operator():
+                # Cannot remove inlets/outlets directly from an operator
+                # These are determined by the operator's implementation
+                return False
             
-            case InletItem():
+            case Inlet():
                 inlet = parent_item
+                graph = self.invisibleRootItem()
+                self.beginRemoveRows(parent, row, row + count - 1)
+                # Remove links connected to this inlet
+                # This is a simplified implementation - you may need more sophisticated link management
                 for i in reversed(range(row, row + count)):
-                    if not inlet.removeLink(inlet.links[i]):
-                        return False
+                    # Implementation would depend on how links are stored and managed
+                    pass
+                self.endRemoveRows()
                 return True
             case _:
-                raise Exception(f"Invalid parent item type: {type(parent_item)}")
+                return False
     
+from graphview import GraphView
+if __name__ == "__main__":
+    import sys
+
+    class MainWindow(QWidget):
+        def __init__(self):
+            super().__init__()
+            self.setWindowTitle("DataFlow")
+            self.setGeometry(100, 100, 800, 600)
+            self.model = FlowGraphModel(self)
+            self.selection = QItemSelectionModel(self.model)
+
+            self.toolbar = QMenuBar(self)
+            add_action = self.toolbar.addAction("Add Operator")
+            add_action.triggered.connect(self.addOperator)
+            remove_action = self.toolbar.addAction("Remove Operator")
+            remove_action.triggered.connect(self.removeSelectedItems)
+
+            self.tree = QTreeView(parent=self)
+            self.tree.setModel(self.model)
+            self.tree.setSelectionModel(self.selection)
+            self.tree.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.SelectedClicked)
+            # model = GraphItemModel()
+            # self.view.setModel(model)
+            self.graphview = GraphView(parent=self)
+            self.graphview.setModel(self.model)
+            self.graphview.setSelectionModel(self.selection)
+
+            layout = QHBoxLayout(self)
+            layout.setMenuBar(self.toolbar)
+            layout.addWidget(self.tree)
+            layout.addWidget(self.graphview)
+
+        @Slot()
+        def addOperator(self):
+            """Add a new operator to the graph."""
+            self.model.insertRows(0, 1, QModelIndex())
+
+        @Slot()
+        def removeSelectedItems(self):
+            """Remove the currently selected items from the graph."""
+            selected_indexes = self.selection.selectedIndexes()
+            if not selected_indexes:
+                return
+            
+            for index in selected_indexes:
+                if index.isValid():
+                    self.model.removeRows(index.row(), 1, index.parent())
+
+    # graph = model.invisibleRootItem()
+    # operator = Operator("TestOperator")
+    # graph.addOperator(operator)
+    
+    # index = model.index(0, 0, QModelIndex())
+    # print(model.data(index, Qt.ItemDataRole.DisplayRole))  # Should print "TestOperator"
+
+    import sys
+    app = QApplication(sys.argv)
+
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())
