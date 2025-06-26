@@ -20,13 +20,9 @@ class Operator:
         """Return the expression of the operator."""
         return self._expression
 
-    def setExpression(self) -> str:
-        """Return the name of the operator."""
-        return self._expression
-    
-    def expression(self) -> str:
-        """Return the expression of the operator."""
-        return self._expression
+    def setExpression(self, expression:str):
+        """Set the expression of the operator."""
+        self._expression = expression
 
     def __call__(self, *args, **kwds):
         ...
@@ -38,24 +34,31 @@ class Operator:
     def outlets(self) -> List[Outlet]:
         """Return the list of outlets for this operator."""
         return self._outlets
+    
+    def __str__(self):
+        return f"Operator({self._expression})"
 
-    # def __hash__(self):
-    #     return hash((self._expression))
-
-@dataclass
+    
+@dataclass()
 class Inlet:
     name: str = "Inlet"
     operator: Operator|None = None
 
+    def __str__(self):
+        return f"Inlet({self.operator}.{self.name})"
+    
     def __hash__(self):
         return hash((self.name, self.operator))
 
 
-@dataclass
+@dataclass()
 class Outlet:
     name: str = "Outlet"
     operator: Operator|None = None
 
+    def __str__(self):
+        return f"Outlet({self.operator}.{self.name})"
+    
     def __hash__(self):
         return hash((self.name, self.operator))
 
@@ -65,8 +68,8 @@ class Link:
     source: Outlet = None
     target: Inlet = None
 
-    def __hash__(self):
-        return hash((self.source, self.target))
+    def __str__(self):
+        return  f"Link({self.source} -> {self.target})"
 
 
 class FlowGraph:
@@ -76,36 +79,46 @@ class FlowGraph:
         self._in_links: DefaultDict[Inlet, List[Link]] = defaultdict(list)
         self._out_links: DefaultDict[Outlet, List[Link]] = defaultdict(list)
 
+    ## READ
     def operators(self) -> List[Operator]:
         """Return the list of nodes in the graph."""
         return self._operators
+    
+    def inLinks(self, inlet: Inlet) -> List[Link]:
+        return [link for link in self._in_links[inlet]]
 
-    def addOperator(self, operator: Operator) -> bool:
-        """Add an operator to the graph."""
-        self._operators.append(operator)
+    def outLinks(self, outlet: Outlet) -> List[Link]:
+        return [link for link in self._out_links[outlet]]
+
+    ## CREATE
+    def insertOperator(self, index:int, operator: Operator) -> bool:
+        """Add an operator to the graph at the specified index."""
+        self._operators.insert(index, operator)
         return True
     
+    def insertLink(self, index:int, source:Outlet|None, target:Inlet) -> bool:
+        """Link an outlet of a source operator to an inlet of a target operator."""
+        link = Link(source, target)
+        if source is not None:
+            self._out_links[source].append(link)
+        self._in_links[target].insert(index, link)
+        return True
+    
+    ## DELETE
     def removeOperator(self, operator: Operator) -> bool:
         """Remove an operator from the graph."""
         if operator in self._operators:
             self._operators.remove(operator)
             # Remove all links associated with this operator
             for inlet in operator.inlets():
-                self._in_links.pop((operator, inlet), None)
+                self._in_links.pop(inlet, None)
             for outlet in operator.outlets():
-                self._out_links.pop((operator, outlet), None)
+                self._out_links.pop(outlet, None)
             return True
         return False
 
-    def addLink(self, source:Outlet|None, target:Inlet) -> bool:
-        """Link an outlet of a source operator to an inlet of a target operator."""
-        link = Link(source, target)
-        if source is not None:
-            self._out_links[source].append(link)
-        self._in_links[target].append(link)
-        return True
-    
-    def relink(self, link: Link, source: Outlet | None) -> bool:
+    ## UPDATE
+    def setLinkSource(self, link: Link, source: Outlet | None) -> bool:
         """Relink an existing link to a new source outlet."""
         if link.source is not None:
             self._out_links[link.source].remove(link)
@@ -114,14 +127,6 @@ class FlowGraph:
         link.source = source
         return True
     
-    def inLinks(self, inlet: Inlet) -> List[Link]:
-        links = self._in_links[inlet]
-        return [(link.source, link.target) for link in links]
-
-    def outLinks(self, outlet: Outlet) -> List[Link]:
-        links = self._out_links[outlet]
-        return [(link.source, link.target) for link in links]
-
 
 class FlowGraphModel(QAbstractItemModel):
     def __init__(self, parent=None):
@@ -149,31 +154,32 @@ class FlowGraphModel(QAbstractItemModel):
                 
             case Operator():
                 operator = parent_item
-                n_inlets = len(operator.inlets())
-                n_outlets = len(operator.outlets())
+                inlets = operator.inlets()
+                outlets = operator.outlets()
+                n_inlets = len(inlets)
+                n_outlets = len(outlets)
                 if 0 <= row < n_inlets + n_outlets:
                     # Determine if the row corresponds to an inlet or outlet
                     if row < n_inlets:
-                        inlet = operator.inlets()[row]
+                        inlet = inlets[row]
                         return self.createIndex(row, column, inlet)
                     else:
-                        outlet = operator.outlets()[row - n_inlets]
+                        outlet = outlets[row - n_inlets]
                         return self.createIndex(row, column, outlet)
                 else:
                     return QModelIndex()
                 
             case Inlet():
                 inlet = parent_item
-                operator = inlet.operator
-                inlet_name = inlet.name
                 graph = self.invisibleRootItem()
-                links:List[Link] = graph.inLinks(operator, inlet_name)
+                links:List[Link] = graph.inLinks(inlet)
 
                 if 0 <= row < len(links):
                     link = links[row]
                     return self.createIndex(row, column, link)
                 else:
                     return QModelIndex()
+                
             case _:
                 return QModelIndex()
 
@@ -196,7 +202,7 @@ class FlowGraphModel(QAbstractItemModel):
                 return self.createIndex(row, 0, inlet)
 
             case Outlet():
-                operator = item.node
+                operator = item.operator
                 assert isinstance(operator, Operator), "Outlet must have a parent operator."
                 inlets = operator.inlets()
                 outlets = operator.outlets()
@@ -239,17 +245,18 @@ class FlowGraphModel(QAbstractItemModel):
                 assert isinstance(inlet, Inlet), "Inlet must have a parent operator."
                 parent_operator = inlet.operator
                 assert isinstance(parent_operator, Operator), "Inlet must have a parent operator."
-                inlets = parent_operator.inlets()
-                row = parent_operator.inlets().index(inlet)
+                graph = self.invisibleRootItem()
+                row = graph.operators().index(parent_operator)
                 return self.createIndex(row, 0, parent_operator)
 
             case Outlet():
-                parent_operator = item.operator
-                assert isinstance(parent_operator, Operator), "Inlet must have a parent operator."
-                inlets = parent_operator.inlets()
-                outlets = parent_operator.outlets()
-                i = outlets.index(item)
-                return self.createIndex(len(inlets)+i, 0, parent_operator)
+                outlet = item
+                assert isinstance(outlet, Outlet), "Outlet must have a parent operator."
+                parent_operator = outlet.operator
+                assert isinstance(parent_operator, Operator), "Outlet must have a parent operator."
+                graph = self.invisibleRootItem()
+                row = graph.operators().index(parent_operator)
+                return self.createIndex(row, 0, parent_operator)
 
             case Link():
                 parent_inlet = item.target
@@ -290,28 +297,31 @@ class FlowGraphModel(QAbstractItemModel):
             
             case _:
                 raise Exception(f"Invalid parent item type: {type(parent_item)}")
-            
-    def hasChildren(self, parent = ...):
-        parent_item:FlowGraph | Operator | Inlet | Outlet | Link = self.invisibleRootItem() if not parent.isValid() else parent.internalPointer()
+
+    def hasChildren(self, index: QModelIndex) -> bool:
+        parent_item: FlowGraph | Operator | Inlet | Outlet | Link = self.invisibleRootItem() if not index.isValid() else index.internalPointer()
 
         match parent_item:
             case FlowGraph():
                 return len(parent_item.operators())>0
+            
             case Operator():
                 operator = parent_item
                 n_inlets = len(operator.inlets())
                 n_outlets = len(operator.outlets())
                 return n_inlets + n_outlets > 0
+            
             case Inlet():
                 inlet = parent_item
-                graph:FlowGraph = self.invisibleRootItem()
+                graph: FlowGraph = self.invisibleRootItem()
                 in_links = graph.inLinks(inlet)
                 return len(in_links) > 0
+            
             case Outlet():
                 return False
+            
             case _:
                 return False
-                raise Exception(f"Invalid parent item type: {type(parent_item)}")
 
     def columnCount(self, parent=QModelIndex()):
         return 1
@@ -330,10 +340,10 @@ class FlowGraphModel(QAbstractItemModel):
                         return GraphItemType.NODE
                     
                     case Qt.ItemDataRole.DisplayRole:
-                        return f"NODE {operator.setExpression()}"
+                        return f"NODE {operator.expression()}"
                     
                     case Qt.ItemDataRole.EditRole:
-                        return operator.setExpression()
+                        return operator.expression()
                     case _:
                         return None
                 
@@ -369,9 +379,7 @@ class FlowGraphModel(QAbstractItemModel):
                         return self.indexFromItem(link.source) if link.source else None
                     
                     case Qt.ItemDataRole.DisplayRole:
-                        source = f"{link.source.operator.expression()}.{link.source.expression()}" if link.source else "None"
-                        target = f"{link.target.operator.expression()}.{link.target.expression()}" if link.target else "None"
-                        return f"LINK {source} -> {target}"
+                        return f"LINK {link.source} -> {link.target}"
                     
                     case _:
                         return None
@@ -392,7 +400,7 @@ class FlowGraphModel(QAbstractItemModel):
                     case Qt.ItemDataRole.EditRole | Qt.ItemDataRole.DisplayRole:
                         if not isinstance(value, str):
                             return False # Ensure value is a string
-                        operator.setName(value)
+                        operator.setExpression(value)
                         self.dataChanged.emit(index, index, [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
                         return True
                     case _:
@@ -430,8 +438,9 @@ class FlowGraphModel(QAbstractItemModel):
                         assert value.isValid(), "Source index must be valid."
                         source_item = self.itemFromIndex(value)
                         graph = self.invisibleRootItem()
-                        graph.relink(link, source_item)  # Relink the existing link to the new source
+                        graph.setLinkSource(link, source_item)  # Relink the existing link to the new source
                         self.dataChanged.emit(index, index, [GraphDataRole.SourceRole])
+                        return True
 
         return False
             
@@ -453,21 +462,24 @@ class FlowGraphModel(QAbstractItemModel):
             case _:
                 return Qt.ItemFlag.NoItemFlags
             
-    def insertRows(self, row, count, parent:QModelIndex):
+    def insertRows(self, row, count, parent:QModelIndex)->bool:
         parent = QModelIndex(parent)  # Ensure parent is a valid QModelIndex
         parent_item:FlowGraph|Operator|Inlet|Outlet|Link = self.invisibleRootItem() if not parent.isValid() else parent.internalPointer()
+        assert count > 0, "Count must be greater than 0 for insertRows."
         match parent_item:
             case FlowGraph():
                 graph = parent_item
                 success = True
                 self.beginInsertRows(parent, row, row + count - 1)
-                for _ in range(count):
-                    if not graph.addOperator(Operator(f"print")):
+                for i in range(count):
+                    if not graph.insertOperator(row + i, Operator(f"print")):
+                        raise Exception("Failed to add operator to the graph.")
                         success = False
                 self.endInsertRows()
                 return success
 
             case Operator():
+                raise Exception("With this model inlets cannot be inserted directly under an operator. they are determined by the operator's implementation.")
                 return False # Cannot insert rows directly under an operator. It is dependent on the Operator expression
             
             case Inlet():
@@ -478,8 +490,8 @@ class FlowGraphModel(QAbstractItemModel):
                 graph:FlowGraph = self.invisibleRootItem()
                 success = True
                 self.beginInsertRows(parent, row, row + count - 1)
-                for _ in range(count):
-                    if not graph.addLink(source=None, target=inlet):
+                for i in range(count):
+                    if not graph.insertLink(i, source=None, target=inlet):
                         success = False
                 self.endInsertRows()
                 return success
@@ -551,9 +563,13 @@ if __name__ == "__main__":
             self.graphview.setSelectionModel(self.selection)
 
             layout = QHBoxLayout(self)
+            splitter = QSplitter(Qt.Orientation.Horizontal, self)
+            splitter.addWidget(self.tree)
+            splitter.addWidget(self.graphview)
             layout.setMenuBar(self.toolbar)
-            layout.addWidget(self.tree)
-            layout.addWidget(self.graphview)
+            layout.addWidget(splitter)
+
+            self.setLayout(layout)
 
         @Slot()
         def addOperator(self):

@@ -197,6 +197,7 @@ class GraphItemModel(QAbstractItemModel):
                     return self.createIndex(row, column, node)
                 else:
                     return QModelIndex()
+                
             case NodeItem():
                 n_inlets = len(parent_item.inlets)
                 n_outlets = len(parent_item.outlets)
@@ -208,12 +209,14 @@ class GraphItemModel(QAbstractItemModel):
                         return self.createIndex(row, column, parent_item.outlets[row - n_inlets])
                 else:
                     return QModelIndex()
+                
             case InletItem():
                 if 0 <= row < len(parent_item.links):
                     link = parent_item.links[row]
                     return self.createIndex(row, column, link)
                 else:
                     return QModelIndex()
+                
             case _:
                 return QModelIndex()
 
@@ -322,6 +325,8 @@ class GraphItemModel(QAbstractItemModel):
             case InletItem():
                 return len(parent_item.links)>0
             case OutletItem():
+                return False
+            case LinkItem():
                 return False
             case _:
                 raise Exception(f"Invalid parent item type: {type(parent_item)}")
@@ -442,12 +447,14 @@ class GraphItemModel(QAbstractItemModel):
             case GraphItem():
                 graph = parent_item
                 return graph.appendNode(NodeItem(name=f"Node {len(graph.nodes) + 1}"))
+            
             case NodeItem():
                 node = parent_item
                 if row < len(node.inlets):
                     return node.appendInlet(InletItem(name=f"Inlet {len(node.inlets) + 1}"))
                 else:
                     return node.appendOutlet(OutletItem(name=f"Outlet {len(node.outlets) + 1}"))
+            
             case InletItem():
                 # Note: insertRow is called by the default graphview delegate to create new links.
                 # Therefore it must support dangling links.

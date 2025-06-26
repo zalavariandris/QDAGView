@@ -93,30 +93,32 @@ class GraphView(QGraphicsView):
     def model(self) -> QAbstractItemModel | None:
         return self._model
     
-    def indexFromWidget(self, widget:QGraphicsItem) -> QModelIndex|None:
+    def indexFromWidget(self, widget:QGraphicsItem) -> QModelIndex:
         """
         Get the index of the node widget in the model.
         This is used to identify the node in the model.
         """
+        assert widget._index.isValid(), "Widget index must be valid"
         return QModelIndex(widget._index)
     
-    def widgetFromIndex(self, index:QModelIndex|QPersistentModelIndex) -> BaseRowWidget|None:
+    def widgetFromIndex(self, index:QModelIndex|QPersistentModelIndex) -> BaseRowWidget:
         """
         Get the widget from the index.
         This is used to identify the node in the model.
         """
-        return self._widgets.get(QPersistentModelIndex(index), None)
+        return self._widgets[QPersistentModelIndex(index)]
 
     def indexAt(self, point:QPoint) -> QModelIndex:
         """
         Find the index at the given position.
-        This is used to determine if a drag operation is valid.
+        point is in untransformed viewport coordinates, just like QMouseEvent::pos().
         """
-        for item in self.items(point):
-            if item in self._widgets.values():
-                index = self.indexFromWidget(item)
-                return QModelIndex(index) if index else QModelIndex()
 
+        all_widgets = set(self._widgets.values())
+        for item in self.items(point):
+            if item in all_widgets:
+                # If the item is a widget, return its index
+                return self.indexFromWidget(item)
         return QModelIndex()
 
     def createWidget(self, parent_widget:QGraphicsItem|QGraphicsScene, index:QModelIndex|QPersistentModelIndex) -> BaseRowWidget:
@@ -188,16 +190,18 @@ class GraphView(QGraphicsView):
                         scene.removeItem(widget)
             case _:
                 raise ValueError(f"Unknown parent widget type: {type(parent_widget)}")
+            
+
 
     def onRowsInserted(self, parent:QModelIndex, start:int, end:int):
         assert self._model, "Model must be set before handling rows inserted!"
 
-        def make_child_widgets(parent_widget:QGraphicsItem|QGraphicsScene, parent:QModelIndex, start:int, end:int):
+        def _make_child_widgets_recursive(parent_widget:QGraphicsItem|QGraphicsScene, parent:QModelIndex, start:int, end:int):
             """
             Create widgets for the given range of rows in the model.
             This is used to populate the graph view with nodes, inlets, outlets and links.
             """
-            print("make child widgets", start, end, parent_widget)
+
             for row in range(start, end + 1):
                 index = self._model.index(row, 0, parent)
                 if not index.isValid():
@@ -205,54 +209,61 @@ class GraphView(QGraphicsView):
                     continue
                 
                 widget = self.createWidget(parent_widget, index)
-                self._widgets[QPersistentModelIndex(index)] = widget
-                widget._index = QPersistentModelIndex(index)
+                persistent_index = QPersistentModelIndex(index)
+                assert persistent_index not in self._widgets, f"Widget for index {index} already exists in _widgets"
+                self._widgets[persistent_index] = widget
+                widget._index = persistent_index
                 self._set_widget_data(index, 0)
 
-                make_child_widgets(
-                    parent_widget=widget, 
-                    parent=index, 
-                    start=0, 
-                    end=self._model.rowCount(index) - 1
-                )
+                row_count = self._model.rowCount(index)
+                if row_count > 0:
+                    _make_child_widgets_recursive(
+                        parent_widget=widget, 
+                        parent=index, 
+                        start=0, 
+                        end=row_count - 1
+                    )
 
-        parent_widget = self.widgetFromIndex(parent) if parent.isValid() else self.scene()
-        make_child_widgets(
-            parent_widget=parent_widget, 
-            parent=parent, 
-            start=start, 
-            end=end
-        )
-
-        # def get_children(index:QModelIndex) -> Iterable[QModelIndex]:
-        #     if not isinstance(index, QModelIndex):
-        #         raise TypeError(f"Expected QModelIndex, got {type(index)}")
-        #     model = index.model()
-        #     for row in range(model.rowCount(index)):
-        #         child_index = model.index(row, 0, index)
-        #         yield child_index
-        #     return []
-        
-        # sorted_indexes = bfs(
-        #     *[self._model.index(row, 0, parent) for row in range(start, end + 1)], 
-        #     children=get_children, 
-        #     reverse=False
+        # parent_widget = self.widgetFromIndex(parent) if parent.isValid() else self.scene()
+        # _make_child_widgets_recursive(
+        #     parent_widget=parent_widget, 
+        #     parent=parent, 
+        #     start=start, 
+        #     end=end
         # )
 
-        
-        # for index in sorted_indexes:
-        #     try:
-        #         parent_widget = self.widgetFromIndex(index.parent()) if index.parent().isValid() else self.scene()
-        #         widget = self.createWidget(parent_widget, index)
-        #     except NotImplementedError as e:
-        #         logger.error(f"Error creating widget for index {index}: {e}")
-        #         traceback.print_exc()
-        #         continue
+        def make_child_widgets_bfs(parent:QModelIndex, start:int, end:int):
+            def get_children(index:QModelIndex) -> Iterable[QModelIndex]:
+                if not isinstance(index, QModelIndex):
+                    raise TypeError(f"Expected QModelIndex, got {type(index)}")
+                model = index.model()
+                for row in range(model.rowCount(index)):
+                    child_index = model.index(row, 0, index)
+                    yield child_index
+                return []
+            
+            sorted_indexes = bfs(
+                *[self._model.index(row, 0, parent) for row in range(start, end + 1)], 
+                children=get_children, 
+                reverse=False
+            )
 
-        #     self._widgets[QPersistentModelIndex(index)] = widget
-        #     widget._index = QPersistentModelIndex(index)
+            
+            for index in sorted_indexes:
+                try:
+                    parent_widget = self.widgetFromIndex(index.parent()) if index.parent().isValid() else self.scene()
+                    widget = self.createWidget(parent_widget, index)
+                except NotImplementedError as e:
+                    logger.error(f"Error creating widget for index {index}: {e}")
+                    traceback.print_exc()
+                    continue
 
-        #     self._set_data(index, 0)
+                self._widgets[QPersistentModelIndex(index)] = widget
+                widget._index = QPersistentModelIndex(index)
+
+                self._set_widget_data(index, 0)
+
+        make_child_widgets_bfs(parent, start, end)
 
     def onRowsAboutToBeRemoved(self, parent:QModelIndex, start:int, end:int):
         assert self._model, "Model must be set before handling rows removed!"
@@ -293,7 +304,25 @@ class GraphView(QGraphicsView):
         This updates the widgets in the graph view.
         """
         assert self._model
-        print("on data changed")
+
+        if GraphDataRole.SourceRole in roles or roles == []:
+            # If the source role is changed, we need to update the link widget
+            for row in range(top_left.row(), bottom_right.row() + 1):
+                index = self._model.index(row, top_left.column(), top_left.parent())
+                if widget := self.widgetFromIndex(index):
+                    if isinstance(widget, LinkWidget):
+                        widget.link(
+                            self.widgetFromIndex(self._delegate.linkSource(index)),
+                            widget._target
+                        )
+        
+        if GraphDataRole.TypeRole in roles or roles == []:
+            # if an inlet or outlet type is changed, we need to update the widget
+            for row in range(top_left.row(), bottom_right.row() + 1):
+                index = self._model.index(row, top_left.column(), top_left.parent())
+                if widget := self.widgetFromIndex(index):
+                    ... # TODO replace Widget
+
         for row in range(top_left.row(), bottom_right.row() + 1):
             index = self._model.index(row, top_left.column(), top_left.parent())
             if widget := self.widgetFromIndex(index):
@@ -555,6 +584,7 @@ class GraphView(QGraphicsView):
         This is used to determine if the drag-and-drop operation is valid.
         """
         drop_target_type = self._delegate.itemType(drop_target)
+
         if data.hasFormat(GraphMimeData.OutletData):
             return True
         
@@ -680,6 +710,7 @@ class GraphView(QGraphicsView):
         pos = event.position()
         index = self.indexAt(QPoint(int(pos.x()), int(pos.y())))  # Ensure the index is updated
         assert index
+
         match self._delegate.itemType(index):
             case GraphItemType.INLET:
                 # Setup new drag                
@@ -697,6 +728,7 @@ class GraphView(QGraphicsView):
                 assert index.isValid(), "Outlet index must be valid"
                 mime = self._outletMimeData(index)
                 drag = QDrag(self)
+                
                 drag.setMimeData(mime)
 
                 # Execute drag
@@ -752,6 +784,11 @@ class GraphView(QGraphicsView):
             case _:
                 super().mousePressEvent(event)
 
+    def mouseMoveEvent(self, event):
+        pos = event.position()
+        index = self.indexAt(QPoint(int(pos.x()), int(pos.y())))  # Ensure the index is updated
+        return super().mouseMoveEvent(event)
+
     def dragEnterEvent(self, event)->None:
         if event.mimeData().hasFormat(GraphMimeData.InletData) or event.mimeData().hasFormat(GraphMimeData.OutletData):
             # Create a draft link if the mime data is for inlets or outlets
@@ -765,14 +802,17 @@ class GraphView(QGraphicsView):
         """Handle drag move events to update draft link position"""
         pos = event.position()
         drop_target_index = self.indexAt(QPoint(int(pos.x()), int(pos.y())))  # Ensure the index is updated
-        if self._canDropMimeData(event.mimeData(), event.dropAction(), drop_target_index):
-            print("drag move event", drop_target_index, self._delegate.itemType(drop_target_index))
+        
+        CanDropMimeData = self._canDropMimeData(event.mimeData(), event.dropAction(), drop_target_index)
+        TargetType = self._delegate.itemType(drop_target_index)
+
+        if CanDropMimeData:
             if event.mimeData().hasFormat(GraphMimeData.OutletData):
                 # Outlet dragged
                 outlet_index = self._decodeOutletMimeData(event.mimeData())
                 assert outlet_index.isValid(), "Outlet index must be valid"
                 outlet_widget = self.widgetFromIndex(outlet_index)
-                if self._delegate.itemType(drop_target_index) == GraphItemType.INLET:
+                if TargetType == GraphItemType.INLET:
                     # ...over inlet
                     inlet_widget = self.widgetFromIndex(drop_target_index)
                     self._updateDraftLink(source=outlet_widget, target=inlet_widget)
@@ -789,7 +829,7 @@ class GraphView(QGraphicsView):
                 inlet_index = self._decodeInletMimeData(event.mimeData())
                 assert inlet_index.isValid(), "Inlet index must be valid"
                 inlet_widget = self.widgetFromIndex(inlet_index)
-                if self._delegate.itemType(drop_target_index) == GraphItemType.OUTLET:
+                if TargetType == GraphItemType.OUTLET:
                     # ... over outlet
                     outlet_widget = self.widgetFromIndex(drop_target_index)
                     self._updateDraftLink(source=outlet_widget, target=inlet_widget)
@@ -806,7 +846,7 @@ class GraphView(QGraphicsView):
                 link_index = self._decodeLinkHeadMimeData(event.mimeData())
                 assert link_index.isValid(), "Link index must be valid"
                 link_widget = self.widgetFromIndex(link_index)
-                if self._delegate.itemType(drop_target_index) == GraphItemType.INLET:
+                if TargetType == GraphItemType.INLET:
                     # ...over inlet
                     inlet_widget = self.widgetFromIndex(drop_target_index)
                     line = makeLineBetweenShapes(link_widget._source, inlet_widget)
@@ -827,7 +867,7 @@ class GraphView(QGraphicsView):
                 link_index = self._decodeLinkTailMimeData(event.mimeData())
                 assert link_index.isValid(), "Link index must be valid"
                 link_widget = self.widgetFromIndex(link_index)
-                if self._delegate.itemType(drop_target_index) == GraphItemType.OUTLET:
+                if TargetType == GraphItemType.OUTLET:
                     # ...over outlet
                     outlet_widget = self.widgetFromIndex(drop_target_index)
                     line = makeLineBetweenShapes(outlet_widget, link_widget._target)
@@ -873,15 +913,15 @@ class CellWidget(QGraphicsProxyWidget):
     def __init__(self, parent: QGraphicsItem | None = None):
         super().__init__(parent=parent)
         self._label = QLabel("")
-        self._label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        # self._label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._label.setStyleSheet("background: orange;")
         self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         # self._label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setWidget(self._label)
-        self.setAutoFillBackground(False)
+        # self.setAutoFillBackground(False)
         
         # Make CellWidget transparent to drag events so parent can handle them
-        self.setAcceptDrops(False)
+        # self.setAcceptDrops(False)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, False)
 
     def text(self):

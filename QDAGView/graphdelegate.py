@@ -12,6 +12,7 @@ class GraphDelegate(QObject):
     def __init__(self):
         super().__init__()
 
+    ## READ
     def linkSource(self, link_index:QModelIndex|QPersistentModelIndex) -> QModelIndex|None:
         source_index = link_index.data(GraphDataRole.SourceRole)
         assert source_index is None or source_index.isValid(), f"Source index must be valid or None, got: {source_index}"
@@ -136,8 +137,6 @@ class GraphDelegate(QObject):
 
         # Add child to the selected item using generic methods
         position = model.rowCount(inlet)
-        model.beginInsertRows(inlet, position, position)
-        model.blockSignals(True)
 
         # Make sure the parent has at least one column for children, otherwise the treeview won't show them
         if model.columnCount(inlet) == 0:
@@ -148,9 +147,18 @@ class GraphDelegate(QObject):
             new_link_name = f"{'Link'}#{position + 1}"
             model.setData(link_index, new_link_name, role=Qt.ItemDataRole.DisplayRole)
             model.setData(link_index, outlet, role=GraphDataRole.SourceRole)
-        model.blockSignals(False)
-        model.endInsertRows()
         
+    ## UPDATE
+    def setLinkSource(self, model:QAbstractItemModel, link:QModelIndex|QPersistentModelIndex, source:QModelIndex|QPersistentModelIndex):
+        """
+        Set the source of a link.
+        This sets the source of the link at the specified index to the given source index.
+        """
+        assert model, "Source model must be set before setting a link source"
+        assert link.isValid(), "Link index must be valid"
+        assert source.isValid(), "Source index must be valid"
+        model.setData(link, source, role=GraphDataRole.SourceRole)
+
     ## DELETE
     def removeLink(self, model:QAbstractItemModel, link:QModelIndex|QPersistentModelIndex):
         """
@@ -160,3 +168,4 @@ class GraphDelegate(QObject):
         assert model, "Source model must be set before removing a link"
         assert link.isValid(), "Link index must be valid"
         model.removeRows(link.row(), 1, link.parent())
+
