@@ -169,3 +169,17 @@ class GraphDelegate(QObject):
         assert link.isValid(), "Link index must be valid"
         model.removeRows(link.row(), 1, link.parent())
 
+    ## delegate
+    def createEditor(self, parent:QWidget, option:QStyleOptionViewItem, index:QModelIndex|QPersistentModelIndex) -> QWidget:
+        return QLineEdit(parent)
+    
+    def setEditorData(self, editor:QWidget, index:QModelIndex|QPersistentModelIndex):
+        if isinstance(editor, QLineEdit):
+            text = index.data(Qt.ItemDataRole.DisplayRole)
+            editor.setText(text)
+    
+    def setModelData(self, editor:QWidget, model:QAbstractItemModel, index:QModelIndex|QPersistentModelIndex):
+        if isinstance(editor, QLineEdit):
+            text = editor.text()
+            model.setData(index, text, Qt.ItemDataRole.EditRole)
+            model.setData(index, GraphItemType.NODE, GraphDataRole.TypeRole)

@@ -190,8 +190,6 @@ class GraphView(QGraphicsView):
                         scene.removeItem(widget)
             case _:
                 raise ValueError(f"Unknown parent widget type: {type(parent_widget)}")
-            
-
 
     def onRowsInserted(self, parent:QModelIndex, start:int, end:int):
         assert self._model, "Model must be set before handling rows inserted!"
@@ -683,6 +681,35 @@ class GraphView(QGraphicsView):
     
         return False
     
+    ##
+    def mouseDoubleClickEvent(self, event:QMouseEvent):
+        index = self.indexAt(QPoint(int(event.position().x()), int(event.position().y()  )))
+        def createEditor(parent:QGraphicsProxyWidget, option:QStyleOptionViewItem, index:QModelIndex):
+            return QLineEdit(parent)
+
+        if index.isValid():
+            match self._delegate.itemType(index):
+                case GraphItemType.NODE:
+                    # Double click on node, open editor
+                    widget = self.widgetFromIndex(index)
+                    if widget in self._widgets.values():
+                        # Create editor for node
+                        editor = QLineEdit()
+                        editor.setText(index.data(Qt.ItemDataRole.EditRole))
+                        # editor.setParent(widget._title_widget)
+                        widget._title_widget.setWidget(editor)
+                        editor.editingFinished.connect(lambda:  
+                                                    self._delegate.setModelData(editor, self._model, index))
+
+                        editor.setFocus(Qt.FocusReason.MouseFocusReason)
+
+                case GraphItemType.INLET:
+                    ...
+                case GraphItemType.OUTLET:
+                    ...
+                case _:
+                    super().mouseDoubleClickEvent(event)
+
     ## Handle drag ad drop events
     def _createDraftLink(self):
         """Safely create draft link with state tracking"""
