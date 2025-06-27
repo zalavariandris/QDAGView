@@ -323,8 +323,9 @@ class GraphView(QGraphicsView):
 
         for row in range(top_left.row(), bottom_right.row() + 1):
             index = self._model.index(row, top_left.column(), top_left.parent())
+            print("Updating widget data for index:", index)
             if widget := self.widgetFromIndex(index):
-                widget.setLabel(index.data(Qt.ItemDataRole.DisplayRole))
+                widget.setTitleText(index.data(Qt.ItemDataRole.DisplayRole))
 
     # # Selection
     def setSelectionModel(self, selection: QItemSelectionModel):
@@ -439,7 +440,7 @@ class GraphView(QGraphicsView):
         assert index.column() == 0, "Index must be in the first column"
 
         if widget := self.widgetFromIndex(index):
-            widget.setLabel(index.data(Qt.ItemDataRole.DisplayRole))
+            widget.setTitleText(index.data(Qt.ItemDataRole.DisplayRole))
 
     ## INTERNAL DRAG AND DROP
     def _inletMimeData(self, inlet:QModelIndex|QPersistentModelIndex)->QMimeData:
@@ -684,8 +685,12 @@ class GraphView(QGraphicsView):
     ##
     def mouseDoubleClickEvent(self, event:QMouseEvent):
         index = self.indexAt(QPoint(int(event.position().x()), int(event.position().y()  )))
-        def createEditor(parent:QGraphicsProxyWidget, option:QStyleOptionViewItem, index:QModelIndex):
-            return QLineEdit(parent)
+        def onEditingFinised(editor:QLineEdit, widget:BaseRowWidget):
+            self._delegate.setModelData(editor, self._model, index)
+            label = QLabel()
+            label.setText(index.data(Qt.ItemDataRole.DisplayRole))
+            widget._title_widget.setWidget(label)
+            editor.deleteLater()
 
         if index.isValid():
             match self._delegate.itemType(index):
@@ -698,8 +703,7 @@ class GraphView(QGraphicsView):
                         editor.setText(index.data(Qt.ItemDataRole.EditRole))
                         # editor.setParent(widget._title_widget)
                         widget._title_widget.setWidget(editor)
-                        editor.editingFinished.connect(lambda:  
-                                                    self._delegate.setModelData(editor, self._model, index))
+                        editor.editingFinished.connect(lambda editor = editor, widget=widget: onEditingFinised(editor, widget) )
 
                         editor.setFocus(Qt.FocusReason.MouseFocusReason)
 
@@ -952,10 +956,12 @@ class CellWidget(QGraphicsProxyWidget):
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, False)
 
     def text(self):
-        return self._label.text()
+        label = self.widget()  # Ensure the widget is created
+        return label.text() if label else ""
 
     def setText(self, text:str):
-        self._label.setText(text)
+        label = self.widget()  # Ensure the widget is created
+        label.setText(text)
 
 
 class BaseRowWidget(QGraphicsWidget):
@@ -969,12 +975,12 @@ class BaseRowWidget(QGraphicsWidget):
         layout.updateGeometry()
         self._index:QPersistentModelIndex | None = None
 
-    def setLabel(self, label:str):
+    def setTitleText(self, text:str):
         """
         Set the label for the row widget.
         This is used to display the name of the node or port.
         """
-        self._title_widget.setText(label)
+        self._title_widget.setText(text)
         
     def addCell(self, cell:CellWidget):
         layout = cast(QGraphicsLinearLayout, self.layout())
