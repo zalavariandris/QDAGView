@@ -171,7 +171,7 @@ class GraphDelegate(QObject):
 
     ## delegate
     def createEditor(self, parent:QWidget, option:QStyleOptionViewItem, index:QModelIndex|QPersistentModelIndex) -> QWidget:
-        return QLineEdit(parent)
+        return QLineEdit(parent=None)
     
     def setEditorData(self, editor:QWidget, index:QModelIndex|QPersistentModelIndex):
         if isinstance(editor, QLineEdit):

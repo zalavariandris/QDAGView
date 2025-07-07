@@ -325,7 +325,8 @@ class GraphView(QGraphicsView):
             index = self._model.index(row, top_left.column(), top_left.parent())
             print("Updating widget data for index:", index)
             if widget := self.widgetFromIndex(index):
-                widget.setTitleText(index.data(Qt.ItemDataRole.DisplayRole))
+                cell_widget = widget._title_widget
+                cell_widget.setText(index.data(Qt.ItemDataRole.DisplayRole))
 
     # # Selection
     def setSelectionModel(self, selection: QItemSelectionModel):
@@ -440,7 +441,8 @@ class GraphView(QGraphicsView):
         assert index.column() == 0, "Index must be in the first column"
 
         if widget := self.widgetFromIndex(index):
-            widget.setTitleText(index.data(Qt.ItemDataRole.DisplayRole))
+            cell_widget = widget._title_widget
+            cell_widget.setText(index.data(Qt.ItemDataRole.DisplayRole))
 
     ## INTERNAL DRAG AND DROP
     def _inletMimeData(self, inlet:QModelIndex|QPersistentModelIndex)->QMimeData:
@@ -684,35 +686,45 @@ class GraphView(QGraphicsView):
     
     ##
     def mouseDoubleClickEvent(self, event:QMouseEvent):
-        index = self.indexAt(QPoint(int(event.position().x()), int(event.position().y()  )))
-        def onEditingFinised(editor:QLineEdit, widget:BaseRowWidget):
+        index = self.indexAt(QPoint(int(event.position().x()), int(event.position().y())))
+
+        if not index.isValid():
+            return super().mouseDoubleClickEvent(event)
+        
+        # def createEditor(editor:QLineEdit, widget:CellWidget):
+        #     """Create an editor for the node title"""
+        #     editor.setText(index.data(Qt.ItemDataRole.EditRole))
+        #     # editor.setParent(widget._title_widget)
+        #     widget._title_widget.setWidget(editor)
+        #     editor.editingFinished.connect(lambda: destroyEditor(editor, widget))
+        #     editor.setFocus(Qt.FocusReason.MouseFocusReason)
+        
+        def removeEditor(editor:QLineEdit, cell_widget:CellWidget):
             self._delegate.setModelData(editor, self._model, index)
-            label = QLabel()
-            label.setText(index.data(Qt.ItemDataRole.DisplayRole))
-            widget._title_widget.setWidget(label)
+            cell_widget.setEditorWidget(None)  # Clear the editor widget
             editor.deleteLater()
 
-        if index.isValid():
-            match self._delegate.itemType(index):
-                case GraphItemType.NODE:
-                    # Double click on node, open editor
-                    widget = self.widgetFromIndex(index)
-                    if widget in self._widgets.values():
-                        # Create editor for node
-                        editor = QLineEdit()
-                        editor.setText(index.data(Qt.ItemDataRole.EditRole))
-                        # editor.setParent(widget._title_widget)
-                        widget._title_widget.setWidget(editor)
-                        editor.editingFinished.connect(lambda editor = editor, widget=widget: onEditingFinised(editor, widget) )
 
-                        editor.setFocus(Qt.FocusReason.MouseFocusReason)
+        match self._delegate.itemType(index):
+            case GraphItemType.NODE:
+                # Double click on node, open editor
+                editor = self._delegate.createEditor(self, None, index)
+                assert editor.parent() is None, "Editor must not have a parent"
+                node_widget = self.widgetFromIndex(index)
+                assert node_widget in self._widgets.values()
+                cell_widget = node_widget._title_widget
+                cell_widget.setEditorWidget(editor)  # Clear any existing editor widget
+                editor.setText(index.data(Qt.ItemDataRole.EditRole))
+                editor.setFocus(Qt.FocusReason.MouseFocusReason)
 
-                case GraphItemType.INLET:
-                    ...
-                case GraphItemType.OUTLET:
-                    ...
-                case _:
-                    super().mouseDoubleClickEvent(event)
+                editor.editingFinished.connect(lambda editor = editor, widget=node_widget: removeEditor(editor, cell_widget) )
+
+            case GraphItemType.INLET:
+                ...
+            case GraphItemType.OUTLET:
+                ...
+            case _:
+                super().mouseDoubleClickEvent(event)
 
     ## Handle drag ad drop events
     def _createDraftLink(self):
@@ -955,6 +967,15 @@ class CellWidget(QGraphicsProxyWidget):
         # self.setAcceptDrops(False)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, False)
 
+    def setEditorWidget(self, editor:QWidget|None):
+        """
+        Set the editor widget for the cell.
+        This is used to display an editor for the cell.
+        """
+        if editor is None:
+            editor = self._label
+        self.setWidget(editor)
+
     def text(self):
         label = self.widget()  # Ensure the widget is created
         return label.text() if label else ""
@@ -974,13 +995,6 @@ class BaseRowWidget(QGraphicsWidget):
         self.addCell(self._title_widget)
         layout.updateGeometry()
         self._index:QPersistentModelIndex | None = None
-
-    def setTitleText(self, text:str):
-        """
-        Set the label for the row widget.
-        This is used to display the name of the node or port.
-        """
-        self._title_widget.setText(text)
         
     def addCell(self, cell:CellWidget):
         layout = cast(QGraphicsLinearLayout, self.layout())
