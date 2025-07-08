@@ -464,6 +464,7 @@ class GraphItemModel(QAbstractItemModel):
                 raise Exception(f"Invalid parent item type: {type(parent_item)}")
             
     def removeRows(self, row:int, count:int, parent:QModelIndex)-> bool:
+        assert count >= 0, "Count must be greater than 0"
         parent_item:GraphItem|NodeItem|InletItem|OutletItem|LinkItem = self.invisibleRootItem() if not parent.isValid() else parent.internalPointer()
         match parent_item:
             case GraphItem():
@@ -598,8 +599,13 @@ class DataFlowApp(QWidget):
     def removeSelected(self):
         """Remove selected items from the model."""
         selected_indexes = self._treeview.selectedIndexes()
+
         if not selected_indexes:
             return
+        
+        # group selected indexes by their parent index and sort them by depth
+        
+        # selected_rows = sorted(list(set(index.row() for index in selected_indexes if index.isValid())))
         
         for index in selected_indexes:
             if index.isValid():

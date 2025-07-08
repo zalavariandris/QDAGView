@@ -4,6 +4,7 @@ from qtpy.QtCore import *
 from qtpy.QtWidgets import *
 from core import GraphDataRole, GraphItemType
 
+
 class GraphDelegate(QObject):
     """
     Delegate for the GraphView.
@@ -182,6 +183,5 @@ class GraphDelegate(QObject):
         if isinstance(editor, QLineEdit):
             text = editor.text()
             model.setData(index, text, Qt.ItemDataRole.EditRole)
-            model.setData(index, GraphItemType.NODE, GraphDataRole.TypeRole)
         else:
             raise TypeError(f"Editor must be a QLineEdit, got {type(editor)} instead.")

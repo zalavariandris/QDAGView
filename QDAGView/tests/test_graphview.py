@@ -11,7 +11,7 @@ Manual tests
 - [x] link head to canvas: remove link
 
 - [x] link tail to outlet: reconnect link
-- [ ] link head to inlet: reconnect link
+- [x] link head to inlet: reconnect link
 """
 
 import sys

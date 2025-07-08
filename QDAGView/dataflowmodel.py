@@ -116,6 +116,14 @@ class FlowGraph:
                 self._out_links.pop(outlet, None)
             return True
         return False
+    
+    def removeLink(self, link: Link) -> bool:
+        """Remove a link from the graph."""
+        if link.source is not None:
+            self._out_links[link.source].remove(link)
+        if link.target is not None:
+            self._in_links[link.target].remove(link)
+        return True
 
     ## UPDATE
     def setLinkSource(self, link: Link, source: Outlet | None) -> bool:
@@ -527,8 +535,7 @@ class FlowGraphModel(QAbstractItemModel):
                 # Remove links connected to this inlet
                 # This is a simplified implementation - you may need more sophisticated link management
                 for i in reversed(range(row, row + count)):
-                    # Implementation would depend on how links are stored and managed
-                    pass
+                    pass # TODO: Implement link removal logic
                 self.endRemoveRows()
                 return True
             case _:
@@ -579,13 +586,40 @@ if __name__ == "__main__":
         @Slot()
         def removeSelectedItems(self):
             """Remove the currently selected items from the graph."""
+            # Get all selected indexes, sort by depth (deepest first), and unique by (parent, row)
             selected_indexes = self.selection.selectedIndexes()
             if not selected_indexes:
                 return
-            
-            for index in selected_indexes:
-                if index.isValid():
-                    self.model.removeRows(index.row(), 1, index.parent())
+
+            # Filter only top-level indexes (remove children if parent is selected)
+            def is_descendant(index, selected_set):
+                parent = index.parent()
+                while parent.isValid():
+                    if parent in selected_set:
+                        return True
+                    parent = parent.parent()
+                return False
+
+            selected_set = set(selected_indexes)
+            filtered_indexes = [
+                idx for idx in selected_indexes if not is_descendant(idx, selected_set)
+            ]
+
+            # Remove duplicates by (parent, row)
+            unique_keys = set()
+            unique_indexes = []
+            for idx in filtered_indexes:
+                key = (idx.parent(), idx.row())
+                if key not in unique_keys:
+                    unique_keys.add(key)
+                    unique_indexes.append(idx)
+
+            # Remove from bottom up (descending row order per parent)
+            unique_indexes.sort(key=lambda idx: (idx.parent(), -idx.row()))
+
+            for idx in unique_indexes:
+                if idx.isValid():
+                    self.model.removeRows(idx.row(), 1, idx.parent())
 
     # graph = model.invisibleRootItem()
     # operator = Operator("TestOperator")

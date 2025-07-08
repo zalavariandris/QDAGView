@@ -194,8 +194,10 @@ class GraphModel(QAbstractItemModel):
                 return len(parent_item.links)>0
             case Outlet():
                 return False
+            case Link():
+                return False
             case _:
-                raise Exception(f"Invalid parent item type: {type(parent_item)}")
+                return super().hasChildren(parent)
 
     def columnCount(self, parent=QModelIndex()):
         return 1
