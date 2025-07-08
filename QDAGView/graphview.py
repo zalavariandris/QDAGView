@@ -47,7 +47,7 @@ class GraphView(QGraphicsView):
         self._selection_connections = []
         # store model widget relations
         self._widgets: dict[QPersistentModelIndex, BaseRowWidget] = dict()
-        self._widgets_marked_for_removal: list[QPersistentModelIndex] = list()
+        self._cells: bidict[QPersistentModelIndex, CellWidget] = bidict()
         self._draft_link: QGraphicsLineItem | None = None
 
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
@@ -106,7 +106,20 @@ class GraphView(QGraphicsView):
         Get the widget from the index.
         This is used to identify the node in the model.
         """
-        return self._widgets[QPersistentModelIndex(index)]
+        idx = QPersistentModelIndex(index)
+        return self._widgets[idx]
+    
+    def indexFromCell(self, cell:CellWidget) -> QModelIndex:
+        """
+        Get the index of the cell widget in the model.
+        This is used to identify the cell in the model.
+        """
+        idx = self._cells.inverse[cell]
+        return QModelIndex(idx)
+    
+    def cellFromIndex(self, index:QModelIndex|QPersistentModelIndex) -> CellWidget|None:
+        idx = QPersistentModelIndex(index)
+        return self._cells.get(idx, None)
 
     def indexAt(self, point:QPoint) -> QModelIndex:
         """
@@ -194,33 +207,33 @@ class GraphView(QGraphicsView):
     def onRowsInserted(self, parent:QModelIndex, start:int, end:int):
         assert self._model, "Model must be set before handling rows inserted!"
 
-        def _make_child_widgets_recursive(parent_widget:QGraphicsItem|QGraphicsScene, parent:QModelIndex, start:int, end:int):
-            """
-            Create widgets for the given range of rows in the model.
-            This is used to populate the graph view with nodes, inlets, outlets and links.
-            """
+        # def _make_child_widgets_recursive(parent_widget:QGraphicsItem|QGraphicsScene, parent:QModelIndex, start:int, end:int):
+        #     """
+        #     Create widgets for the given range of rows in the model.
+        #     This is used to populate the graph view with nodes, inlets, outlets and links.
+        #     """
 
-            for row in range(start, end + 1):
-                index = self._model.index(row, 0, parent)
-                if not index.isValid():
-                    logger.warning(f"Invalid index at row {row} for parent {parent}")
-                    continue
+        #     for row in range(start, end + 1):
+        #         index = self._model.index(row, 0, parent)
+        #         if not index.isValid():
+        #             logger.warning(f"Invalid index at row {row} for parent {parent}")
+        #             continue
                 
-                widget = self.createWidget(parent_widget, index)
-                persistent_index = QPersistentModelIndex(index)
-                assert persistent_index not in self._widgets, f"Widget for index {index} already exists in _widgets"
-                self._widgets[persistent_index] = widget
-                widget._index = persistent_index
-                self._set_widget_data(index, 0)
+        #         widget = self.createWidget(parent_widget, index)
+        #         persistent_index = QPersistentModelIndex(index)
+        #         assert persistent_index not in self._widgets, f"Widget for index {index} already exists in _widgets"
+        #         self._widgets[persistent_index] = widget
+        #         widget._index = persistent_index
+        #         self._set_widget_data(index, 0)
 
-                row_count = self._model.rowCount(index)
-                if row_count > 0:
-                    _make_child_widgets_recursive(
-                        parent_widget=widget, 
-                        parent=index, 
-                        start=0, 
-                        end=row_count - 1
-                    )
+        #         row_count = self._model.rowCount(index)
+        #         if row_count > 0:
+        #             _make_child_widgets_recursive(
+        #                 parent_widget=widget, 
+        #                 parent=index, 
+        #                 start=0, 
+        #                 end=row_count - 1
+        #             )
 
         # parent_widget = self.widgetFromIndex(parent) if parent.isValid() else self.scene()
         # _make_child_widgets_recursive(
@@ -690,41 +703,21 @@ class GraphView(QGraphicsView):
 
         if not index.isValid():
             return super().mouseDoubleClickEvent(event)
-        
-        # def createEditor(editor:QLineEdit, widget:CellWidget):
-        #     """Create an editor for the node title"""
-        #     editor.setText(index.data(Qt.ItemDataRole.EditRole))
-        #     # editor.setParent(widget._title_widget)
-        #     widget._title_widget.setWidget(editor)
-        #     editor.editingFinished.connect(lambda: destroyEditor(editor, widget))
-        #     editor.setFocus(Qt.FocusReason.MouseFocusReason)
-        
+                
         def removeEditor(editor:QLineEdit, cell_widget:CellWidget):
             self._delegate.setModelData(editor, self._model, index)
             cell_widget.setEditorWidget(None)  # Clear the editor widget
             editor.deleteLater()
 
 
-        match self._delegate.itemType(index):
-            case GraphItemType.NODE:
-                # Double click on node, open editor
-                editor = self._delegate.createEditor(self, None, index)
-                assert editor.parent() is None, "Editor must not have a parent"
-                node_widget = self.widgetFromIndex(index)
-                assert node_widget in self._widgets.values()
-                cell_widget = node_widget._title_widget
-                cell_widget.setEditorWidget(editor)  # Clear any existing editor widget
-                editor.setText(index.data(Qt.ItemDataRole.EditRole))
-                editor.setFocus(Qt.FocusReason.MouseFocusReason)
+        if cell_widget := self.cellFromIndex(index):
+            editor = self._delegate.createEditor(self, None, index)
+            assert editor.parent() is None, "Editor must not have a parent"
+            cell_widget.setEditorWidget(editor)  # Clear any existing editor widget
+            editor.setText(index.data(Qt.ItemDataRole.EditRole))
+            editor.setFocus(Qt.FocusReason.MouseFocusReason)
+            editor.editingFinished.connect(lambda editor = editor, widget=node_widget: removeEditor(editor, cell_widget) )
 
-                editor.editingFinished.connect(lambda editor = editor, widget=node_widget: removeEditor(editor, cell_widget) )
-
-            case GraphItemType.INLET:
-                ...
-            case GraphItemType.OUTLET:
-                ...
-            case _:
-                super().mouseDoubleClickEvent(event)
 
     ## Handle drag ad drop events
     def _createDraftLink(self):
@@ -1067,6 +1060,12 @@ class NodeWidget(BaseRowWidget):
     def removeOutlet(self, outlet:OutletWidget):
         layout = cast(QGraphicsLinearLayout, self.layout())
         layout.removeItem(outlet)
+
+    def addCell(self, cell):
+        return super().addCell(cell)
+    
+    def removeCell(self, cell):
+        return super().removeCell(cell)
 
     def paint(self, painter: QPainter, option: QStyleOption, widget=None):
         rect = option.rect       

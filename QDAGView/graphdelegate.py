@@ -183,3 +183,5 @@ class GraphDelegate(QObject):
             text = editor.text()
             model.setData(index, text, Qt.ItemDataRole.EditRole)
             model.setData(index, GraphItemType.NODE, GraphDataRole.TypeRole)
+        else:
+            raise TypeError(f"Editor must be a QLineEdit, got {type(editor)} instead.")
