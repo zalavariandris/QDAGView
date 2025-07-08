@@ -47,7 +47,7 @@ class GraphView(QGraphicsView):
         self._selection_connections = []
         # store model widget relations
         self._widgets: dict[QPersistentModelIndex, BaseRowWidget] = dict()
-        self._cells: bidict[QPersistentModelIndex, CellWidget] = bidict()
+        self._cells: dict[QPersistentModelIndex, CellWidget] = dict()
         self._draft_link: QGraphicsLineItem | None = None
 
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
@@ -87,6 +87,7 @@ class GraphView(QGraphicsView):
         assert scene
         scene.clear()
         self._widgets.clear()
+        self._cells.clear()
         if self._model.rowCount(QModelIndex()) > 0:
             self.onRowsInserted(QModelIndex(), 0, self._model.rowCount(QModelIndex()) - 1)
 
@@ -121,7 +122,7 @@ class GraphView(QGraphicsView):
         idx = QPersistentModelIndex(index)
         return self._cells.get(idx, None)
 
-    def indexAt(self, point:QPoint) -> QModelIndex:
+    def rowAt(self, point:QPoint) -> QModelIndex:
         """
         Find the index at the given position.
         point is in untransformed viewport coordinates, just like QMouseEvent::pos().
@@ -162,6 +163,7 @@ class GraphView(QGraphicsView):
                         parent_widget.addInlet(widget)
                     case _:
                         ...
+
             case InletWidget():
                 match widget:
                     case LinkWidget():
@@ -259,20 +261,22 @@ class GraphView(QGraphicsView):
                 reverse=False
             )
 
-            
-            for index in sorted_indexes:
-                try:
-                    parent_widget = self.widgetFromIndex(index.parent()) if index.parent().isValid() else self.scene()
-                    widget = self.createWidget(parent_widget, index)
-                except NotImplementedError as e:
-                    logger.error(f"Error creating widget for index {index}: {e}")
-                    traceback.print_exc()
-                    continue
+            for row_index in sorted_indexes:
+                parent_widget = self.widgetFromIndex(row_index.parent()) if row_index.parent().isValid() else self.scene()
+                row_widget = self.createWidget(parent_widget, row_index)
+                assert isinstance(row_widget, BaseRowWidget), f"Widget must be a subclass of BaseRowWidget, got {type(row_widget)}"
+                self._widgets[QPersistentModelIndex(row_index)] = row_widget
+                row_widget._index = QPersistentModelIndex(row_index)
 
-                self._widgets[QPersistentModelIndex(index)] = widget
-                widget._index = QPersistentModelIndex(index)
+                for col in range(self._model.columnCount(row_index.parent())):
+                    cell_index = self._model.index(row_index.row(), col, row_index.parent())
+                    cell = CellWidget()
+                    cell._index = QPersistentModelIndex(cell_index)
+                    self._cells[QPersistentModelIndex(cell_index)] = cell
+                    row_widget.insertCell(col, cell)
 
-                self._set_widget_data(index, 0)
+                    # Set data for each column
+                    self._set_widget_data(cell_index.row(), col, cell_index.parent())
 
         make_child_widgets_bfs(parent, start, end)
 
@@ -337,9 +341,8 @@ class GraphView(QGraphicsView):
         for row in range(top_left.row(), bottom_right.row() + 1):
             index = self._model.index(row, top_left.column(), top_left.parent())
             print("Updating widget data for index:", index)
-            if widget := self.widgetFromIndex(index):
-                cell_widget = widget._title_widget
-                cell_widget.setText(index.data(Qt.ItemDataRole.DisplayRole))
+            if cell_widget := self.cellFromIndex(index):
+                cell_widget.setDisplayText(index.data(Qt.ItemDataRole.DisplayRole))
 
     # # Selection
     def setSelectionModel(self, selection: QItemSelectionModel):
@@ -448,14 +451,13 @@ class GraphView(QGraphicsView):
                 self._selection.clearSelection()
                 self._selection.setCurrentIndex(QModelIndex(), QItemSelectionModel.SelectionFlag.Current | QItemSelectionModel.SelectionFlag.Rows)
 
-    def _set_widget_data(self, index:QModelIndex|QPersistentModelIndex, column:int, roles:list=[]):
+    def _set_widget_data(self, row:int, column:int, parent:QModelIndex|QPersistentModelIndex, roles:list=[]):
         """Set the data for a node widget."""
+        index = self._model.index(row, column, parent)
         assert index.isValid(), "Index must be valid"
-        assert index.column() == 0, "Index must be in the first column"
 
-        if widget := self.widgetFromIndex(index):
-            cell_widget = widget._title_widget
-            cell_widget.setText(index.data(Qt.ItemDataRole.DisplayRole))
+        if cell_widget:= self.cellFromIndex(index):
+            cell_widget.setDisplayText(index.data(Qt.ItemDataRole.DisplayRole))
 
     ## INTERNAL DRAG AND DROP
     def _inletMimeData(self, inlet:QModelIndex|QPersistentModelIndex)->QMimeData:
@@ -699,15 +701,16 @@ class GraphView(QGraphicsView):
     
     ##
     def mouseDoubleClickEvent(self, event:QMouseEvent):
-        index = self.indexAt(QPoint(int(event.position().x()), int(event.position().y())))
+        index = self.rowAt(QPoint(int(event.position().x()), int(event.position().y())))
 
         if not index.isValid():
             return super().mouseDoubleClickEvent(event)
                 
-        def removeEditor(editor:QLineEdit, cell_widget:CellWidget):
+        def onEditingFinished(editor:QLineEdit, cell_widget:CellWidget, index:QModelIndex):
             self._delegate.setModelData(editor, self._model, index)
             cell_widget.setEditorWidget(None)  # Clear the editor widget
             editor.deleteLater()
+            self._set_widget_data(index.row(), index.column(), index.parent())
 
 
         if cell_widget := self.cellFromIndex(index):
@@ -716,8 +719,8 @@ class GraphView(QGraphicsView):
             cell_widget.setEditorWidget(editor)  # Clear any existing editor widget
             editor.setText(index.data(Qt.ItemDataRole.EditRole))
             editor.setFocus(Qt.FocusReason.MouseFocusReason)
-            editor.editingFinished.connect(lambda editor = editor, widget=node_widget: removeEditor(editor, cell_widget) )
-
+            editor.editingFinished.connect(lambda editor = editor, cell_widget=cell_widget, index=index: onEditingFinished(editor, cell_widget, index) )
+            
 
     ## Handle drag ad drop events
     def _createDraftLink(self):
@@ -744,7 +747,7 @@ class GraphView(QGraphicsView):
 
     def mousePressEvent(self, event):
         pos = event.position()
-        index = self.indexAt(QPoint(int(pos.x()), int(pos.y())))  # Ensure the index is updated
+        index = self.rowAt(QPoint(int(pos.x()), int(pos.y())))  # Ensure the index is updated
         assert index
 
         match self._delegate.itemType(index):
@@ -822,7 +825,7 @@ class GraphView(QGraphicsView):
 
     def mouseMoveEvent(self, event):
         pos = event.position()
-        index = self.indexAt(QPoint(int(pos.x()), int(pos.y())))  # Ensure the index is updated
+        index = self.rowAt(QPoint(int(pos.x()), int(pos.y())))  # Ensure the index is updated
         return super().mouseMoveEvent(event)
 
     def dragEnterEvent(self, event)->None:
@@ -837,7 +840,7 @@ class GraphView(QGraphicsView):
     def dragMoveEvent(self, event)->None:
         """Handle drag move events to update draft link position"""
         pos = event.position()
-        drop_target_index = self.indexAt(QPoint(int(pos.x()), int(pos.y())))  # Ensure the index is updated
+        drop_target_index = self.rowAt(QPoint(int(pos.x()), int(pos.y())))  # Ensure the index is updated
         
         CanDropMimeData = self._canDropMimeData(event.mimeData(), event.dropAction(), drop_target_index)
         TargetType = self._delegate.itemType(drop_target_index)
@@ -921,7 +924,7 @@ class GraphView(QGraphicsView):
             
     def dropEvent(self, event: QDropEvent) -> None:
         pos = event.position()
-        drop_target = self.indexAt(QPoint(int(pos.x()), int(pos.y())))  # Ensure the index is updated
+        drop_target = self.rowAt(QPoint(int(pos.x()), int(pos.y())))  # Ensure the index is updated
         if self._dropMimeData(event.mimeData(), event.dropAction(), drop_target):
             event.acceptProposedAction()
         else:
@@ -959,6 +962,7 @@ class CellWidget(QGraphicsProxyWidget):
         # Make CellWidget transparent to drag events so parent can handle them
         # self.setAcceptDrops(False)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, False)
+        self._index:QPersistentModelIndex | None = None  # Persistent model index for the cell
 
     def setEditorWidget(self, editor:QWidget|None):
         """
@@ -969,11 +973,11 @@ class CellWidget(QGraphicsProxyWidget):
             editor = self._label
         self.setWidget(editor)
 
-    def text(self):
+    def displayText(self):
         label = self.widget()  # Ensure the widget is created
         return label.text() if label else ""
 
-    def setText(self, text:str):
+    def setDisplayText(self, text:str):
         label = self.widget()  # Ensure the widget is created
         label.setText(text)
 
@@ -984,14 +988,13 @@ class BaseRowWidget(QGraphicsWidget):
         self._graphview = graphview
         layout = QGraphicsLinearLayout(Qt.Orientation.Vertical)
         self.setLayout(layout)
-        self._title_widget = CellWidget(parent=self)
-        self.addCell(self._title_widget)
         layout.updateGeometry()
         self._index:QPersistentModelIndex | None = None
         
-    def addCell(self, cell:CellWidget):
+    def insertCell(self, pos:int, cell:CellWidget):
+        a = list()
         layout = cast(QGraphicsLinearLayout, self.layout())
-        layout.addItem(cell)
+        layout.insertItem(pos, cell)
 
     def removeCell(self, cell:CellWidget):
         layout = cast(QGraphicsLinearLayout, self.layout())
@@ -1061,8 +1064,8 @@ class NodeWidget(BaseRowWidget):
         layout = cast(QGraphicsLinearLayout, self.layout())
         layout.removeItem(outlet)
 
-    def addCell(self, cell):
-        return super().addCell(cell)
+    def insertCell(self, pos:int, cell):
+        return super().insertCell(pos, cell)
     
     def removeCell(self, cell):
         return super().removeCell(cell)
@@ -1121,7 +1124,7 @@ class LinkWidget(BaseRowWidget):
         stroker.setWidth(4)
         return stroker.createStroke(path)
     
-    def addCell(self, cell:CellWidget):
+    def insertCell(self, cell:CellWidget):
         ...
         # layout = cast(QGraphicsLinearLayout, self._data_column.layout())
         # layout.addItem(cell)
