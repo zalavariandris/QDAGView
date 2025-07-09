@@ -16,7 +16,7 @@ class GraphItemType(StrEnum):
     LINK = "LINK"
 
 
-class GraphMimeData(StrEnum):
+class GraphMimeType(StrEnum):
     OutletData = 'application/outlet'
     InletData = 'application/inlet'
     LinkTailData = 'application/link/source'

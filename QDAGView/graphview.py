@@ -29,7 +29,7 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
-from core import GraphDataRole, GraphItemType, GraphMimeData
+from core import GraphDataRole, GraphItemType, GraphMimeType
 from utils import bfs
 from graphdelegate import GraphDelegate
 
@@ -477,161 +477,142 @@ class GraphView(QGraphicsView):
         if cell_widget:= self.cellFromIndex(index):
             cell_widget.setDisplayText(index.data(Qt.ItemDataRole.DisplayRole))
 
-    ## INTERNAL DRAG AND DROP
-    def _inletMimeData(self, inlet:QModelIndex|QPersistentModelIndex)->QMimeData:
+    ## Linking
+    def canLink(self, source:QModelIndex, target:QModelIndex)->bool:
         """
-        Create a QMimeData object for an inlet.
-        This is used to provide data for drag-and-drop operations.
+        Check if linking is possible between the source and target indexes.
+        This is used to determine if a drag-and-drop operation can be initiated.
         """
-        mime = QMimeData()
+        if not self._model:
+            # No model set, cannot link
+            return False
 
-        # Convert index to path string
-        path = []
-        idx = inlet
-        while idx.isValid():
-            path.append(idx.row())
-            idx = idx.parent()
-        path = "/".join(map(str, reversed(path)))
-        mime.setData(GraphMimeData.InletData, path.encode("utf-8"))
-        return mime
-
-    def _decodeInletMimeData(self, mime:QMimeData) -> QModelIndex:
-        """
-        Decode a QMimeData object to a persistent model index.
-        This is used to get the original index from the mime data.
-        """
-        if not mime.hasFormat(GraphMimeData.InletData):
-            return QModelIndex()
+        if source.parent() == target.parent():
+            # Cannot link items in the same parent
+            return False
         
-        path = mime.data(GraphMimeData.InletData).data().decode("utf-8")
-        path = list(map(int, path.split("/")))
-
-        idx = self._model.index(path[0], 0, QModelIndex())
-        for row in path[1:]:
-            idx = self._model.index(row, 0, idx)
-        return idx
-    
-    def _outletMimeData(self, outlet:QModelIndex|QPersistentModelIndex):
-        """
-        Create a QMimeData object for an inlet.
-        This is used to provide data for drag-and-drop operations.
-        """
-        mime = QMimeData()
-
-        # Convert index to path string
-        path = []
-        idx = outlet
-        while idx.isValid():
-            path.append(idx.row())
-            idx = idx.parent()
-        path = "/".join(map(str, reversed(path)))
-        mime.setData(GraphMimeData.OutletData, path.encode("utf-8"))
-        return mime
-    
-    def _decodeOutletMimeData(self, mime:QMimeData) -> QModelIndex:
-        """
-        Decode a QMimeData object to a persistent model index.
-        This is used to get the original index from the mime data.
-        """
-        if not mime.hasFormat(GraphMimeData.OutletData):
-            return QModelIndex()
-        
-        path = mime.data(GraphMimeData.OutletData).data().decode("utf-8")
-        path = list(map(int, path.split("/")))
-
-        idx = self._model.index(path[0], 0, QModelIndex())
-        for row in path[1:]:
-            idx = self._model.index(row, 0, idx)
-        return idx
-    
-    def _linkTailMimeData(self, link:QPersistentModelIndex) -> QMimeData:
-        """
-        Create a QMimeData object for a link source.
-        This is used to provide data for drag-and-drop operations.
-        """
-        assert link.isValid(), "Link index must be valid"
-        mime = QMimeData()
-
-        # Convert index to path string
-        path = []
-        idx = link
-        while idx.isValid():
-            path.append(idx.row())
-            idx = idx.parent()
-        path = "/".join(map(str, reversed(path)))
-        mime.setData(GraphMimeData.LinkTailData, path.encode("utf-8"))
-        return mime
-    
-    def _decodeLinkTailMimeData(self, mime:QMimeData) -> QModelIndex:
-        """
-        Decode a QMimeData object to a persistent model index.
-        This is used to get the original index from the mime data.
-        """
-        if not mime.hasFormat(GraphMimeData.LinkTailData):
-            return QModelIndex()
-        
-        path = mime.data(GraphMimeData.LinkTailData).data().decode("utf-8")
-        path = list(map(int, path.split("/")))
-
-        idx = self._model.index(path[0], 0, QModelIndex())
-        for row in path[1:]:
-            idx = self._model.index(row, 0, idx)
-        return idx
-    
-    def _linkHeadMimeData(self, link:QModelIndex|QPersistentModelIndex) -> QMimeData:
-        """
-        Create a QMimeData object for a link head.
-        This is used to provide data for drag-and-drop operations.
-        """
-        mime = QMimeData()
-
-        # Convert index to path string
-        path = []
-        idx = link
-        while idx.isValid():
-            path.append(idx.row())
-            idx = idx.parent()
-        path = "/".join(map(str, reversed(path)))
-        mime.setData(GraphMimeData.LinkHeadData, path.encode("utf-8"))
-        return mime
-
-    def _decodeLinkHeadMimeData(self, mime:QMimeData) -> QModelIndex:
-        """
-        Decode a QMimeData object to a persistent model index.
-        This is used to get the original index from the mime data.
-        """
-        if not mime.hasFormat(GraphMimeData.LinkHeadData):
-            return QModelIndex()
-        
-        path = mime.data(GraphMimeData.LinkHeadData).data().decode("utf-8")
-        path = list(map(int, path.split("/")))
-
-        idx = self._model.index(path[0], 0, QModelIndex())
-        for row in path[1:]:
-            idx = self._model.index(row, 0, idx)
-        return idx
-
-    ## Handle drag and drop    
-    def _canDropMimeData(self, data:QMimeData, action:Qt.DropAction, drop_target:QModelIndex|QPersistentModelIndex) -> bool:
-        """
-        Check if the mime data can be dropped on the graph view.
-        This is used to determine if the drag-and-drop operation is valid.
-        """
-        drop_target_type = self._delegate.itemType(drop_target)
-
-        if data.hasFormat(GraphMimeData.OutletData):
-            return True
-        
-        elif data.hasFormat(GraphMimeData.InletData):
-            return True
-        
-        elif data.hasFormat(GraphMimeData.LinkTailData):
-            return True
-        
-        elif data.hasFormat(GraphMimeData.LinkHeadData):
+        source_type = self._delegate.itemType(source)
+        target_type = self._delegate.itemType(target)
+ 
+        if  (source_type, target_type) == (GraphItemType.INLET, GraphItemType.OUTLET) or \
+            (source_type, target_type) == (GraphItemType.OUTLET, GraphItemType.INLET):
+            # Both source and target must be either inlet or outlet
             return True
         
         return False
+
+    def startLinking(self, index:QModelIndex|QPersistentModelIndex, end:Literal['head', 'tail']='tail')->bool:
+        """
+        Start linking from the given index.
+        This is used to initiate a drag-and-drop operation for linking.
+        return True if the drag operation was started, False otherwise.
+        """
+
+        index_type = self._delegate.itemType(index)
+        if index_type not in (GraphItemType.INLET, GraphItemType.OUTLET, GraphItemType.LINK):
+            # Only inlets, outlets and links can be dragged
+            return False
+                
+        mime = self._createMimeData(index, end=end)
+        if mime is None:
+            return False
+        
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+
+        # Execute drag
+        try:
+            action = drag.exec(Qt.DropAction.LinkAction)
+        except Exception as err:
+            traceback.print_exc()
+        return True
+
+    def updateLinking(self, data:QMimeData, pos:QPoint):
+        """Update the linking position"""
+        if self._draft_link is None:
+            return
+        
+        pos = QPoint(int(pos.x()), int(pos.y())) # defense against passing QPointF
+        
+        # Determine the drop target type
+        target_index = self.rowAt(pos)  # Ensure the index is updated
+        drop_target_type = self._delegate.itemType(target_index)
+
+        # Determine the drag source type based on the mime data
+        drag_source_type:Literal['inlet', 'outlet', 'head', 'tail']
+        if data.hasFormat(GraphMimeType.OutletData):
+            drag_source_type = "outlet"
+        elif data.hasFormat(GraphMimeType.InletData):
+            drag_source_type = "inlet"
+        elif data.hasFormat(GraphMimeType.LinkTailData):
+            drag_source_type = "tail"
+        elif data.hasFormat(GraphMimeType.LinkHeadData):
+            drag_source_type = "head"
+
+        # Perform the linking based on the drag source and drop target types
+        # return True if the linking was successful, False otherwise
+        inlet_widget, outlet_widget = None, None
+
+        match drag_source_type, drop_target_type:
+            case 'outlet', GraphItemType.INLET:
+                outlet_widget = self.rowWidgetFromIndex( self._parseMimeData(data) )
+                inlet_widget = self.rowWidgetFromIndex(target_index)
+                link_widget = self._draft_link
+
+            case 'inlet', GraphItemType.OUTLET:
+                # inlet dragged over outlet
+                outlet_widget = self.rowWidgetFromIndex(target_index)
+                inlet_widget = self.rowWidgetFromIndex( self._parseMimeData(data) )
+                link_widget = self._draft_link
+
+            case 'outlet', _:
+                # outlet dragged over empty space
+                outlet_widget = self.rowWidgetFromIndex( self._parseMimeData(data) )
+                link_widget = self._draft_link
+
+            case 'inlet', _:
+                # inlet dragged over empty space
+                inlet_widget = self.rowWidgetFromIndex( self._parseMimeData(data) )
+                link_widget = self._draft_link
+
+            case 'head', GraphItemType.INLET:
+                # link head dragged over inlet
+                link_index = self._parseMimeData(data)
+                outlet_widget = self.rowWidgetFromIndex( self._delegate.linkSource(link_index) )
+                inlet_widget = self.rowWidgetFromIndex(target_index)
+                link_widget = self.rowWidgetFromIndex(link_index)
+
+            case 'tail', GraphItemType.OUTLET:
+                # link tail dragged over outlet
+                link_index = self._parseMimeData(data)
+                outlet_widget = self.rowWidgetFromIndex(target_index)
+                inlet_widget = self.rowWidgetFromIndex( self._delegate.linkTarget(link_index) )
+                link_widget = self.rowWidgetFromIndex(link_index)
+
+            case 'head', _:
+                # link head dragged over empty space
+                link_index = self._parseMimeData(data)
+                outlet_widget = self.rowWidgetFromIndex( self._delegate.linkSource(link_index) )
+                link_widget = self.rowWidgetFromIndex(link_index)
+
+            case 'tail', _:
+                # link tail dragged over empty space
+                link_index = self._parseMimeData(data)
+                inlet_widget = self.rowWidgetFromIndex( self._delegate.linkTarget(link_index) )
+                link_widget = self.rowWidgetFromIndex(link_index)
+
+        if outlet_widget and inlet_widget:
+            line = makeLineBetweenShapes(outlet_widget, inlet_widget)
+            line = QLineF(self._draft_link.mapFromScene(line.p1()), self._draft_link.mapFromScene(line.p2()))
+        elif outlet_widget:
+            line = makeLineBetweenShapes(outlet_widget, self.mapToScene(pos))
+            line = QLineF(self._draft_link.mapFromScene(line.p1()), self._draft_link.mapFromScene(line.p2()))
+        elif inlet_widget:
+            line = makeLineBetweenShapes(self.mapToScene(pos), inlet_widget)
+            line = QLineF(self._draft_link.mapFromScene(line.p1()), self._draft_link.mapFromScene(line.p2()))
+
+        link_widget = cast(LinkWidget, self._draft_link)
+        link_widget.setLine(line)
 
     def finishLinking(self, data:QMimeData, target_index:QModelIndex)->bool:
         """
@@ -643,13 +624,13 @@ class GraphView(QGraphicsView):
 
         # Determine the drag source type based on the mime data
         drag_source_type:Literal['inlet', 'outlet', 'head', 'tail']
-        if data.hasFormat(GraphMimeData.OutletData):
+        if data.hasFormat(GraphMimeType.OutletData):
             drag_source_type = "outlet"
-        elif data.hasFormat(GraphMimeData.InletData):
+        elif data.hasFormat(GraphMimeType.InletData):
             drag_source_type = "inlet"
-        elif data.hasFormat(GraphMimeData.LinkTailData):
+        elif data.hasFormat(GraphMimeType.LinkTailData):
             drag_source_type = "tail"
-        elif data.hasFormat(GraphMimeData.LinkHeadData):
+        elif data.hasFormat(GraphMimeType.LinkHeadData):
             drag_source_type = "head"
 
         # Perform the linking based on the drag source and drop target types
@@ -657,7 +638,7 @@ class GraphView(QGraphicsView):
         match drag_source_type, drop_target_type:
             case "outlet", GraphItemType.INLET:
                 # outlet dropped on inlet
-                outlet_index = self._decodeOutletMimeData(data)
+                outlet_index = self._parseMimeData(data)
                 assert outlet_index.isValid(), "Outlet index must be valid"
                 inlet_index = target_index
                 self._delegate.addLink(self._model, outlet_index, inlet_index)
@@ -665,7 +646,7 @@ class GraphView(QGraphicsView):
 
             case "inlet", GraphItemType.OUTLET:
                 # inlet dropped on outlet
-                inlet_index = self._decodeInletMimeData(data)
+                inlet_index = self._parseMimeData(data)
                 assert inlet_index.isValid(), "Inlet index must be valid"
                 outlet_index = target_index
                 self._delegate.addLink(self._model, outlet_index, inlet_index)
@@ -673,7 +654,7 @@ class GraphView(QGraphicsView):
 
             case "head", GraphItemType.INLET:
                 # link head dropped on inlet
-                link_index = self._decodeLinkHeadMimeData(data)
+                link_index = self._parseMimeData(data)
                 new_inlet_index = target_index
                 current_outlet_index = self._delegate.linkSource(link_index)
                 self._delegate.removeLink(self._model, link_index)
@@ -682,7 +663,7 @@ class GraphView(QGraphicsView):
 
             case "tail", GraphItemType.OUTLET:
                 # link tail dropped on outlet
-                link_index = self._decodeLinkTailMimeData(data)
+                link_index = self._parseMimeData(data)
                 new_outlet_index = target_index
                 current_inlet_index = self._delegate.linkTarget(link_index)
                 self._delegate.removeLink(self._model, link_index)
@@ -691,7 +672,7 @@ class GraphView(QGraphicsView):
             
             case 'tail', _:
                 # tail dropped on empty space
-                link_index = self._decodeLinkTailMimeData(data)
+                link_index = self._parseMimeData(data)
                 link_source = self._delegate.linkSource(link_index)
                 link_target = self._delegate.linkTarget(link_index)
                 IsLinked = link_source and link_source.isValid() and link_target and link_target.isValid()
@@ -701,7 +682,7 @@ class GraphView(QGraphicsView):
 
             case 'head', _:
                 # head dropped on empty space
-                link_index = self._decodeLinkHeadMimeData(data)
+                link_index = self._parseMimeData(data)
                 assert link_index.isValid(), "Link index must be valid"
                 IsLinked = self._delegate.linkSource(link_index).isValid() and self._delegate.linkTarget(link_index).isValid()
                 if IsLinked:
@@ -710,122 +691,20 @@ class GraphView(QGraphicsView):
                 
         return False
 
-    def _dropMimeData(self, data:QMimeData, action:Qt.DropAction, drop_target:QModelIndex|QPersistentModelIndex) -> bool:
-        
-        drop_target = QModelIndex(drop_target)
-        return self.finishLinking(data, drop_target)
+    def cancelLinking(self):
+        """
+        Cancel the linking operation.
+        This is used to remove the draft link and reset the state.
+        """
+        if self._draft_link:
+            scene = self.scene()
+            assert scene is not None
+            scene.removeItem(self._draft_link)
+            self._draft_link = None
 
-        drop_target_type = self._delegate.itemType(drop_target)
-        if data.hasFormat(GraphMimeData.OutletData):
-            # outlet dropped
-            outlet_index = self._decodeOutletMimeData(data)
-            assert outlet_index.isValid(), "Outlet index must be valid"
-            # Ensure drop target is valid
-            if drop_target_type == GraphItemType.INLET:
-                # ... on inlet
-                self.finishLinking(data, drop_target)
-                return True
-                # inlet_index = drop_target
-                # self._delegate.addLink(self._model, outlet_index, inlet_index)
-                # return True
-
-        if data.hasFormat(GraphMimeData.InletData):
-            # inlet dropped
-            inlet_index = self._decodeInletMimeData(data)
-            assert inlet_index.isValid(), "Inlet index must be valid"
-            if drop_target_type == GraphItemType.OUTLET:
-                # ... on outlet
-                outlet_index = drop_target
-                self._delegate.addLink(self._model, outlet_index, inlet_index)
-                return True
-            
-        if data.hasFormat(GraphMimeData.LinkTailData):
-            # link tail dropped
-            link_index = self._decodeLinkTailMimeData(data)
-            assert link_index.isValid(), "Link index must be valid"
-
-            if drop_target_type == GraphItemType.INLET:
-                # ... on inlet
-                # relink to new inlet!
-                inlet_index = drop_target
-                self._delegate.removeLink(self._model, link_index)
-                self._delegate.addLink(self._model, outlet_index, inlet_index)
-                return True
-            
-            elif drop_target_type == GraphItemType.OUTLET:
-                # ... on outlet
-                # relink to new outlet!
-                new_outlet_index = drop_target
-                current_inlet_index = self._delegate.linkTarget(link_index)
-                self._delegate.removeLink(self._model, link_index)
-                self._delegate.addLink(self._model, new_outlet_index, current_inlet_index)
-                return True
-            else:
-                # ... on empty space
-                # remove link if link exists
-                link_source = self._delegate.linkSource(link_index)
-                link_target = self._delegate.linkTarget(link_index)
-                IsLinked = link_source and link_source.isValid() and link_target and link_target.isValid()
-                if IsLinked:
-                    self._delegate.removeLink(self._model, link_index)
-                    return True
-                return True
-            
-        if data.hasFormat(GraphMimeData.LinkHeadData):
-            # link head dropped
-            link_index = self._decodeLinkHeadMimeData(data)
-            assert link_index.isValid(), "Link index must be valid"
-            if drop_target_type == GraphItemType.OUTLET:
-                # ... on outlet
-                # relink to new outlet!
-                outlet_index = drop_target
-                self._delegate.removeLink(self._model, link_index)
-                self._delegate.addLink(self._model, outlet_index, link_index)
-                return True
-            
-            elif drop_target_type == GraphItemType.INLET:
-                # ... on inlet
-                # relink to new inlet!
-                new_inlet_index = drop_target
-                current_outlet_index = self._delegate.linkSource(link_index)
-                self._delegate.removeLink(self._model, link_index)
-                self._delegate.addLink(self._model, current_outlet_index, new_inlet_index)
-                return True
-            
-            else:
-                # ... on empty space
-                # remove link if link exists
-                IsLinked = self._delegate.linkSource(link_index).isValid() and self._delegate.linkTarget(link_index).isValid()
-                if IsLinked:
-                    self._delegate.removeLink(self._model, link_index)
-                    return True
-                return True
+        ## Drafty links
     
-        return False
-    
-    ## handle cell editing
-    def mouseDoubleClickEvent(self, event:QMouseEvent):
-        index = self.rowAt(QPoint(int(event.position().x()), int(event.position().y())))
-
-        if not index.isValid():
-            return super().mouseDoubleClickEvent(event)
-                
-        def onEditingFinished(editor:QLineEdit, cell_widget:CellWidget, index:QModelIndex):
-            self._delegate.setModelData(editor, self._model, index)
-            cell_widget.setEditorWidget(None)  # Clear the editor widget
-            editor.deleteLater()
-            self._set_widget_data(index.row(), index.column(), index.parent())
-
-
-        if cell_widget := self.cellFromIndex(index):
-            editor = self._delegate.createEditor(self, None, index)
-            assert editor.parent() is None, "Editor must not have a parent"
-            cell_widget.setEditorWidget(editor)  # Clear any existing editor widget
-            editor.setText(index.data(Qt.ItemDataRole.EditRole))
-            editor.setFocus(Qt.FocusReason.MouseFocusReason)
-            editor.editingFinished.connect(lambda editor = editor, cell_widget=cell_widget, index=index: onEditingFinished(editor, cell_widget, index) )
-            
-    ## Handle drag ad drop events
+    ## Dragt links
     def _createDraftLink(self):
         """Safely create draft link with state tracking"""
         assert self._draft_link is None
@@ -846,85 +725,116 @@ class GraphView(QGraphicsView):
             return
         
         self.scene().removeItem(self._draft_link)
-        self._draft_link = None
 
-    def startLinking(self, index:QModelIndex|QPersistentModelIndex, end:Literal['head', 'tail']='tail')->bool:
+
+    ## Handle drag and drop    
+    def _parseMimeData(self, mime:QMimeData) -> QModelIndex | None:
         """
-        Start linking from the given index.
-        This is used to initiate a drag-and-drop operation for linking.
-        return True if the drag operation was started, False otherwise.
+        Parse the mime data to get the original index.
+        This is used to get the original index from the mime data.
         """
-        match self._delegate.itemType(index):
-            case GraphItemType.INLET:
-                # Setup new drag                
-                mime = self._inletMimeData(index)
-                drag = QDrag(self)
-                drag.setMimeData(mime)
+        def parseIndexPath(path:str) -> QModelIndex:
+            """
+            Parse a path string to a persistent model index.
+            This is used to convert the path string back to a QModelIndex.
+            """
+            path = list(map(int, path.split("/")))
 
-                # Execute drag
-                try:
-                    action = drag.exec(Qt.DropAction.LinkAction)
-                except Exception as err:
-                    traceback.print_exc()
+            idx = self._model.index(path[0], 0, QModelIndex())
+            for row in path[1:]:
+                idx = self._model.index(row, 0, idx)
+            return idx
+        
+        if mime.hasFormat(GraphMimeType.InletData):
+            # Inlet data
+            index_path = mime.data(GraphMimeType.InletData).data().decode("utf-8")
 
-                return True
+        elif mime.hasFormat(GraphMimeType.OutletData):
+            # Outlet data
+            index_path = mime.data(GraphMimeType.OutletData).data().decode("utf-8")
 
-            case GraphItemType.OUTLET:
-                assert index.isValid(), "Outlet index must be valid"
-                mime = self._outletMimeData(index)
-                drag = QDrag(self)
-                
-                drag.setMimeData(mime)
+        elif mime.hasFormat(GraphMimeType.LinkTailData):
+            # Link tail data
+            index_path = mime.data(GraphMimeType.LinkTailData).data().decode("utf-8")
 
-                # Execute drag
-                try:
-                    action = drag.exec(Qt.DropAction.LinkAction)
-                except Exception as err:
-                    traceback.print_exc()
+        elif mime.hasFormat(GraphMimeType.LinkHeadData):
+            # Link head data
+            index_path = mime.data(GraphMimeType.LinkHeadData).data().decode("utf-8")
+        else:
+            # No valid mime type found
+            return None
 
-                return True
+        index = parseIndexPath(index_path)
+        return index
 
-            case GraphItemType.LINK:                
-                source_index = self._delegate.linkSource(index)
-                target_index = self._delegate.linkTarget(index)
-                
-                if end == 'head':
-                    assert source_index.isValid(), "Source index must be valid"
-                    mime = self._linkHeadMimeData(index)
-                    drag = QDrag(self)
-                    drag.setMimeData(mime)                    # Execute drag
-                    try:
-                        action:Qt.DropAction = drag.exec(Qt.DropAction.LinkAction)
-                    except Exception as err:
-                        traceback.print_exc()
+    def _createMimeData(self, index, end:Literal['head', 'tail']='tail')-> QMimeData | None:
+        mime = QMimeData()
 
-                    return True
-                else:
-                    assert target_index.isValid(), "Target index must be valid"
-                    mime = self._linkTailMimeData(index)
-                    drag = QDrag(self)
-                    drag.setMimeData(mime)
+        # Convert index to path string
+        def indexToPath(index:QModelIndex|QPersistentModelIndex) -> str:
+            path = []
+            idx = index
+            while idx.isValid():
+                path.append(idx.row())
+                idx = idx.parent()
+            return "/".join(map(str, reversed(path)))
 
-                    # Execute drag
-                    try:
-                        action = drag.exec(Qt.DropAction.LinkAction)
-                    except Exception as err:
-                        traceback.print_exc()
-                    return True
-
-            case _:
-                return False
-
+        def indexToMimeType(index:QModelIndex|QPersistentModelIndex) -> GraphMimeType:
+            """
+            Convert the index to a mime type based on the item type.
+            This is used to determine the mime type for drag-and-drop operations.
+            """
+            item_type = self._delegate.itemType(index)
+            match item_type:
+                case GraphItemType.INLET:
+                    return GraphMimeType.InletData
+                case GraphItemType.OUTLET:
+                    return GraphMimeType.OutletData
+                case GraphItemType.LINK:
+                    if end == 'head':
+                        return GraphMimeType.LinkHeadData
+                    else:
+                        return GraphMimeType.LinkTailData
+                case _:
+                    raise ValueError(f"Unknown item type: {item_type}")
+ 
+        # mime type
+        mime_type = indexToMimeType(index)
+            
+        if mime_type is None:
+            return None
+        
+        index_path = indexToPath(index)
+        print(f"Creating mime data for index: {index}, path: {index_path}, type: {mime_type}")
+        mime.setData(mime_type, index_path.encode("utf-8"))
+        return mime
     
-
-    def cancelLinking(self):
+    def _canDropMimeData(self, data:QMimeData, action:Qt.DropAction, drop_target:QModelIndex|QPersistentModelIndex) -> bool:
         """
-        Cancel linking operation.
-        This is used to cleanup the draft link after a drag-and-drop operation.
+        Check if the mime data can be dropped on the graph view.
+        This is used to determine if the drag-and-drop operation is valid.
         """
-        self._cleanupDraftLink()
+        drop_target_type = self._delegate.itemType(drop_target)
 
+        if data.hasFormat(GraphMimeType.OutletData):
+            return True
+        
+        elif data.hasFormat(GraphMimeType.InletData):
+            return True
+        
+        elif data.hasFormat(GraphMimeType.LinkTailData):
+            return True
+        
+        elif data.hasFormat(GraphMimeType.LinkHeadData):
+            return True
+        
+        return False
 
+    def _dropMimeData(self, data:QMimeData, action:Qt.DropAction, drop_target:QModelIndex|QPersistentModelIndex) -> bool:
+        drop_target = QModelIndex(drop_target)
+        return self.finishLinking(data, drop_target)
+
+    ## Handle mouse events
     def mousePressEvent(self, event):
         """
         By default start linking from the item under the mouse cursor.
@@ -960,101 +870,47 @@ class GraphView(QGraphicsView):
         if not self.startLinking(index, end=link_end):
             # If not starting a link, pass the event to the base class
             return super().mousePressEvent(event)
-        
+
+        self._draft_link = None
+    
+    def mouseDoubleClickEvent(self, event:QMouseEvent):
+        index = self.rowAt(QPoint(int(event.position().x()), int(event.position().y())))
+
+        if not index.isValid():
+            return super().mouseDoubleClickEvent(event)
+                
+        def onEditingFinished(editor:QLineEdit, cell_widget:CellWidget, index:QModelIndex):
+            self._delegate.setModelData(editor, self._model, index)
+            cell_widget.setEditorWidget(None)  # Clear the editor widget
+            editor.deleteLater()
+            self._set_widget_data(index.row(), index.column(), index.parent())
+
+
+        if cell_widget := self.cellFromIndex(index):
+            editor = self._delegate.createEditor(self, None, index)
+            assert editor.parent() is None, "Editor must not have a parent"
+            cell_widget.setEditorWidget(editor)  # Clear any existing editor widget
+            editor.setText(index.data(Qt.ItemDataRole.EditRole))
+            editor.setFocus(Qt.FocusReason.MouseFocusReason)
+            editor.editingFinished.connect(lambda editor = editor, cell_widget=cell_widget, index=index: onEditingFinished(editor, cell_widget, index) )
+       
+    ## Handle drag and drop events
     def dragEnterEvent(self, event)->None:
-        if event.mimeData().hasFormat(GraphMimeData.InletData) or event.mimeData().hasFormat(GraphMimeData.OutletData):
+        if event.mimeData().hasFormat(GraphMimeType.InletData) or event.mimeData().hasFormat(GraphMimeType.OutletData):
             # Create a draft link if the mime data is for inlets or outlets
             self._createDraftLink()
             event.acceptProposedAction()
 
-        if event.mimeData().hasFormat(GraphMimeData.LinkHeadData) or event.mimeData().hasFormat(GraphMimeData.LinkTailData):
+        if event.mimeData().hasFormat(GraphMimeType.LinkHeadData) or event.mimeData().hasFormat(GraphMimeType.LinkTailData):
             # Create a draft link if the mime data is for link heads or tails
             event.acceptProposedAction()
 
     def dragMoveEvent(self, event)->None:
         """Handle drag move events to update draft link position"""
         pos = event.position()
-        drop_target_index = self.rowAt(QPoint(int(pos.x()), int(pos.y())))  # Ensure the index is updated
-        
-        CanDropMimeData = self._canDropMimeData(event.mimeData(), event.dropAction(), drop_target_index)
-        TargetType = self._delegate.itemType(drop_target_index)
-
-        if CanDropMimeData:
-            if event.mimeData().hasFormat(GraphMimeData.OutletData):
-                # Outlet dragged
-                outlet_index = self._decodeOutletMimeData(event.mimeData())
-                assert outlet_index.isValid(), "Outlet index must be valid"
-                outlet_widget = self.rowWidgetFromIndex(outlet_index)
-                if TargetType == GraphItemType.INLET:
-                    # ...over inlet
-                    inlet_widget = self.rowWidgetFromIndex(drop_target_index)
-                    self._updateDraftLink(source=outlet_widget, target=inlet_widget)
-                    event.acceptProposedAction()
-                    return
-                else:
-                    # ...over empty space
-                    self._updateDraftLink(source=outlet_widget, target=self.mapToScene(event.position().toPoint()))
-                    event.acceptProposedAction() 
-                    return
-            
-            if event.mimeData().hasFormat(GraphMimeData.InletData):
-                # inlet dragged
-                inlet_index = self._decodeInletMimeData(event.mimeData())
-                assert inlet_index.isValid(), "Inlet index must be valid"
-                inlet_widget = self.rowWidgetFromIndex(inlet_index)
-                if TargetType == GraphItemType.OUTLET:
-                    # ... over outlet
-                    outlet_widget = self.rowWidgetFromIndex(drop_target_index)
-                    self._updateDraftLink(source=outlet_widget, target=inlet_widget)
-                    event.acceptProposedAction()
-                    return
-                else:
-                    # ... over empty space
-                    self._updateDraftLink(source=self.mapToScene(event.position().toPoint()), target=inlet_widget)
-                    event.acceptProposedAction() 
-                    return
-            
-            if event.mimeData().hasFormat(GraphMimeData.LinkHeadData):
-                # link head dragged
-                link_index = self._decodeLinkHeadMimeData(event.mimeData())
-                assert link_index.isValid(), "Link index must be valid"
-                link_widget = self.rowWidgetFromIndex(link_index)
-                if TargetType == GraphItemType.INLET:
-                    # ...over inlet
-                    inlet_widget = self.rowWidgetFromIndex(drop_target_index)
-                    line = makeLineBetweenShapes(link_widget._source, inlet_widget)
-                    line = QLineF(link_widget.mapFromScene(line.p1()), link_widget.mapFromScene(line.p2()))
-                    link_widget.setLine(line)
-                    event.acceptProposedAction()
-                    return
-                else:
-                    # ... over empty space
-                    line = makeLineBetweenShapes(link_widget._source, self.mapToScene(event.position().toPoint()))
-                    line = QLineF(link_widget.mapFromScene(line.p1()), link_widget.mapFromScene(line.p2()))
-                    link_widget.setLine(line)
-                    event.acceptProposedAction()
-                    return
-
-            if event.mimeData().hasFormat(GraphMimeData.LinkTailData):
-                # link tail dragged
-                link_index = self._decodeLinkTailMimeData(event.mimeData())
-                assert link_index.isValid(), "Link index must be valid"
-                link_widget = self.rowWidgetFromIndex(link_index)
-                if TargetType == GraphItemType.OUTLET:
-                    # ...over outlet
-                    outlet_widget = self.rowWidgetFromIndex(drop_target_index)
-                    line = makeLineBetweenShapes(outlet_widget, link_widget._target)
-                    line = QLineF(link_widget.mapFromScene(line.p1()), link_widget.mapFromScene(line.p2()))
-                    link_widget.setLine(line)
-                    event.acceptProposedAction()
-                    return
-                else:
-                    # ... over empty space
-                    line = makeLineBetweenShapes(self.mapToScene(event.position().toPoint()), link_widget._target)
-                    line = QLineF(link_widget.mapFromScene(line.p1()), link_widget.mapFromScene(line.p2()))
-                    link_widget.setLine(line)
-                    event.acceptProposedAction()
-                    return
+        pos = QPoint(int(pos.x()), int(pos.y()))  # Ensure pos is an integer QPoint
+        self.updateLinking(event.mimeData(), pos)
+        return
             
     def dropEvent(self, event: QDropEvent) -> None:
         pos = event.position()
@@ -1082,6 +938,7 @@ class GraphView(QGraphicsView):
         self._cleanupDraftLink()  # Cleanup draft link if it exists
         # super().dragLeaveEvent(event)
         # self._cleanupDraftLink()
+
 
 
 class CellWidget(QGraphicsProxyWidget):
