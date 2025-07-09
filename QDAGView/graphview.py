@@ -45,10 +45,17 @@ class GraphView(QGraphicsView):
         self._model_connections = []
         self._selection:QItemSelectionModel | None = None
         self._selection_connections = []
+
+        ## State of the graph view
+        self._state = GraphView.State.IDLE
+        self._draft_link: QGraphicsLineItem | None = None
+        self._payload: QModelIndex = QModelIndex()  # This will hold the index of the item being dragged or linked
+        self._link_end: Literal['head', 'tail'] | None = None  # This will hold the end of the link being dragged
+
         # store model widget relations
         self._widgets: bidict[QPersistentModelIndex, BaseRowWidget] = bidict()
         self._cells: bidict[QPersistentModelIndex, CellWidget] = bidict()
-        self._draft_link: QGraphicsLineItem | None = None
+        
 
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
         self.setCacheMode(QGraphicsView.CacheModeFlag.CacheNone)
@@ -513,16 +520,16 @@ class GraphView(QGraphicsView):
             # Only inlets, outlets and links can be dragged
             return False
         
-        mime = self._createMimeData(index, end=end)
-        if mime is None:
-            return False
-        
         if index_type in (GraphItemType.OUTLET, GraphItemType.INLET):
             # create a draft link line
             if not self._draft_link:
                 self._draft_link = QGraphicsLineItem()
                 self._draft_link.setPen(QPen(self.palette().text(), 1))
                 self.scene().addItem(self._draft_link)
+        
+        mime = self._createMimeData(index, end=end)
+        if mime is None:
+            return False
         
         drag = QDrag(self)
         drag.setMimeData(mime)
@@ -699,6 +706,7 @@ class GraphView(QGraphicsView):
         # cleanup DraftLink
         if self._draft_link:
             self.scene().removeItem(self._draft_link)
+            self._draft_link = None
 
         return success
 
@@ -827,37 +835,48 @@ class GraphView(QGraphicsView):
         if starting a link is not possible, fallback to the QGraphicsView behavior.
         """
 
-        pos = event.position()
-        index = self.rowAt(QPoint(int(pos.x()), int(pos.y())))  # Ensure the index is updated
-        assert index
+        if self._state == GraphView.State.IDLE:
+            pos = event.position()
+            index = self.rowAt(QPoint(int(pos.x()), int(pos.y())))  # Ensure the index is updated
+            assert index
 
-        link_end = 'tail'  # Default to tail if not specified
-        if self._delegate.itemType(index) == GraphItemType.LINK:
-            # If the item is a link, determine which end to drag
-            source_index = self._delegate.linkSource(index)
-            target_index = self._delegate.linkTarget(index)
-            if source_index and source_index.isValid() and target_index and target_index.isValid():
-                link_widget = cast(LinkWidget, self.rowWidgetFromIndex(index))
-                mouse_scene_pos = self.mapToScene(event.position().toPoint())
-                tail_scene_pos = link_widget.mapToScene(link_widget.line().p1())
-                head_scene_pos = link_widget.mapToScene(link_widget.line().p2())
-                tail_distance = (mouse_scene_pos-tail_scene_pos).manhattanLength()
-                head_distance = (mouse_scene_pos-head_scene_pos).manhattanLength()
+            match self._delegate.itemType(index):
+                case GraphItemType.INLET | GraphItemType.OUTLET:
+                    if self.startLinking(index):
+                        return
 
-                if head_distance < tail_distance:
-                    link_end = 'head'  # Drag the head if closer to the mouse position
+                case GraphItemType.LINK:
+                    # If the item is a link, determine which end to drag
+                    def getClosestLinkEnd(link_index:QModelIndex, scene_pos:QPointF) -> Literal['head', 'tail']:
+                        source_index = self._delegate.linkSource(link_index)
+                        target_index = self._delegate.linkTarget(link_index)
+                        if source_index and source_index.isValid() and target_index and target_index.isValid():
+                            link_widget = cast(LinkWidget, self.rowWidgetFromIndex(link_index))
+                            local_pos = link_widget.mapFromScene(scene_pos)  # Ensure scene_pos is in the correct coordinate system
+                            tail_distance = (local_pos-link_widget.line().p1()).manhattanLength()
+                            head_distance = (local_pos-link_widget.line().p2()).manhattanLength()
 
-            elif target_index and target_index.isValid():
-                link_end = 'tail'
-
-            elif source_index and source_index.isValid():
-                link_end = 'head'
+                            if head_distance < tail_distance:
+                                return 'head'  # Drag the head if closer to the mouse position
+                            else:
+                                return 'tail'
+                            
+                        elif source_index and source_index.isValid():
+                            return 'head'
+                        
+                        elif target_index and target_index.isValid():
+                            return 'tail'
+                        
+                        else:
+                            return 'tail'
                     
-        if not self.startLinking(index, end=link_end):
-            # If not starting a link, pass the event to the base class
-            return super().mousePressEvent(event)
-
-        self._draft_link = None
+                    scene_pos = self.mapToScene(event.position().toPoint())
+                    link_end = getClosestLinkEnd(index, scene_pos)
+    
+                    if self.startLinking(index, end=link_end):
+                        return
+                    
+        super().mousePressEvent(event)
     
     def mouseDoubleClickEvent(self, event:QMouseEvent):
         index = self.rowAt(QPoint(int(event.position().x()), int(event.position().y())))
@@ -917,8 +936,6 @@ class GraphView(QGraphicsView):
             event.acceptProposedAction()
         else:
             event.ignore()
-
-        
 
     def dragLeaveEvent(self, event):
         self._cleanupDraftLink()  # Cleanup draft link if it exists
