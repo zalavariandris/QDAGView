@@ -78,6 +78,58 @@ class GraphDelegate(QObject):
         elif item_type == GraphItemType.LINK:
             return index.parent().isValid() and index.parent().parent().isValid() and index.parent().parent().parent() == QModelIndex()
 
+    def canLink(self, source:QModelIndex, target:QModelIndex)->bool:
+        """
+        Check if linking is possible between the source and target indexes.
+        """
+
+        if source.parent() == target.parent():
+            # Cannot link items in the same parent
+            return False
+        
+        source_type = self.itemType(source)
+        target_type = self.itemType(target)
+        if  (source_type, target_type) == (GraphItemType.INLET, GraphItemType.OUTLET) or \
+            (source_type, target_type) == (GraphItemType.OUTLET, GraphItemType.INLET):
+            # Both source and target must be either inlet or outlet
+            return True
+        
+        return False
+    
+    def inletCount(self, node:QModelIndex|QPersistentModelIndex) -> int:
+        """
+        Get the number of inlets for a given node.
+        Args:
+            node (QModelIndex): The index of the node.
+        Returns:
+            int: The number of inlets for the node.
+        """
+        assert self.itemType(node) == GraphItemType.NODE, "Node index must be of type NODE"
+        model = node.model()
+        inlet_count = 0
+        for row in range(model.rowCount(node)):
+            child_index = model.index(row, 0, node)
+            if self.itemType(child_index) == GraphItemType.INLET:
+                inlet_count += 1
+        return inlet_count
+
+    def outletCount(self, node:QModelIndex|QPersistentModelIndex) -> int:
+        """
+        Get the number of outlets for a given node.
+        Args:
+            node (QModelIndex): The index of the node.
+        Returns:
+            int: The number of outlets for the node.
+        """
+        assert self.itemType(node) == GraphItemType.NODE, "Node index must be of type NODE"
+        model = node.model()
+        outlet_count = 0
+        for row in range(model.rowCount(node)):
+            child_index = model.index(row, 0, node)
+            if self.itemType(child_index) == GraphItemType.OUTLET:
+                outlet_count += 1
+        return outlet_count
+
     ## CREATE
     def addNode(self, model:QAbstractItemModel, subgraph:QModelIndex|QPersistentModelIndex=QModelIndex()):
         position = model.rowCount(subgraph)
@@ -170,7 +222,7 @@ class GraphDelegate(QObject):
         assert link.isValid(), "Link index must be valid"
         model.removeRows(link.row(), 1, link.parent())
 
-    ## delegate
+    ## QT delegate
     def createEditor(self, parent:QWidget, option:QStyleOptionViewItem, index:QModelIndex|QPersistentModelIndex) -> QWidget:
         return QLineEdit(parent=None)
     

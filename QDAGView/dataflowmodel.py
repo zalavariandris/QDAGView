@@ -9,12 +9,16 @@ from dataclasses import dataclass, field
 from collections import defaultdict
 
 from core import GraphDataRole, GraphItemType
+from utils import bfs
+from utils.unique import make_unique_id
+
 
 class Operator:
-    def __init__(self, expression: str = "Operator"):
+    def __init__(self, expression: str = "Operator", name:str|None = None):
         self._expression = expression
         self._inlets: List[Inlet] = [Inlet("in1", self), Inlet("in2", self)] 
         self._outlets: List[Outlet] = [Outlet("out", self)]
+        self._name = name if name else make_unique_id()
 
     def expression(self) -> str:
         """Return the expression of the operator."""
@@ -23,6 +27,14 @@ class Operator:
     def setExpression(self, expression:str):
         """Set the expression of the operator."""
         self._expression = expression
+
+    def name(self) -> str:
+        """Return the name of the operator."""
+        return self._name
+    
+    def setName(self, name:str):
+        """Set the name of the operator."""
+        self._name = name
 
     def __call__(self, *args, **kwds):
         ...
@@ -35,8 +47,12 @@ class Operator:
         """Return the list of outlets for this operator."""
         return self._outlets
     
-    def __str__(self):
+    def __repr__(self):
         return f"Operator({self._expression})"
+    
+    def evaluate(self, *args, **kwargs) -> str:
+        """Evaluate the operator."""
+        return f"Evaluating {self._expression}"
 
     
 @dataclass()
@@ -71,7 +87,7 @@ class Link:
     def __str__(self):
         return  f"Link({self.source} -> {self.target})"
 
-
+from utils import bfs
 class FlowGraph:
     def __init__(self, name: str = "FlowGraph"):
         self._name = name
@@ -85,10 +101,46 @@ class FlowGraph:
         return self._operators
     
     def inLinks(self, inlet: Inlet) -> List[Link]:
+        assert isinstance(inlet, Inlet), "Inlet must be an instance of Inlet"
         return [link for link in self._in_links[inlet]]
 
     def outLinks(self, outlet: Outlet) -> List[Link]:
         return [link for link in self._out_links[outlet]]
+
+    def ancestors(self, node: Operator) -> Iterable[Operator]:
+        """Get all dependencies of the given operator."""
+        assert node in self._operators
+        def inputNodes(node: Operator) -> Iterable[Operator]:
+            """Get all input nodes of the given operator."""
+            for inlet in node.inlets():
+                for link in self.inLinks(inlet):
+                    if link.source.operator is not None:
+                        yield link.source.operator
+        
+        for n in bfs(node, children=inputNodes):
+            yield n
+
+    def descendants(self, node: Operator) -> Iterable[Operator]:
+        """Get all descendants of the given operator."""
+        assert node in self._operators
+        def outputNodes(node: Operator) -> Iterable[Operator]:
+            """Get all output nodes of the given operator."""
+            for link in self._out_links[node]:
+                if link.source.operator is not None:
+                    yield link.source.operator
+        
+        for n in bfs(node, outputNodes):
+            yield n
+
+    def evaluate(self, node: Operator) -> str:
+        """Evaluate the graph starting from the given node."""
+        assert node in self._operators
+        result = ""
+        ancestors = list(self.ancestors(node))
+        print(f"Evaluating item: {node}, ancestors: {ancestors}")
+        for op in ancestors:
+            result += f"{op.expression()}\n"
+        return result
 
     ## CREATE
     def insertOperator(self, index:int, operator: Operator) -> bool:
@@ -149,7 +201,7 @@ class FlowGraphModel(QAbstractItemModel):
     def index(self, row, column, parent=QModelIndex())-> QModelIndex:
         parent = QModelIndex(parent)  # Ensure parent is a valid QModelIndex
         parent_item:FlowGraph | Operator | Inlet = self.invisibleRootItem() if not parent.isValid() else parent.internalPointer()
-        assert column == 0, "This model only supports one column."
+        # assert column == 0, "This model only supports one column."
         match parent_item:
             case FlowGraph():
                 graph = parent_item
@@ -332,7 +384,26 @@ class FlowGraphModel(QAbstractItemModel):
                 return False
 
     def columnCount(self, parent=QModelIndex()):
-        return 1
+        parent_item:FlowGraph | Operator | Inlet | Outlet | Link = self.invisibleRootItem() if not parent.isValid() else parent.internalPointer()
+        
+        match parent_item:
+            case FlowGraph():
+                return 2
+            
+            case Operator():
+                return 1
+
+            case Inlet():
+                return 1
+                
+            case Outlet():
+                return 1
+            
+            case Link():
+                return 1
+            
+            case _:
+                raise Exception(f"Invalid parent item type: {type(parent_item)}")
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
 
@@ -343,26 +414,42 @@ class FlowGraphModel(QAbstractItemModel):
         match item:
             case Operator():
                 operator = item
-                match role:
-                    case GraphDataRole.TypeRole:
-                        return GraphItemType.NODE
-                    
-                    case Qt.ItemDataRole.DisplayRole:
-                        return f"NODE {operator.expression()}"
-                    
-                    case Qt.ItemDataRole.EditRole:
-                        return operator.expression()
+                match index.column():
+                    case 0:
+                        match role:
+                            case Qt.ItemDataRole.DisplayRole:
+                                return f"{operator.name()}"
+                            
+                            case Qt.ItemDataRole.EditRole:
+                                return operator.name()
+                            case _:
+                                return None
+                            
+                    case 1:
+                        match role:
+                            case GraphDataRole.TypeRole:
+                                return GraphItemType.NODE
+                            
+                            case Qt.ItemDataRole.DisplayRole:
+                                return f"{operator.expression()}"
+                            
+                            case Qt.ItemDataRole.EditRole:
+                                return operator.expression()
+                            case _:
+                                return None
                     case _:
                         return None
-                
+                            
             case Inlet():
                 inlet = item
                 match role:
                     case GraphDataRole.TypeRole:
                         return GraphItemType.INLET
                     
-                    case Qt.ItemDataRole.DisplayRole | Qt.ItemDataRole.EditRole:
-                        return f"IN {inlet.name}"
+                    case Qt.ItemDataRole.DisplayRole:
+                        return f"{inlet.name}"
+                    case Qt.ItemDataRole.EditRole:
+                        return inlet.name
                     case _:
                         return None
                 return None
@@ -372,8 +459,10 @@ class FlowGraphModel(QAbstractItemModel):
                 match role:
                     case GraphDataRole.TypeRole:
                         return GraphItemType.OUTLET
-                    case Qt.ItemDataRole.DisplayRole | Qt.ItemDataRole.EditRole:
-                        return f"OUT {outlet.name}"
+                    case Qt.ItemDataRole.DisplayRole:
+                        return f"{outlet.name}"
+                    case Qt.ItemDataRole.EditRole:
+                        return outlet.name
                     case _:
                         return None
             
@@ -387,7 +476,7 @@ class FlowGraphModel(QAbstractItemModel):
                         return self.indexFromItem(link.source) if link.source else None
                     
                     case Qt.ItemDataRole.DisplayRole:
-                        return f"LINK {link.source} -> {link.target}"
+                        return f"{link.source} -> {link.target}"
                     
                     case _:
                         return None
@@ -404,15 +493,26 @@ class FlowGraphModel(QAbstractItemModel):
         match item:
             case Operator():
                 operator = item
-                match role:
-                    case Qt.ItemDataRole.EditRole | Qt.ItemDataRole.DisplayRole:
-                        if not isinstance(value, str):
-                            return False # Ensure value is a string
-                        operator.setExpression(value)
-                        self.dataChanged.emit(index, index, [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
-                        return True
-                    case _:
-                        return False
+                match index.column():
+                    case 0:
+                        match role:
+                            case Qt.ItemDataRole.EditRole | Qt.ItemDataRole.DisplayRole:
+                                if not isinstance(value, str):
+                                    return False
+                                operator.setName(value)
+                                self.dataChanged.emit(index, index, [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
+                                return True
+                    case 1:
+                        match role:
+                            case Qt.ItemDataRole.EditRole | Qt.ItemDataRole.DisplayRole:
+                                if not isinstance(value, str):
+                                    return False # Ensure value is a string
+                                operator.setExpression(value)
+                                self.dataChanged.emit(index, index, [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
+                                return True
+                            case _:
+                                return False
+                    
                 
             case Inlet():
                 inlet = item
@@ -462,7 +562,7 @@ class FlowGraphModel(QAbstractItemModel):
                 return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable
             
             case Inlet() | Outlet():
-                return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable
+                return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
             
             case Link():
                 return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
@@ -540,7 +640,29 @@ class FlowGraphModel(QAbstractItemModel):
                 return True
             case _:
                 return False
-    
+
+    def evaluate(self, index: QModelIndex) -> Any:
+        """create a python script from the selected operator and its ancestors."""
+
+        script_text = ""
+        item = self.itemFromIndex(index)  # Ensure the index is valid
+        ancestors = list(self._root.ancestors(item))
+        for op in reversed(ancestors):
+            params = dict()
+            inlets = op.inlets()  # Ensure inlets are populated
+            for inlet in inlets:
+                links = self._root.inLinks(inlet)
+                outlets = [link.source for link in links if link.source is not None]
+                if len(outlets) > 0:
+                    params[inlet.name] = outlets[0].operator.name()
+
+            line = f"{op.name()} = {op.expression()}({ ",".join(f"{k}={v}" for k, v in params.items()) })"
+            
+            script_text += f"{line}\n"
+            
+        return script_text
+        
+
 from graphview import GraphView
 if __name__ == "__main__":
     import sys
@@ -558,6 +680,8 @@ if __name__ == "__main__":
             add_action.triggered.connect(self.addOperator)
             remove_action = self.toolbar.addAction("Remove Operator")
             remove_action.triggered.connect(self.removeSelectedItems)
+            evaluate_action = self.toolbar.addAction("Evaluate Expression")
+            evaluate_action.triggered.connect(self.evaluateCurrent)
 
             self.tree = QTreeView(parent=self)
             self.tree.setModel(self.model)
@@ -569,14 +693,30 @@ if __name__ == "__main__":
             self.graphview.setModel(self.model)
             self.graphview.setSelectionModel(self.selection)
 
+            self.viewer = QLabel("viewer")
+
             layout = QHBoxLayout(self)
             splitter = QSplitter(Qt.Orientation.Horizontal, self)
             splitter.addWidget(self.tree)
             splitter.addWidget(self.graphview)
+            splitter.addWidget(self.viewer)
             layout.setMenuBar(self.toolbar)
             layout.addWidget(splitter)
-
             self.setLayout(layout)
+
+        
+            def onChange(indexes: List[QModelIndex]):
+                print("on change", indexes)
+                current_node = self.selection.currentIndex().internalPointer()
+                if isinstance(current_node, Operator):
+                    ancestors = self.model._root.ancestors(self.selection.currentIndex().internalPointer())
+                    ancestor_indexes = set([self.model.indexFromItem(op) for op in ancestors])
+
+                    if set(indexes).intersection(ancestor_indexes):
+                        self.evaluateCurrent()
+
+            self.selection.currentChanged.connect(lambda current, previous: onChange([current]))
+            self.model.dataChanged.connect(self.graphview.update)
 
         @Slot()
         def addOperator(self):
@@ -620,6 +760,14 @@ if __name__ == "__main__":
             for idx in unique_indexes:
                 if idx.isValid():
                     self.model.removeRows(idx.row(), 1, idx.parent())
+
+        @Slot()
+        def evaluateCurrent(self):
+            index = self.selection.currentIndex()
+            if not index.isValid():
+                return
+            result = self.model.evaluate(index)
+            self.viewer.setText(result)
 
     # graph = model.invisibleRootItem()
     # operator = Operator("TestOperator")

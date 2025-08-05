@@ -338,6 +338,9 @@ def makeLineBetweenShapes(
 
     line = QLineF(I1, I2)
     length = line.length()
+    if length <= 0.0001:
+        # If the length is too small, return a zero-length line
+        return QLineF(I1, I1)
     line.setP1(line.pointAt(distance/length))
 
     line.setLength(length-distance*2)

@@ -203,7 +203,6 @@ class GraphModel(QAbstractItemModel):
         return 1
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
-
         if not index.isValid():
             return None
         
