@@ -635,10 +635,16 @@ class FlowGraphModel(QAbstractItemModel):
                 # Remove links connected to this inlet
                 # This is a simplified implementation - you may need more sophisticated link management
                 for i in reversed(range(row, row + count)):
+                    link = self.index(i, 0, parent).internalPointer()
+                    assert isinstance(link, Link)
+                    if not graph.removeLink(link):
+                        self.endRemoveRows()
+                        return False
                     pass # TODO: Implement link removal logic
                 self.endRemoveRows()
                 return True
             case _:
+                print(f"Invalid parent item type: {type(parent_item)}")
                 return False
 
     def evaluate(self, index: QModelIndex) -> Any:

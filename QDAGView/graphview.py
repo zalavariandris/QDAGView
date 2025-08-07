@@ -145,7 +145,12 @@ class GraphView(QGraphicsView):
         # store model widget relations
         self._widgets: bidict[QPersistentModelIndex, BaseRowWidget] = bidict()
         self._cells: bidict[QPersistentModelIndex, CellWidget] = bidict()
-        
+
+        self._inlet_link_widgets: defaultdict[InletWidget, list[LinkWidget]] = defaultdict(list)
+        self._outlet_link_widgets: defaultdict[OutletWidget, list[LinkWidget]] = defaultdict(list)
+        self._inlinks: defaultdict[QPersistentModelIndex, list[LinkWidget]] = defaultdict(list)
+        self._outlinks: defaultdict[QPersistentModelIndex, list[LinkWidget]] = defaultdict(list)
+
         # setup the view
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
         self.setAcceptDrops(True)
@@ -301,7 +306,26 @@ class GraphView(QGraphicsView):
                         source_widget = self.rowWidgetFromIndex(source_index) if source_index is not None else None
                         target_index = self._delegate.linkTarget(index)
                         target_widget = self.rowWidgetFromIndex(target_index)
-                        widget.link(source_widget, target_widget)
+
+                        # unlink
+                        if widget._source:
+                            cast(OutletWidget, widget._source)._links.remove(widget)
+                        if widget._target:
+                            cast(InletWidget, widget._target)._links.remove(widget)
+
+                        # link
+                        widget._source = source_widget
+                        if source_widget:
+                            source_widget._links.append(widget)
+
+                        widget._target = target_widget
+                        if target_widget:
+                            target_widget._links.append(widget)
+
+                        widget.updateLine()
+                        widget.update()
+
+
             case _:
                 raise ValueError(f"Unknown parent widget type: {type(parent_widget)}")
             
@@ -331,15 +355,19 @@ class GraphView(QGraphicsView):
             case InletWidget():
                 match widget:
                     case LinkWidget():
-                        # widget.unlink()
+
                         widget.setParentItem(parent_widget)
                         scene.removeItem(widget)
-                        source_widget = self.rowWidgetFromIndex(self._delegate.linkSource(index))
-                        target_widget = self.rowWidgetFromIndex(self._delegate.linkTarget(index))
-                        # if source_widget:
-                        #     self._outlinks[source_widget].remove(widget)
-                        # if target_widget:
-                        #     self._inlinks[target_widget].remove(widget)
+
+                        # unlink widget
+                        if widget._source:
+                            cast(OutletWidget, widget._source)._links.remove(widget)
+                        if widget._target:
+                            cast(InletWidget, widget._target)._links.remove(widget)
+
+                        widget.updateLine()
+                        widget.update()
+
                     case _:
                         widget.setParentItem(None)
                         scene.removeItem(widget)
@@ -499,10 +527,27 @@ class GraphView(QGraphicsView):
                     case GraphItemType.LINK:
                         link_widget = cast(LinkWidget, self.rowWidgetFromIndex(index))
                         if link_widget:
-                            link_widget.unlink()
+
                             source_widget = self.rowWidgetFromIndex(self._delegate.linkSource(index))
                             target_widget = self.rowWidgetFromIndex(self._delegate.linkTarget(index))
-                            link_widget.link(source_widget, target_widget)
+
+                            # unlink
+                            if link_widget._source:
+                                cast(OutletWidget, link_widget._source)._links.remove(link_widget)
+                            if link_widget._target:
+                                cast(InletWidget, link_widget._target)._links.remove(link_widget)
+
+                            # link
+                            link_widget._source = source_widget
+                            if source_widget:
+                                source_widget._links.append(link_widget)
+                                
+                            link_widget._target = target_widget
+                            if target_widget:
+                                target_widget._links.append(link_widget)
+
+                            link_widget.updateLine()
+                            link_widget.update()
 
         if GraphDataRole.TypeRole in roles or roles == []:
             # if an inlet or outlet type is changed, we need to update the widget
@@ -814,26 +859,29 @@ class GraphView(QGraphicsView):
                 current_inlet_index = self._delegate.linkTarget(link_index)
                 self._delegate.removeLink(self._model, link_index)
                 self._delegate.addLink(self._model, new_outlet_index, current_inlet_index)
-                sucess = True
+                success = True
             
             case 'tail', _:
                 # tail dropped on empty space
                 link_index = payload.index
+                assert link_index.isValid(), "Link index must be valid"
                 link_source = self._delegate.linkSource(link_index)
                 link_target = self._delegate.linkTarget(link_index)
                 IsLinked = link_source and link_source.isValid() and link_target and link_target.isValid()
                 if IsLinked:
                     self._delegate.removeLink(self._model, link_index)
-                    sucsess = True
+                    success = True
 
             case 'head', _:
                 # head dropped on empty space
                 link_index = payload.index
                 assert link_index.isValid(), "Link index must be valid"
-                IsLinked = self._delegate.linkSource(link_index).isValid() and self._delegate.linkTarget(link_index).isValid()
+                link_source = self._delegate.linkSource(link_index)
+                link_target = self._delegate.linkTarget(link_index)
+                IsLinked = link_source and link_source.isValid() and link_target and link_target.isValid()
                 if IsLinked:
                     self._delegate.removeLink(self._model, link_index)
-                    sucsess =  True
+                    success =  True
 
         # cleanup DraftLink
         if self._draft_link:

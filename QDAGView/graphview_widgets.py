@@ -228,28 +228,28 @@ class LinkWidget(BaseRowWidget):
         arrow = makeArrowShape(self._line, 2)
         painter.drawPath(arrow)
 
-    def link(self, source:QGraphicsItem|None, target:QGraphicsItem|None):
-        """Link this widget to a source and target item."""
-        self.unlink()  # Unlink any existing connections
-        self._source = source
-        self._target = target
-        if source:
-            source._links.append(self)
-        if target:
-            target._links.append(self)
-        self.updateLine()
-        self.update()
+    # def link(self, source:QGraphicsItem|None, target:QGraphicsItem|None):
+    #     """Link this widget to a source and target item."""
+    #     self.unlink()  # Unlink any existing connections
+    #     self._source = source
+    #     self._target = target
+    #     if source:
+    #         source._links.append(self)
+    #     if target:
+    #         target._links.append(self)
+    #     self.updateLine()
+    #     self.update()
 
-    def unlink(self):
-        """Unlink this widget from its source and target items."""
-        if self._source:
-            self._source._links.remove(self)
-            self._source = None
-        if self._target:
-            self._target._links.remove(self)
-            self._target = None
-        self.updateLine()
-        self.update()
+    # def unlink(self):
+    #     """Unlink this widget from its source and target items."""
+    #     if self._source:
+    #         self._source._links.remove(self)
+    #         self._source = None
+    #     if self._target:
+    #         self._target._links.remove(self)
+    #         self._target = None
+    #     self.updateLine()
+    #     self.update()
 
     def updateLine(self):
         if self._source and self._target:
