@@ -67,7 +67,7 @@ class PortWidget(BaseRowWidget):
     scenePositionChanged = Signal(QPointF)
     def __init__(self, parent: QGraphicsItem | None = None):
         super().__init__(parent=parent)
-        self._links:List[LinkWidget] = []
+        # self._links:List[LinkWidget] = []
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsScenePositionChanges, True)
 
     def itemChange(self, change, value):
@@ -77,9 +77,9 @@ class PortWidget(BaseRowWidget):
                     # Emit signal when position changes
                     self.scenePositionChanged.emit(value)
 
-                    # Update all links connected to this port
-                    for link in self._links:
-                        link.updateLine()
+                    # # Update all links connected to this port
+                    # for link in self._links:
+                    #     link.updateLine()
 
                     
         return super().itemChange(change, value)
@@ -171,8 +171,8 @@ class LinkWidget(BaseRowWidget):
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
         self._line = QLineF(0, 0, 100, 100)
         self._label = QLabel("Link")
-        self._source: QGraphicsItem | None = None
-        self._target: QGraphicsItem | None = None
+        # self._source: QGraphicsItem | None = None
+        # self._target: QGraphicsItem | None = None
         self.setAcceptHoverEvents(True)
         # self.layout().
     
@@ -251,27 +251,27 @@ class LinkWidget(BaseRowWidget):
     #     self.updateLine()
     #     self.update()
 
-    def updateLine(self):
-        if self._source and self._target:
-            line = makeLineBetweenShapes(self._source, self._target)
-            line = QLineF(self.mapFromScene(line.p1()), self.mapFromScene(line.p2()))
-            self.setLine(line)
+    # def updateLine(self):
+    #     if self._source and self._target:
+    #         line = makeLineBetweenShapes(self._source, self._target)
+    #         line = QLineF(self.mapFromScene(line.p1()), self.mapFromScene(line.p2()))
+    #         self.setLine(line)
 
-        elif self._source:
-            source_center = getShapeCenter(self._source)
-            source_size = self._source.boundingRect().size()
-            origin = QPointF(source_center.x() - source_size.width()/2, source_center.y() - source_size.height()/2)+QPointF(24,24)
-            line = makeLineToShape(origin, self._source) 
-            line = QLineF(self.mapFromScene(line.p1()), self.mapFromScene(line.p2()))
-            line = QLineF(line.p2(), line.p1())  # Reverse the line direction
-            self.setLine(line)
+    #     elif self._source:
+    #         source_center = getShapeCenter(self._source)
+    #         source_size = self._source.boundingRect().size()
+    #         origin = QPointF(source_center.x() - source_size.width()/2, source_center.y() - source_size.height()/2)+QPointF(24,24)
+    #         line = makeLineToShape(origin, self._source) 
+    #         line = QLineF(self.mapFromScene(line.p1()), self.mapFromScene(line.p2()))
+    #         line = QLineF(line.p2(), line.p1())  # Reverse the line direction
+    #         self.setLine(line)
 
-        elif self._target:
-            target_center = getShapeCenter(self._target)
-            target_size = self._target.boundingRect().size()
-            origin = QPointF(target_center.x() - target_size.width()/2, target_center.y() - target_size.height()/2)-QPointF(24,24)
-            line = makeLineToShape(origin, self._target)
-            line = QLineF(self.mapFromScene(line.p1()), self.mapFromScene(line.p2()))
-            self.setLine(line)
-        else:
-            ...
+    #     elif self._target:
+    #         target_center = getShapeCenter(self._target)
+    #         target_size = self._target.boundingRect().size()
+    #         origin = QPointF(target_center.x() - target_size.width()/2, target_center.y() - target_size.height()/2)-QPointF(24,24)
+    #         line = makeLineToShape(origin, self._target)
+    #         line = QLineF(self.mapFromScene(line.p1()), self.mapFromScene(line.p2()))
+    #         self.setLine(line)
+    #     else:
+    #         ...

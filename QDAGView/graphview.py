@@ -20,7 +20,7 @@ from bidict import bidict
 from utils import group_consecutive_numbers
 
 from graphview_widgets import (
-    BaseRowWidget, CellWidget, NodeWidget, InletWidget, OutletWidget, LinkWidget
+    BaseRowWidget, CellWidget, NodeWidget, InletWidget, OutletWidget, LinkWidget, PortWidget
 )
 from utils.geo import makeLineBetweenShapes, makeLineToShape, makeArrowShape, getShapeCenter
 # from pylive.utils.geo import makeLineBetweenShapes, makeLineToShape
@@ -146,10 +146,10 @@ class GraphView(QGraphicsView):
         self._widgets: bidict[QPersistentModelIndex, BaseRowWidget] = bidict()
         self._cells: bidict[QPersistentModelIndex, CellWidget] = bidict()
 
-        self._inlet_link_widgets: defaultdict[InletWidget, list[LinkWidget]] = defaultdict(list)
-        self._outlet_link_widgets: defaultdict[OutletWidget, list[LinkWidget]] = defaultdict(list)
-        self._inlinks: defaultdict[QPersistentModelIndex, list[LinkWidget]] = defaultdict(list)
-        self._outlinks: defaultdict[QPersistentModelIndex, list[LinkWidget]] = defaultdict(list)
+        self._link_source: defaultdict[LinkWidget, list[OutletWidget]] = defaultdict(list)
+        self._link_target: defaultdict[LinkWidget, list[InletWidget]] = defaultdict(list)
+        self._inlet_links: defaultdict[InletWidget, list[LinkWidget]] = defaultdict(list)
+        self._outlet_links: defaultdict[OutletWidget, list[LinkWidget]] = defaultdict(list)
 
         # setup the view
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
@@ -292,9 +292,11 @@ class GraphView(QGraphicsView):
                         ...
 
             case InletWidget():
+                inlet_widget = cast(InletWidget, parent_widget)
                 match widget:
                     case LinkWidget():
-                        widget.setParentItem(parent_widget)
+                        link_widget = cast(LinkWidget, widget)
+                        link_widget.setParentItem(inlet_widget)
                         # source_widget = self.rowWidgetFromIndex(self._delegate.linkSource(index))
                         # target_widget = self.rowWidgetFromIndex(self._delegate.linkTarget(index))
                         # if source_widget:
@@ -308,28 +310,48 @@ class GraphView(QGraphicsView):
                         target_widget = self.rowWidgetFromIndex(target_index)
 
                         # unlink
-                        if widget._source:
-                            cast(OutletWidget, widget._source)._links.remove(widget)
-                        if widget._target:
-                            cast(InletWidget, widget._target)._links.remove(widget)
+                        self._unlinkWidget(link_widget)
 
                         # link
-                        widget._source = source_widget
-                        if source_widget:
-                            source_widget._links.append(widget)
+                        self._linkWidget(link_widget, source_widget, target_widget)
 
-                        widget._target = target_widget
-                        if target_widget:
-                            target_widget._links.append(widget)
-
-                        widget.updateLine()
-                        widget.update()
+                        
 
 
             case _:
                 raise ValueError(f"Unknown parent widget type: {type(parent_widget)}")
             
         return widget
+    
+    def _unlinkWidget(self, link_widget:LinkWidget):
+        source_widget = self._link_source[link_widget]
+        target_widget = self._link_target[link_widget]
+
+        # unlink widget
+        if source_widget:
+            del self._link_source[link_widget]
+            self._outlet_links[source_widget].remove(link_widget)
+
+        if target_widget:
+            del self._link_target[link_widget]
+            self._inlet_links[target_widget].remove(link_widget)
+
+        self._update_link_position(link_widget, source_widget, target_widget)
+
+    def _linkWidget(self, link_widget:LinkWidget, source_widget:OutletWidget|None, target_widget:InletWidget):
+        assert link_widget is not None, "link_widget must not be None"
+        # assert source_widget is not None, "source_widget must not be None"
+        assert target_widget is not None, "target_widget must not be None"
+
+        if source_widget:
+            self._link_source[link_widget] = source_widget
+            self._outlet_links[source_widget].append(link_widget)
+
+        if target_widget:
+            self._link_target[link_widget] = target_widget
+            self._inlet_links[target_widget].append(link_widget)
+
+        self._update_link_position(link_widget, source_widget, target_widget)
 
     def destroyRowWidget(self, widget:QGraphicsItem, index:QModelIndex|QPersistentModelIndex):
         scene = widget.scene()
@@ -341,79 +363,84 @@ class GraphView(QGraphicsView):
                 scene.removeItem(widget)
 
             case NodeWidget():
+                node_widget = cast(NodeWidget, parent_widget)
                 match widget:
                     case OutletWidget():
-                        parent_widget.removeOutlet(widget)
-                        widget.scenePositionChanged.disconnect(self.onPortScenePositionChanged)
+                        outlet_widget = cast(OutletWidget, widget)
+                        node_widget.removeOutlet(outlet_widget)
+                        outlet_widget.scenePositionChanged.disconnect(self.onPortScenePositionChanged)
                     case InletWidget():
-                        parent_widget.removeInlet(widget)
-                        widget.scenePositionChanged.disconnect(self.onPortScenePositionChanged)
+                        inlet_widget = cast(InletWidget, widget)
+                        node_widget.removeInlet(inlet_widget)
+                        inlet_widget.scenePositionChanged.disconnect(self.onPortScenePositionChanged)
                     case _:
                         widget.setParentItem(None)
                         scene.removeItem(widget)
 
             case InletWidget():
+                inlet_widget = cast(InletWidget, parent_widget)
                 match widget:
                     case LinkWidget():
-
-                        widget.setParentItem(parent_widget)
-                        scene.removeItem(widget)
-
-                        # unlink widget
-                        if widget._source:
-                            cast(OutletWidget, widget._source)._links.remove(widget)
-                        if widget._target:
-                            cast(InletWidget, widget._target)._links.remove(widget)
-
-                        widget.updateLine()
-                        widget.update()
+                        link_widget = cast(LinkWidget, widget)
+                        scene.removeItem(link_widget)
+                        self._unlinkWidget(link_widget)
 
                     case _:
                         widget.setParentItem(None)
                         scene.removeItem(widget)
+            
             case _:
                 raise ValueError(f"Unknown parent widget type: {type(parent_widget)}")
 
-    # def _update_link_position(self, link_index:QModelIndex|QPersistentModelIndex, source_widget:QGraphicsItem|None=None, target_widget:QGraphicsItem|None=None):
-    #     link_widget = cast(LinkWidget, self.rowWidgetFromIndex(link_index))
+    def _update_link_position(self, link_widget:LinkWidget, source_widget:QGraphicsItem|None=None, target_widget:QGraphicsItem|None=None):
+        if source_widget and target_widget:
+            line = makeLineBetweenShapes(source_widget, target_widget)
+            line = QLineF(self.mapFromScene(line.p1()), self.mapFromScene(line.p2()))
+            link_widget.setLine(line)
 
-    #     print("update link position for index:", link_index, source_widget, target_widget)
-    #     if source_widget and target_widget:
-    #         line = makeLineBetweenShapes(source_widget, target_widget)
-    #         line = QLineF(
-    #             QPointF(link_widget.mapFromScene(line.p1())), 
-    #             QPointF(link_widget.mapFromScene(line.p2()))
-    #         )
-    #         link_widget.setLine(line)
-    #     elif source_widget:
-    #         ...
-    #     elif target_widget:
-    #         ...
-    #     else:
-    #         ...
+        elif source_widget:
+            source_center = getShapeCenter(source_widget)
+            source_size = source_widget.boundingRect().size()
+            origin = QPointF(source_center.x() - source_size.width()/2, source_center.y() - source_size.height()/2)+QPointF(24,24)
+            line = makeLineToShape(origin, source_widget) 
+            line = QLineF( QPointF(self.mapFromScene(line.p1())), QPointF(self.mapFromScene(line.p2())))
+            line = QLineF(line.p2(), line.p1())  # Reverse the line direction
+            link_widget.setLine(line)
 
-    # def onPortScenePositionChanged(self):
-    #     # Update the position of the port widget
-    #     widget = self.sender()
-    #     port_index = self.indexFromRowWidget(widget)
+        elif target_widget:
+            target_center = getShapeCenter(target_widget)
+            target_size = target_widget.boundingRect().size()
+            origin = QPointF(target_center.x() - target_size.width()/2, target_center.y() - target_size.height()/2)-QPointF(24,24)
+            line = makeLineToShape(origin, target_widget)
+            line = QLineF(self.mapFromScene(line.p1()), self.mapFromScene(line.p2()))
+            link_widget.setLine(line)
+        else:
+            ...
 
-    #     links = []
-    #     match self._delegate.itemType(port_index):
-    #         case GraphItemType.OUTLET:
-    #             print("Updating outlet position for index:", port_index)
-    #             # Update links connected to this outlet
-    #             links = self._outlinks[port_index]
+        link_widget.update()
 
-    #         case GraphItemType.INLET:
-    #             print("Updating inlet position for index:", port_index)
-    #             links = self._inlinks[port_index]
+    def onPortScenePositionChanged(self):
+        # Update the position of the port widget
+        widget = self.sender()
+        port_index = self.indexFromRowWidget(widget)
 
-    #     for link_index in links:
-    #         link_widget = cast(LinkWidget, self.rowWidgetFromIndex(link_index))
-    #         if link_widget:
-    #             source_widget = self.rowWidgetFromIndex(self._delegate.linkSource(link_index))
-    #             target_widget = self.rowWidgetFromIndex(self._delegate.linkTarget(link_index))
-    #             self._update_link_position(link_index, source_widget, target_widget)
+        links = []
+        match self._delegate.itemType(port_index):
+            case GraphItemType.OUTLET:
+                print("Updating outlet position for index:", port_index)
+                # Update links connected to this outlet
+                links = self._outlinks[port_index]
+
+            case GraphItemType.INLET:
+                print("Updating inlet position for index:", port_index)
+                links = self._inlinks[port_index]
+
+        for link_index in links:
+            link_widget = cast(LinkWidget, self.rowWidgetFromIndex(link_index))
+            if link_widget:
+                source_widget = self.rowWidgetFromIndex(self._delegate.linkSource(link_index))
+                target_widget = self.rowWidgetFromIndex(self._delegate.linkTarget(link_index))
+                self._update_link_position(link_index, source_widget, target_widget)
 
     @Slot(QModelIndex, int, int)
     def onRowsInserted(self, parent:QModelIndex, start:int, end:int):
@@ -531,23 +558,10 @@ class GraphView(QGraphicsView):
                             source_widget = self.rowWidgetFromIndex(self._delegate.linkSource(index))
                             target_widget = self.rowWidgetFromIndex(self._delegate.linkTarget(index))
 
-                            # unlink
-                            if link_widget._source:
-                                cast(OutletWidget, link_widget._source)._links.remove(link_widget)
-                            if link_widget._target:
-                                cast(InletWidget, link_widget._target)._links.remove(link_widget)
+                            self._unlinkWidget(link_widget)
 
                             # link
-                            link_widget._source = source_widget
-                            if source_widget:
-                                source_widget._links.append(link_widget)
-                                
-                            link_widget._target = target_widget
-                            if target_widget:
-                                target_widget._links.append(link_widget)
-
-                            link_widget.updateLine()
-                            link_widget.update()
+                            self._linkWidget(link_widget, source_widget, target_widget)
 
         if GraphDataRole.TypeRole in roles or roles == []:
             # if an inlet or outlet type is changed, we need to update the widget
@@ -901,7 +915,9 @@ class GraphView(QGraphicsView):
             if self._delegate.itemType(self._linking_payload.index) == GraphItemType.LINK:
                 link_widget = cast(LinkWidget, self.rowWidgetFromIndex(self._linking_payload.index))
                 assert link_widget is not None, "Link widget must not be None"
-                link_widget.updateLine()
+                source_widget = self._link_source.get(link_widget, None)
+                target_widget = self._link_target.get(link_widget, None)
+                self._update_link_position(link_widget, source_widget, target_widget)
 
             else:
                 assert self._draft_link is not None, "Draft link must not be None"
