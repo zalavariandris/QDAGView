@@ -196,9 +196,9 @@ class LinkWidget(BaseRowWidget):
         self.prepareGeometryChange()
         self._line = line
 
-        self.layout().setGeometry(QRectF(
-            line.p1(), line.p2()
-        ).normalized())
+        _ = QRectF(line.p1(), line.p2())
+        _ = _.normalized()
+        self.layout().setGeometry(_)
 
         self.update()
 
@@ -217,7 +217,6 @@ class LinkWidget(BaseRowWidget):
         return stroker.createStroke(path)
     
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget=None):
-
         if self.isSelected():
             painter.setBrush(self.palette().accent())
         elif option.state & QStyle.StateFlag.State_MouseOver:
@@ -227,51 +226,3 @@ class LinkWidget(BaseRowWidget):
         painter.setPen(Qt.PenStyle.NoPen)
         arrow = makeArrowShape(self._line, 2)
         painter.drawPath(arrow)
-
-    # def link(self, source:QGraphicsItem|None, target:QGraphicsItem|None):
-    #     """Link this widget to a source and target item."""
-    #     self.unlink()  # Unlink any existing connections
-    #     self._source = source
-    #     self._target = target
-    #     if source:
-    #         source._links.append(self)
-    #     if target:
-    #         target._links.append(self)
-    #     self.updateLine()
-    #     self.update()
-
-    # def unlink(self):
-    #     """Unlink this widget from its source and target items."""
-    #     if self._source:
-    #         self._source._links.remove(self)
-    #         self._source = None
-    #     if self._target:
-    #         self._target._links.remove(self)
-    #         self._target = None
-    #     self.updateLine()
-    #     self.update()
-
-    # def updateLine(self):
-    #     if self._source and self._target:
-    #         line = makeLineBetweenShapes(self._source, self._target)
-    #         line = QLineF(self.mapFromScene(line.p1()), self.mapFromScene(line.p2()))
-    #         self.setLine(line)
-
-    #     elif self._source:
-    #         source_center = getShapeCenter(self._source)
-    #         source_size = self._source.boundingRect().size()
-    #         origin = QPointF(source_center.x() - source_size.width()/2, source_center.y() - source_size.height()/2)+QPointF(24,24)
-    #         line = makeLineToShape(origin, self._source) 
-    #         line = QLineF(self.mapFromScene(line.p1()), self.mapFromScene(line.p2()))
-    #         line = QLineF(line.p2(), line.p1())  # Reverse the line direction
-    #         self.setLine(line)
-
-    #     elif self._target:
-    #         target_center = getShapeCenter(self._target)
-    #         target_size = self._target.boundingRect().size()
-    #         origin = QPointF(target_center.x() - target_size.width()/2, target_center.y() - target_size.height()/2)-QPointF(24,24)
-    #         line = makeLineToShape(origin, self._target)
-    #         line = QLineF(self.mapFromScene(line.p1()), self.mapFromScene(line.p2()))
-    #         self.setLine(line)
-    #     else:
-    #         ...

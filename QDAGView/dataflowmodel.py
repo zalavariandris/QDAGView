@@ -688,6 +688,7 @@ if __name__ == "__main__":
             remove_action.triggered.connect(self.removeSelectedItems)
             evaluate_action = self.toolbar.addAction("Evaluate Expression")
             evaluate_action.triggered.connect(self.evaluateCurrent)
+            self.toolbar.setNativeMenuBar(False)
 
             self.tree = QTreeView(parent=self)
             self.tree.setModel(self.model)
@@ -712,7 +713,6 @@ if __name__ == "__main__":
 
         
             def onChange(indexes: List[QModelIndex]):
-                print("on change", indexes)
                 current_node = self.selection.currentIndex().internalPointer()
                 if isinstance(current_node, Operator):
                     ancestors = self.model._root.ancestors(self.selection.currentIndex().internalPointer())

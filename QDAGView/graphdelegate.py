@@ -2,6 +2,7 @@ from typing import *
 from qtpy.QtGui import *
 from qtpy.QtCore import *
 from qtpy.QtWidgets import *
+from graphview_widgets import InletWidget, LinkWidget, NodeWidget, OutletWidget
 from core import GraphDataRole, GraphItemType
 
 
@@ -10,10 +11,13 @@ class GraphDelegate(QObject):
     Delegate for the GraphView.
     This is used to handle events and interactions with the graph view.
     """
+
+    portPositionChanged = Signal(QGraphicsItem)
+
     def __init__(self):
         super().__init__()
 
-    ## READ
+    ## READ MODEL
     def linkSource(self, link_index:QModelIndex|QPersistentModelIndex) -> QModelIndex|None:
         source_index = link_index.data(GraphDataRole.SourceRole)
         assert source_index is None or source_index.isValid(), f"Source index must be valid or None, got: {source_index}"
@@ -130,7 +134,7 @@ class GraphDelegate(QObject):
                 outlet_count += 1
         return outlet_count
 
-    ## CREATE
+    ## CREATE MODEL
     def addNode(self, model:QAbstractItemModel, subgraph:QModelIndex|QPersistentModelIndex=QModelIndex()):
         position = model.rowCount(subgraph)
         if model.insertRows(position, 1, subgraph):
@@ -201,7 +205,7 @@ class GraphDelegate(QObject):
             model.setData(link_index, new_link_name, role=Qt.ItemDataRole.DisplayRole)
             model.setData(link_index, outlet, role=GraphDataRole.SourceRole)
         
-    ## UPDATE
+    ## UPDATE MODEL
     def setLinkSource(self, model:QAbstractItemModel, link:QModelIndex|QPersistentModelIndex, source:QModelIndex|QPersistentModelIndex):
         """
         Set the source of a link.
@@ -212,7 +216,7 @@ class GraphDelegate(QObject):
         assert source.isValid(), "Source index must be valid"
         model.setData(link, source, role=GraphDataRole.SourceRole)
 
-    ## DELETE
+    ## DELETE MODEL
     def removeLink(self, model:QAbstractItemModel, link:QModelIndex|QPersistentModelIndex):
         """
         Remove a link from the graph.
@@ -222,10 +226,61 @@ class GraphDelegate(QObject):
         assert link.isValid(), "Link index must be valid"
         model.removeRows(link.row(), 1, link.parent())
 
+    ## Widgets
+    def createNodeWidget(self, parent_widget:QGraphicsScene | QGraphicsScene, index:QModelIndex) -> 'NodeWidget':
+        assert isinstance(parent_widget, QGraphicsScene)
+        widget = NodeWidget()
+        parent_widget.addItem(widget)
+        return widget
+
+    def destroyNodeWidget(self, parent_widget:QGraphicsScene, widget:NodeWidget):
+        assert isinstance(parent_widget, QGraphicsScene)
+        parent_widget.removeItem(widget)
+
+    def createInletWidget(self, parent_widget:'NodeWidget', index:QModelIndex) -> 'InletWidget':
+        widget = InletWidget()
+        node_index = index.parent()
+        pos = self.inletCount(node_index)
+        parent_widget.insertInlet(pos, widget)
+        widget.scenePositionChanged.connect(lambda pos, idx=QPersistentModelIndex(index): self.portPositionChanged.emit(idx))
+        return widget
+    
+    def destroyInletWidget(self, parent_widget:'NodeWidget', widget:InletWidget):
+        assert isinstance(parent_widget, NodeWidget)
+        node_widget = parent_widget
+        inlet_widget = cast(InletWidget, widget)
+        node_widget.removeInlet(inlet_widget)
+    
+    def createOutletWidget(self, parent_widget:'NodeWidget', index:QModelIndex) -> 'OutletWidget':
+        widget = OutletWidget()
+        node_index = index.parent()
+        pos = self.outletCount(node_index)
+        parent_widget.insertOutlet(pos, widget)
+        widget.scenePositionChanged.connect(lambda pos, idx=QPersistentModelIndex(index): self.portPositionChanged.emit(idx))
+        return widget
+    
+    def destroyOutletWidget(self, parent_widget:'NodeWidget', widget:OutletWidget):
+        assert isinstance(parent_widget, NodeWidget)
+        outlet_widget = cast(OutletWidget, widget)
+        node_widget = parent_widget
+        node_widget.removeOutlet(outlet_widget)
+        
+    def createLinkWidget(self, parent_widget:QGraphicsItem | QGraphicsScene, index:QModelIndex) -> 'LinkWidget':
+        link_widget = LinkWidget()
+        inlet_widget = parent_widget
+        link_widget.setParentItem(inlet_widget)
+        return link_widget
+    
+    def destroyLinkWidget(self, parent_widget:QGraphicsItem | QGraphicsScene, widget:LinkWidget):
+        assert isinstance(parent_widget, (QGraphicsItem, QGraphicsScene))
+        link_widget = cast(LinkWidget, widget)
+        parent_widget.removeItem(link_widget)
+        parent_widget.scene().removeItem(link_widget)
+
     ## QT delegate
     def createEditor(self, parent:QWidget, option:QStyleOptionViewItem, index:QModelIndex|QPersistentModelIndex) -> QWidget:
         return QLineEdit(parent=None)
-    
+
     def setEditorData(self, editor:QWidget, index:QModelIndex|QPersistentModelIndex):
         if isinstance(editor, QLineEdit):
             text = index.data(Qt.ItemDataRole.DisplayRole)
@@ -237,3 +292,5 @@ class GraphDelegate(QObject):
             model.setData(index, text, Qt.ItemDataRole.EditRole)
         else:
             raise TypeError(f"Editor must be a QLineEdit, got {type(editor)} instead.")
+        
+    
