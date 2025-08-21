@@ -294,3 +294,4 @@ class GraphDelegate(QObject):
             raise TypeError(f"Editor must be a QLineEdit, got {type(editor)} instead.")
         
     
+    
