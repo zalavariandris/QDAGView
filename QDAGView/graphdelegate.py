@@ -6,13 +6,16 @@ from graphview_widgets import InletWidget, LinkWidget, NodeWidget, OutletWidget
 from core import GraphDataRole, GraphItemType
 
 
+from graphview_widgets import NodeWidget, InletWidget, OutletWidget, LinkWidget
+
+
 class GraphDelegate(QObject):
     """
     Delegate for the GraphView.
     This is used to handle events and interactions with the graph view.
     """
 
-    portPositionChanged = Signal(QGraphicsItem)
+    portPositionChanged = Signal(QPersistentModelIndex)
 
     def __init__(self):
         super().__init__()
@@ -266,15 +269,14 @@ class GraphDelegate(QObject):
         node_widget.removeOutlet(outlet_widget)
         
     def createLinkWidget(self, parent_widget:QGraphicsItem | QGraphicsScene, index:QModelIndex) -> 'LinkWidget':
+        assert isinstance(parent_widget, InletWidget)
         link_widget = LinkWidget()
-        inlet_widget = parent_widget
-        link_widget.setParentItem(inlet_widget)
+        parent_widget.scene().addItem(link_widget)
         return link_widget
     
     def destroyLinkWidget(self, parent_widget:QGraphicsItem | QGraphicsScene, widget:LinkWidget):
-        assert isinstance(parent_widget, (QGraphicsItem, QGraphicsScene))
+        assert isinstance(parent_widget, InletWidget)
         link_widget = cast(LinkWidget, widget)
-        parent_widget.removeItem(link_widget)
         parent_widget.scene().removeItem(link_widget)
 
     ## QT delegate

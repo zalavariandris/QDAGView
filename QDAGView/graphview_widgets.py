@@ -32,11 +32,11 @@ class CellWidget(QGraphicsProxyWidget):
         self.setWidget(editor)
 
     def displayText(self):
-        label = self.widget()  # Ensure the widget is created
+        label = self.widget()
         return label.text() if label else ""
 
     def setDisplayText(self, text:str):
-        label = self.widget()  # Ensure the widget is created
+        label = self.widget()
         label.setText(text)
 
 
@@ -53,6 +53,8 @@ class BaseRowWidget(QGraphicsWidget):
         layout.insertItem(pos, cell)
         layout.setStretchFactor(cell, 1)
         layout.setAlignment(cell, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
+        layout.updateGeometry()
+        self.updateGeometry()
 
     def removeCell(self, cell:CellWidget):
         layout = cast(QGraphicsLinearLayout, self.layout())

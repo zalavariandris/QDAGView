@@ -53,13 +53,7 @@ def addLink(model:QStandardItemModel, source:QStandardItem, target:QStandardItem
 
 from graphview import GraphView, RowKind, GraphDataRole
 app = QApplication(sys.argv)  # Only one QApplication per app
-class TestGraphView(unittest.TestCase):
-    def test_initial_model(self):
-        model = QStandardItemModel()
-        addNode(model, "read", "read()")
 
-        view = GraphView()
-        view.setAdapter(model)
 
 class TestLinks(unittest.TestCase):
     def setUp(self):

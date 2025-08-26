@@ -275,12 +275,10 @@ class GraphView(QGraphicsView):
             case GraphItemType.INLET:
                 assert isinstance(parent_widget, NodeWidget)
                 widget = self._delegate.createInletWidget(parent_widget, index)
-                # widget.scenePositionChanged.connect(self.onPortScenePositionChanged)
             
             case GraphItemType.OUTLET:
                 assert isinstance(parent_widget, NodeWidget)
                 widget = self._delegate.createOutletWidget(parent_widget, index)
-                # widget.scenePositionChanged.connect(self.onPortScenePositionChanged)
 
             case GraphItemType.LINK:
                 assert isinstance(parent_widget, InletWidget)
@@ -432,7 +430,7 @@ class GraphView(QGraphicsView):
     def onPortScenePositionChanged(self, index:QPersistentModelIndex):
         """Reposition all links connected to the moved port widget."""
         widget = self._widgets.get(QPersistentModelIndex(index), None)
-        print("Widget position changed:", widget)
+
         if isinstance(widget, OutletWidget):
             link_widgets = list(self._outlet_links.get(widget, []))
         elif isinstance(widget, InletWidget):
@@ -482,7 +480,7 @@ class GraphView(QGraphicsView):
                     row_widget.insertCell(col, cell)
 
                     # Set data for each column
-                    self._set_cell_data (cell_index.row(), col, cell_index.parent())
+                    self._set_cell_data(cell_index, roles=[Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
 
         make_child_widgets_bfs(parent, start, end)
 
@@ -576,9 +574,7 @@ class GraphView(QGraphicsView):
 
         for row in range(top_left.row(), bottom_right.row() + 1):
             index = self._model.index(row, top_left.column(), top_left.parent())
-            print("Updating widget data for index:", index)
-            if cell_widget := self.cellFromIndex(index):
-                cell_widget.setDisplayText(index.data(Qt.ItemDataRole.DisplayRole))
+            self._set_cell_data(index, roles=[Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
 
     @Slot(QItemSelection, QItemSelection)
     def onSelectionChanged(self, selected:QItemSelection, deselected:QItemSelection):
@@ -688,13 +684,16 @@ class GraphView(QGraphicsView):
                 self._selection.clearSelection()
                 self._selection.setCurrentIndex(QModelIndex(), QItemSelectionModel.SelectionFlag.Current | QItemSelectionModel.SelectionFlag.Rows)
 
-    def _set_cell_data(self, row:int, column:int, parent:QModelIndex|QPersistentModelIndex, roles:list=[]):
-        """Set the data for a node widget."""
-        index = self._model.index(row, column, parent)
+    def _set_cell_data(self, index:QModelIndex|QPersistentModelIndex, roles:list=[]):
+        """Set the data for a cell widget."""
         assert index.isValid(), "Index must be valid"
 
-        if cell_widget:= self.cellFromIndex(index):
-            cell_widget.setDisplayText(index.data(Qt.ItemDataRole.DisplayRole))
+        if Qt.ItemDataRole.DisplayRole in roles or Qt.ItemDataRole.DisplayRole in roles or roles == []:
+            
+            if cell_widget:= self.cellFromIndex(index):
+                text = index.data(Qt.ItemDataRole.DisplayRole)
+                print(f"update cell data {index.internalPointer()} to {text}")
+                cell_widget.setDisplayText(text)
 
     ## Linking
     def startLinking(self, payload:Payload)->bool:
@@ -1023,7 +1022,7 @@ class GraphView(QGraphicsView):
             self._delegate.setModelData(editor, self._model, index)
             cell_widget.setEditorWidget(None)  # Clear the editor widget
             editor.deleteLater()
-            self._set_cell_data(index.row(), index.column(), index.parent())
+            self._set_cell_data(index, roles=[Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
 
         if cell_widget := self.cellFromIndex(index):
             editor = self._delegate.createEditor(self, None, index)

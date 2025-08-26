@@ -5,57 +5,143 @@ import os
 # Add parent directory to path so we can import the module
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dataflowmodel import FlowGraphModel
-from qtpy.QtCore import QModelIndex, QPersistentModelIndex, Qt
+from flowgraph import (
+    get_unbound_nodes,
+    FlowGraph, ExpressionOperator,
+    Inlet,
+    Outlet,
+    Link
+)
 
 
-class TestGraphModels(unittest.TestCase):
-    """Test cases for the GraphItemModel class."""
+class TestParsingExpressions(unittest.TestCase):
+    """Test cases for parsing expressions."""
 
-    def test_inserting_node_rows(self):
-        """Test adding operators to the graph."""
-        self.model = FlowGraphModel()
-        self.model.insertRows(0, 5, QModelIndex())
-        self.assertEqual(self.model.rowCount(), 5, "Should have five operators after insertion")
+    def test_get_unbound_nodes(self):
+        code = """x+y"""
+        unbound = get_unbound_nodes(code)
+        self.assertIn("x", unbound)
+        self.assertIn("y", unbound)
 
-    def test_inserting_inlet_rows(self):
-        """Test adding inlets to the graph."""
-        self.model = FlowGraphModel()
-        self.model.insertRows(0, 1, QModelIndex())
-        self.assertEqual(self.model.rowCount(), 1, "Should have three nodes after insertion")
-        node_index = self.model.index(0, 0)
-        self.model.insertRows(0, 3, node_index)
-        self.assertEqual(self.model.rowCount(node_index), 3, "Should have three inlets after insertion")
 
-    def test_inserting_outlet_rows(self):
-        """Test adding outlets to the graph."""
-        self.model = FlowGraphModel()
-        self.model.insertRows(0, 1, QModelIndex())
-        self.assertEqual(self.model.rowCount(), 1, "Should have one node after insertion")
+class TestExpressionOperator(unittest.TestCase):
+    def test_initial_expression(self):
+        op = ExpressionOperator("a + b")
+        inlets = op.inlets()
+        self.assertEqual({inlet.name for inlet in inlets}, {"a", "b"})
 
-        node_index = self.model.index(0, 0)
-        self.model.insertRows(0, 1, node_index) #insert inlet
-        self.model.insertRows(1, 2, node_index) #insert outlets
-        for row in range(1, 1+2):
-            outlet_index = self.model.index(row, 0, node_index)
-            self.model.setData(outlet_index, "Outlet", role=self.model.TypeRole)
+    def test_inlets_with_multiple_occurrences(self):
+        op = ExpressionOperator("a + a + a + b")
+        inlets = op.inlets()
+        self.assertEqual({inlet.name for inlet in inlets}, {"a", "b"})
 
-class TestGraphModels_ParentChildrenRelationship(unittest.TestCase):
-    def test_inlet_parent(self):
-        """Test the parent-child relationship in the model."""
-        self.model = FlowGraphModel()
-        self.model.insertRows(0, 1, QModelIndex())
-        node_index = QPersistentModelIndex(self.model.index(0, 0))
-        self.assertEqual(self.model.parent(node_index), QModelIndex(), "Node should have no parent")
+    def test_inlets_order(self):
+        op = ExpressionOperator("c + b + a")
+        inlets = op.inlets()
+        self.assertEqual([inlet.name for inlet in inlets], ["c", "b", "a"])
+
+    def test_update_expression(self):
+        op = ExpressionOperator("a + b")
+        op.setExpression("x + y")
+        inlets = op.inlets()
+        self.assertEqual({inlet.name for inlet in inlets}, {"x", "y"})
+
+    def test_expression_outlets(self):
+        op = ExpressionOperator("a + b")
+        outlets = op.outlets()
+        self.assertEqual({outlet.name for outlet in outlets}, {"result"})
+
+    def test_operator_initial_name(self):
+        op = ExpressionOperator("a + b", name="MyOp")
+        self.assertEqual(op.name(), "MyOp")
+        op.setName("NewName")
+        self.assertEqual(op.name(), "NewName")
+
+ 
+class TestFlowGraph(unittest.TestCase):
+    def setUp(self):
+        """setup a simple graph
+        [op1] ──c→ [op2]
+        [op3]
+        """
+
+        self.graph = FlowGraph()
+        self.op1 = ExpressionOperator("a + b")
+        self.op2 = ExpressionOperator("c * d")
+        self.op3 = ExpressionOperator("e - f")
+        self.graph.insertOperator(0, self.op1)
+        self.graph.insertOperator(1, self.op2)
+        self.graph.insertOperator(2, self.op3)
+        self.link = self.graph.insertLink(0, self.op1.outlets()[0], self.op2.inlets()[0])
+
+    def test_initial_graph(self):
+        self.assertEqual(len(self.graph.operators()), 3)
+        self.assertIn(self.op1, self.graph.operators())
+        self.assertIn(self.op2, self.graph.operators())
+        self.assertIn(self.op3, self.graph.operators())
+        self.assertIn(self.link, self.graph.links())
+        self.assertIn(self.link, self.graph.inLinks(self.op2.inlets()[0]))
+        self.assertIn(self.link, self.graph.outLinks(self.op1.outlets()[0]))
         
-        self.model.insertRows(0, 3, node_index)
-        for row in range(3):
-            inlet_index = self.model.index(row, 0, node_index)
-        
-        for row in range(self.model.rowCount(node_index)):
-            inlet_index = self.model.index(row, 0, node_index)
-            parent_index = self.model.parent(inlet_index)
-            self.assertEqual(QPersistentModelIndex(parent_index), node_index, f"Inlet at row {row} should have node as parent, got: {parent_index}")
+    ## INIT
+    def test_empty_graph(self):
+        graph = FlowGraph()
+        self.assertEqual(len(graph.operators()), 0)
+
+    ## CREATE
+    def test_append_operator(self):
+        op = ExpressionOperator("x**2")
+        self.graph.appendOperator(op)
+
+        self.assertIn(op, self.graph.operators())
+
+    def test_insert_link(self):
+        outlet = self.op2.outlets()[0]
+        inlet = self.op3.inlets()[0]
+        link = self.graph.insertLink(0, self.op2.outlets()[0], self.op3.inlets()[0])
+
+        self.assertIn(link, self.graph.inLinks(inlet))
+        self.assertIn(link, self.graph.outLinks(outlet))
+
+    def test_insert_pending_link(self):
+        inlet = self.op3.inlets()[0]
+        link = self.graph.insertLink(0, None, self.op3.inlets()[0])
+
+        self.assertIn(link, self.graph.inLinks(inlet))
+
+    def test_update_link_source(self):
+        self.graph.setLinkSource(self.link, self.op3.outlets()[0])
+
+        self.assertIn(self.link, self.graph.outLinks(self.op3.outlets()[0]))
+        self.assertNotIn(self.link, self.graph.outLinks(self.op1.outlets()[0]))
+
+
+    ## Delete
+    def test_remove_operator(self):
+        graph = FlowGraph()
+        op1 = ExpressionOperator("a + b")
+        op2 = ExpressionOperator("c * d")
+        graph.appendOperator(op1)
+        graph.appendOperator(op2)
+
+        self.assertEqual(len(graph.operators()), 2)
+        self.assertEqual(set(graph.operators()), {op1, op2})
+
+        graph.removeOperator(op1)
+        self.assertEqual(set(graph.operators()), {op2})
+
+    def test_remove_link(self):
+        link = self.graph.links().__next__()
+        self.graph.removeLink(link)
+        self.assertNotIn(link, self.graph.inLinks(self.op2.inlets()[0]))
+
+    ## QUERY
+
+    
+
+    
+
+
 
 
 if __name__ == '__main__':
