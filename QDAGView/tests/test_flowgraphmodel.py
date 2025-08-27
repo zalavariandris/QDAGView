@@ -12,65 +12,65 @@ from core import GraphDataRole, GraphItemType
 
 from qtpy.QtTest import QSignalSpy
 
-# class TestFlowGraphModel(unittest.TestCase):
-#     def setUp(self):
-#         self.model = FlowGraphModel()  
-#         self.model.insertRows(0, 1, QModelIndex())
+class TestFlowGraphModel(unittest.TestCase):
+    def setUp(self):
+        self.model = FlowGraphModel()  
+        self.model.insertRows(0, 1, QModelIndex())
 
-#     ## INITIAL Graph
-#     def test_empty_model(self):
-#         model = FlowGraphModel()
-#         self.assertEqual(model.rowCount(), 0, "Initial model should have zero rows")
-#         self.assertEqual(model.data(QModelIndex(), Qt.DisplayRole), None, "No data in empty model")
+    ## INITIAL Graph
+    def test_empty_model(self):
+        model = FlowGraphModel()
+        self.assertEqual(model.rowCount(), 0, "Initial model should have zero rows")
+        self.assertEqual(model.data(QModelIndex(), Qt.DisplayRole), None, "No data in empty model")
 
-#     ## Default Node
-#     def test_default_expression(self):
-#         model = FlowGraphModel()  
-#         model.insertRows(0, 1, QModelIndex())
+    ## Default Node
+    def test_default_expression(self):
+        model = FlowGraphModel()  
+        model.insertRows(0, 1, QModelIndex())
 
-#         node_index = model.index(0, 0)
-#         self.assertTrue(node_index.isValid(), "Node index should be valid")
-#         self.assertEqual(model.rowCount(), 1, "Model should have one operator after insertion")
-#         self.assertEqual(model.data(node_index.siblingAtColumn(1), Qt.EditRole), "x+y", "No data in new operator")
+        node_index = model.index(0, 0)
+        self.assertTrue(node_index.isValid(), "Node index should be valid")
+        self.assertEqual(model.rowCount(), 1, "Model should have one operator after insertion")
+        self.assertEqual(model.data(node_index.siblingAtColumn(1), Qt.EditRole), "x+y", "No data in new operator")
 
-#     def test_initial_inlets_for_new_node(self):
-#         model = FlowGraphModel()  
-#         model.insertRows(0, 1, QModelIndex())
+    def test_initial_inlets_for_new_node(self):
+        model = FlowGraphModel()  
+        model.insertRows(0, 1, QModelIndex())
 
-#         node_index = model.index(0, 0)
+        node_index = model.index(0, 0)
 
-#         inlet_x_index = model.index(0, 0, node_index)
-#         self.assertTrue(inlet_x_index.isValid(), "First inlet index should be valid")
-#         self.assertEqual(model.data(inlet_x_index, Qt.EditRole), "x", "First inlet should be 'x'")
+        inlet_x_index = model.index(0, 0, node_index)
+        self.assertTrue(inlet_x_index.isValid(), "First inlet index should be valid")
+        self.assertEqual(model.data(inlet_x_index, Qt.EditRole), "x", "First inlet should be 'x'")
 
-#         inlet_y_index = model.index(1, 0, node_index)
-#         self.assertTrue(inlet_y_index.isValid(), "Second inlet index should be valid")
-#         self.assertEqual(model.data(inlet_y_index, Qt.EditRole), "y", "Second inlet should be 'y'")
+        inlet_y_index = model.index(1, 0, node_index)
+        self.assertTrue(inlet_y_index.isValid(), "Second inlet index should be valid")
+        self.assertEqual(model.data(inlet_y_index, Qt.EditRole), "y", "Second inlet should be 'y'")
 
-#     def test_initial_outlet_for_new_node(self):
-#         model = FlowGraphModel()  
-#         model.insertRows(0, 1, QModelIndex())
-#         node_index = model.index(0, 0)
+    def test_initial_outlet_for_new_node(self):
+        model = FlowGraphModel()  
+        model.insertRows(0, 1, QModelIndex())
+        node_index = model.index(0, 0)
 
-#         outlet_index = model.index(2, 0, node_index)
-#         self.assertTrue(outlet_index.isValid(), "First outlet index should be valid")
-#         self.assertEqual(model.data(outlet_index, Qt.ItemDataRole.EditRole), "result")
-#         self.assertEqual(model.data(outlet_index, GraphDataRole.TypeRole), GraphItemType.OUTLET)
+        outlet_index = model.index(2, 0, node_index)
+        self.assertTrue(outlet_index.isValid(), "First outlet index should be valid")
+        self.assertEqual(model.data(outlet_index, Qt.ItemDataRole.EditRole), "result")
+        self.assertEqual(model.data(outlet_index, GraphDataRole.TypeRole), GraphItemType.OUTLET)
         
-#     ## UPDATE
-#     def test_updating_expression_update_inlets_as_well(self):
-#         model = FlowGraphModel()
-#         spy_inlet_name_changed = QSignalSpy(model.dataChanged)
-#         model.insertRows(0, 1, QModelIndex())
-#         node_index = model.index(0, 0)
+    ## UPDATE
+    def test_updating_expression_update_inlets_as_well(self):
+        model = FlowGraphModel()
+        spy_inlet_name_changed = QSignalSpy(model.dataChanged)
+        model.insertRows(0, 1, QModelIndex())
+        node_index = model.index(0, 0)
         
-#         self.assertEqual(model.data(node_index.siblingAtColumn(1), Qt.EditRole), "x+y", "No data in new operator")
-#         success = model.setData(node_index.siblingAtColumn(1), "i*k", Qt.EditRole)
-#         self.assertTrue(success, "Setting data should succeed")
-#         self.assertEqual(model.data(node_index.siblingAtColumn(1), Qt.EditRole), "i*k", "No data in new operator")
+        self.assertEqual(model.data(node_index.siblingAtColumn(1), Qt.EditRole), "x+y", "No data in new operator")
+        success = model.setData(node_index.siblingAtColumn(1), "i*k", Qt.EditRole)
+        self.assertTrue(success, "Setting data should succeed")
+        self.assertEqual(model.data(node_index.siblingAtColumn(1), Qt.EditRole), "i*k", "No data in new operator")
 
-#         self.assertEqual(model.index(0, 0, node_index).data(Qt.EditRole), "i", "first inlet should be 'i'")
-#         self.assertEqual(model.index(1, 0, node_index).data(Qt.EditRole), "k", "Second inlet should be 'k'")
+        self.assertEqual(model.index(0, 0, node_index).data(Qt.EditRole), "i", "first inlet should be 'i'")
+        self.assertEqual(model.index(1, 0, node_index).data(Qt.EditRole), "k", "Second inlet should be 'k'")
 
 
 class TestDynamicInletUpdates(unittest.TestCase):
@@ -81,6 +81,7 @@ class TestDynamicInletUpdates(unittest.TestCase):
         self.model.setData(self.node_index.siblingAtColumn(1), "x+y", Qt.EditRole)
 
     def test_initial_model(self):
+        """Test the initial state of the model."""
         # Initial state: x+y should have inlets 'x' and 'y'
         self.assertEqual(self.model.data(self.node_index.siblingAtColumn(1), Qt.EditRole), "x+y")
         self.assertEqual(self.model.index(0, 0, self.node_index).data(Qt.EditRole), "x")
@@ -101,20 +102,16 @@ class TestDynamicInletUpdates(unittest.TestCase):
         self.assertEqual(second_inlet_index.data(Qt.EditRole), "a")
 
         # Verify dataChanged emitted for the signals
-
-
-        def index_has_changed(idx:QModelIndex):
-            for i in range(len(spy)):
-                topLeft:QModelIndex = spy[i][0]
-                bottomRight:QModelIndex = spy[i][1]
-
-                if (idx.row() >= topLeft.row() and idx.row() <= bottomRight.row() and
-                    idx.column() >= topLeft.column() and idx.column() <= bottomRight.column()):
+        def isDataChangedEmittedForInlets(index: QModelIndex, spy: QSignalSpy) -> bool:
+            for i in range(spy.count()):
+                arguments = spy.at(i)
+                topLeft, bottomRight, roles = arguments
+                if index.row() <= bottomRight.row() and index.row() >= topLeft.row() and index.column() >= topLeft.column() and index.column() <= bottomRight.column():
                     return True
             return False
-        
-        self.assertTrue(index_has_changed(first_inlet_index), "dataChanged should be emitted for first inlet name")
-        self.assertTrue(index_has_changed(second_inlet_index), "dataChanged should be emitted for second inlet name")
+
+        self.assertTrue(isDataChangedEmittedForInlets(first_inlet_index, spy))
+        self.assertTrue(isDataChangedEmittedForInlets(second_inlet_index, spy))
 
     def test_inlets_added_when_more_variables_in_expression(self):
         """Test that inlets are added when expression has more variables."""
@@ -130,7 +127,7 @@ class TestDynamicInletUpdates(unittest.TestCase):
         self.assertGreater(new_inlet_count, initial_inlet_count, "Should have more inlets")
         
         # Verify rowsInserted signal was emitted
-        self.assertGreater(len(spy), 0, "rowsInserted should be emitted when adding inlets")
+        self.assertGreater(spy.count(), 0, "rowsInserted should be emitted when adding inlets")
 
     def test_inlets_removed_when_fewer_variables_in_expression(self):
         """Test that inlets are removed when expression has fewer variables."""
@@ -146,40 +143,38 @@ class TestDynamicInletUpdates(unittest.TestCase):
         self.assertEqual(new_inlet_count, 1, "Should have 1 inlet after expression change")
         
         # Verify rowsRemoved signal was emitted
-        self.assertGreater(len(spy), 0, "rowsRemoved should be emitted when removing inlets")
+        self.assertGreater(spy.count(), 0, "rowsRemoved should be emitted when removing inlets")
 
-    # def test_inlet_data_changed_signals_emitted(self):
-    #     """Test that dataChanged signals are emitted for inlet name changes."""
-    #     spy = QSignalSpy(self.model.dataChanged)
+    def test_inlet_data_changed_signals_emitted(self):
+        """Test that dataChanged signals are emitted for inlet name changes."""
+        spy = QSignalSpy(self.model.dataChanged)
         
-    #     # Change expression which should update inlet names
-    #     self.model.setData(self.node_index.siblingAtColumn(1), "p+q", Qt.EditRole)
-        
-    #     # Should have multiple dataChanged signals:
-    #     # 1. For the expression column
-    #     # 2. For each inlet that changed name
-    #     self.assertGreaterEqual(len(spy), 3, "Should emit dataChanged for expression and inlet changes")
-        
-    #     # Verify inlet names actually changed
-    #     self.assertEqual(self.model.index(0, 0, self.node_index).data(Qt.EditRole), "p")
-    #     self.assertEqual(self.model.index(1, 0, self.node_index).data(Qt.EditRole), "q")
+        # Change expression which should update inlet names
+        self.model.setData(self.node_index.siblingAtColumn(1), "p+q", Qt.EditRole)
+                
+        # Verify inlet names actually changed
+        self.assertEqual(self.model.index(0, 0, self.node_index).data(Qt.EditRole), "p")
+        self.assertEqual(self.model.index(1, 0, self.node_index).data(Qt.EditRole), "q")
 
-    # def test_outlet_unchanged_when_expression_changes(self):
-    #     """Test that outlet remains unchanged when expression changes."""
-    #     # Get initial outlet
-    #     outlet_row = self.model.rowCount(self.node_index) - 1
-    #     outlet_index = self.model.index(outlet_row, 0, self.node_index)
-    #     initial_outlet_name = self.model.data(outlet_index, Qt.EditRole)
-    #     initial_outlet_type = self.model.data(outlet_index, GraphDataRole.TypeRole)
+        # Verify dataChanged signal was emitted
+        self.assertGreaterEqual(spy.count(), 2, "dataChanged should be for the node index and also for the inlet names")
+
+    def test_outlet_unchanged_when_expression_changes(self):
+        """Test that outlet remains unchanged when expression changes."""
+        # Get initial outlet
+        outlet_row = self.model.rowCount(self.node_index) - 1
+        outlet_index = self.model.index(outlet_row, 0, self.node_index)
+        initial_outlet_name = self.model.data(outlet_index, Qt.EditRole)
+        initial_outlet_type = self.model.data(outlet_index, GraphDataRole.TypeRole)
         
-    #     # Change expression
-    #     self.model.setData(self.node_index.siblingAtColumn(1), "complex_expression", Qt.EditRole)
+        # Change expression
+        self.model.setData(self.node_index.siblingAtColumn(1), "complex_expression", Qt.EditRole)
         
-    #     # Verify outlet unchanged
-    #     new_outlet_row = self.model.rowCount(self.node_index) - 1
-    #     new_outlet_index = self.model.index(new_outlet_row, 0, self.node_index)
-    #     self.assertEqual(self.model.data(new_outlet_index, Qt.EditRole), initial_outlet_name)
-    #     self.assertEqual(self.model.data(new_outlet_index, GraphDataRole.TypeRole), initial_outlet_type)
+        # Verify outlet unchanged
+        new_outlet_row = self.model.rowCount(self.node_index) - 1
+        new_outlet_index = self.model.index(new_outlet_row, 0, self.node_index)
+        self.assertEqual(self.model.data(new_outlet_index, Qt.EditRole), initial_outlet_name)
+        self.assertEqual(self.model.data(new_outlet_index, GraphDataRole.TypeRole), initial_outlet_type)
 
         
 
