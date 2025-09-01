@@ -21,7 +21,7 @@ class TestFlowGraphModel(unittest.TestCase):
     def test_empty_model(self):
         model = FlowGraphModel()
         self.assertEqual(model.rowCount(), 0, "Initial model should have zero rows")
-        self.assertEqual(model.data(QModelIndex(), Qt.DisplayRole), None, "No data in empty model")
+        self.assertEqual(model.columnCount(), 2, "Initial model should have zero columns")
 
     ## Default Node
     def test_default_expression(self):

@@ -145,11 +145,13 @@ class FlowGraphModel(QAbstractItemModel):
                 return self.createIndex(row, 0, parent_operator)
 
             case Link():
-                parent_inlet = item.target
-                parent_operator = parent_inlet.operator if parent_inlet else None
-                if parent_operator is not None and parent_inlet is not None:
-                    row = parent_operator.inlets().index(parent_inlet)
-                    return self.createIndex(row, 0, parent_inlet)
+                link = item
+                parent_operator = link.target.operator if link.target else None
+                if parent_operator is not None and link.target is not None:
+                    inlets = list(parent_operator.inlets())
+                    assert link.target in inlets, "Link's target inlet must be in its parent operator's inlets."
+                    row = inlets.index(link.target)
+                    return self.createIndex(row, 0, link.target)
                 return QModelIndex()
             case _:
                 return QModelIndex()
