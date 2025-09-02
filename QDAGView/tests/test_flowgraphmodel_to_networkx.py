@@ -28,10 +28,10 @@ class GraphAdapter:
         return new_operator_index
     
     def expression(self, node:QPersistentModelIndex)->str:
-        return self.model.data(node.siblingAtColumn(1), Qt.ItemDataRole.DisplayRole)
+        return self.model.data(node.sibling(node.row(), 1), Qt.ItemDataRole.DisplayRole)
 
     def setExpression(self, node:QPersistentModelIndex, expression:str):
-        self.model.setData(node.siblingAtColumn(1), expression, Qt.ItemDataRole.DisplayRole)
+        self.model.setData(node.sibling(node.row(), 1), expression, Qt.ItemDataRole.DisplayRole)
 
     def inlets(self, operator:QPersistentModelIndex)->List[QPersistentModelIndex]:
         return [QPersistentModelIndex(self.model.index(row, 0, operator)) for row in range(self.model.rowCount(operator)-1)]
