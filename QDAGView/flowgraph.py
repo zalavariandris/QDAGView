@@ -268,3 +268,17 @@ class FlowGraph:
             self._out_links[source].append(link)
         link.source = source
         return True
+
+
+import networkx as nx
+def flowgraph_to_nx(graph: FlowGraph) -> nx.MultiDiGraph:
+    G = nx.MultiDiGraph()
+    for node in graph.operators():
+        G.add_node(node.name(), 
+                   expression=node.expression(), 
+                   inlets=[_.name for _ in node.inlets()])
+        
+    for link in graph.links():
+        G.add_edge(link.source.operator.name(), link.target.operator.name(), inlet=link.target.name)
+
+    return G

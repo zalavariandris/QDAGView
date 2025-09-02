@@ -7,10 +7,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flowgraph import (
     get_unbound_nodes,
-    FlowGraph, ExpressionOperator,
+    FlowGraph,
+    ExpressionOperator,
     Inlet,
     Outlet,
-    Link
+    Link,
+    flowgraph_to_nx
 )
 
 
@@ -138,10 +140,16 @@ class TestFlowGraph(unittest.TestCase):
     ## QUERY
 
     
+class TestFlowGraph(unittest.TestCase):
+    def test_simple_graph(self):
+        graph = FlowGraph()
+        graph.appendOperator(ExpressionOperator("a + b"))
 
-    
+        G = flowgraph_to_nx(graph)
+        self.assertEqual(len(G.nodes), 1)
+        self.assertEqual(len(G.edges), 0)
 
-
+        print(G)
 
 
 if __name__ == '__main__':

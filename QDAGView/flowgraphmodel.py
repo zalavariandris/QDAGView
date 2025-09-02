@@ -485,7 +485,7 @@ class FlowGraphModel(QAbstractItemModel):
                 # This is a simplified implementation - you may need more sophisticated link management
                 for i in reversed(range(row, row + count)):
                     link = self.index(i, 0, parent).internalPointer()
-                    assert isinstance(link, Link)
+                    assert isinstance(link, Link), f"Expected Link, got {type(link)}"
                     if not graph.removeLink(link):
                         self.endRemoveRows()
                         return False
@@ -517,6 +517,7 @@ class FlowGraphModel(QAbstractItemModel):
             
         return script_text
         
+
 
 from graphview import GraphView
 if __name__ == "__main__":

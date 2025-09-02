@@ -5,12 +5,50 @@ import os
 # Add parent directory to path so we can import the module
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from flowgraph import FlowGraph
 from flowgraphmodel import ExpressionOperator
 from flowgraphmodel import FlowGraphModel
 from qtpy.QtCore import QModelIndex, QPersistentModelIndex, Qt
 from core import GraphDataRole, GraphItemType
 
 from qtpy.QtTest import QSignalSpy
+import networkx as nx
+
+
+def flowmodel_to_nx(model:FlowGraphModel)->nx.MultiDiGraph:
+    G = nx.MultiDiGraph()
+
+    # add nodes
+    for node_row in range(model.rowCount()):
+        node_index = model.index(node_row, 0)
+
+        n = model.data(node_index, Qt.EditRole)
+        G.add_node(n, 
+            expression=model.data(node_index.siblingAtColumn(1), Qt.EditRole),
+            inlets=[model.data(model.index(inlet_row, 0, node_index), Qt.EditRole) for inlet_row in range(model.rowCount(node_index) - 1)]
+        )
+
+    for node_row in range(model.rowCount()):
+        for inlet_row in range(model.rowCount(model.index(node_row, 0)) - 1):
+            inlet_index = model.index(inlet_row, 0, node_index)
+            for link_row in range(model.rowCount(inlet_index)):
+                link_index = model.index(link_row, 0, inlet_index)
+                source_outlet_index = model.data(link_index, GraphDataRole.SourceRole)
+                source_node_index = source_outlet_index.parent()
+                s = model.data(source_node_index, Qt.EditRole)
+                G.add_edge(n, s, inlet=model.data(inlet_index, Qt.EditRole))
+
+    return G
+
+
+def flowgraph_to_nx(graph: FlowGraph) -> nx.MultiDiGraph:
+    G = nx.MultiDiGraph()
+    for node in graph.operators():
+        G.add_node(node, **graph.node[node])
+        for inlet in graph.in_edges(node):
+            G.add_edge(inlet[0], node, **graph.edge[inlet])
+    return G
+
 
 class TestFlowGraphModel(unittest.TestCase):
     def setUp(self):
@@ -74,6 +112,19 @@ class TestFlowGraphModel(unittest.TestCase):
 
 
 class TestDynamicInletUpdates(unittest.TestCase):
+    def add_node(self, expression:str)->QModelIndex:
+        pos = self.model.rowCount(QModelIndex())
+        self.model.insertRows(pos, 1, QModelIndex())
+        node_index = self.model.index(pos, 0)
+        self.set_node_expression(node_index, expression)
+    
+    def set_node_expression(self, node:QModelIndex, expression:str):
+        self.model.setData(node.siblingAtColumn(1), expression, Qt.EditRole)
+
+    def link_nodes(self, outlet: QModelIndex, inlet: QModelIndex):
+        self.model.insertRows(inlet.row(), 1, inlet)
+        self.model.setData(self.model.index(inlet.row(), 0, inlet), outlet.data(Qt.EditRole), Qt.EditRole)
+
     def setUp(self):
         self.model = FlowGraphModel()
         self.model.insertRows(0, 1, QModelIndex())
@@ -103,8 +154,8 @@ class TestDynamicInletUpdates(unittest.TestCase):
 
         # Verify dataChanged emitted for the signals
         def isDataChangedEmittedForInlets(index: QModelIndex, spy: QSignalSpy) -> bool:
-            for i in range(spy.count()):
-                arguments = spy.at(i)
+            for i in range(len(spy)):
+                arguments = spy[i]
                 topLeft, bottomRight, roles = arguments
                 if index.row() <= bottomRight.row() and index.row() >= topLeft.row() and index.column() >= topLeft.column() and index.column() <= bottomRight.column():
                     return True
@@ -127,7 +178,7 @@ class TestDynamicInletUpdates(unittest.TestCase):
         self.assertGreater(new_inlet_count, initial_inlet_count, "Should have more inlets")
         
         # Verify rowsInserted signal was emitted
-        self.assertGreater(spy.count(), 0, "rowsInserted should be emitted when adding inlets")
+        self.assertGreater(len(spy), 0, "rowsInserted should be emitted when adding inlets")
 
     def test_inlets_removed_when_fewer_variables_in_expression(self):
         """Test that inlets are removed when expression has fewer variables."""
@@ -143,7 +194,7 @@ class TestDynamicInletUpdates(unittest.TestCase):
         self.assertEqual(new_inlet_count, 1, "Should have 1 inlet after expression change")
         
         # Verify rowsRemoved signal was emitted
-        self.assertGreater(spy.count(), 0, "rowsRemoved should be emitted when removing inlets")
+        self.assertGreater(len(spy), 0, "rowsRemoved should be emitted when removing inlets")
 
     def test_inlet_data_changed_signals_emitted(self):
         """Test that dataChanged signals are emitted for inlet name changes."""
@@ -157,7 +208,7 @@ class TestDynamicInletUpdates(unittest.TestCase):
         self.assertEqual(self.model.index(1, 0, self.node_index).data(Qt.EditRole), "q")
 
         # Verify dataChanged signal was emitted
-        self.assertGreaterEqual(spy.count(), 2, "dataChanged should be for the node index and also for the inlet names")
+        self.assertGreaterEqual(len(spy), 2, "dataChanged should be for the node index and also for the inlet names")
 
     def test_outlet_unchanged_when_expression_changes(self):
         """Test that outlet remains unchanged when expression changes."""
@@ -176,6 +227,10 @@ class TestDynamicInletUpdates(unittest.TestCase):
         self.assertEqual(self.model.data(new_outlet_index, Qt.EditRole), initial_outlet_name)
         self.assertEqual(self.model.data(new_outlet_index, GraphDataRole.TypeRole), initial_outlet_type)
 
+
+    def test_when_inlet_replaced_links_are_updated(self):
+        """Test that links are updated when an inlet is replaced."""
+        # Add a node and an inlet
         
 
 
