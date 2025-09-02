@@ -518,6 +518,31 @@ class FlowGraphModel(QAbstractItemModel):
         return script_text
         
 
+import networkx as nx
+def itemmodel_to_nx(model:FlowGraphModel)->nx.MultiDiGraph:
+    G = nx.MultiDiGraph()
+
+    # add nodes
+    for node_row in range(model.rowCount()):
+        node_index = model.index(node_row, 0)
+
+        n = model.data(node_index, Qt.EditRole)
+        G.add_node(n, 
+            expression=model.data(node_index.siblingAtColumn(1), Qt.EditRole),
+            inlets=[model.data(model.index(inlet_row, 0, node_index), Qt.EditRole) for inlet_row in range(model.rowCount(node_index) - 1)]
+        )
+
+    for node_row in range(model.rowCount()):
+        for inlet_row in range(model.rowCount(model.index(node_row, 0)) - 1):
+            inlet_index = model.index(inlet_row, 0, node_index)
+            for link_row in range(model.rowCount(inlet_index)):
+                link_index = model.index(link_row, 0, inlet_index)
+                source_outlet_index = model.data(link_index, role=GraphDataRole.SourceRole)
+                source_node_index = source_outlet_index.parent()
+                s = model.data(source_node_index, Qt.EditRole)
+                G.add_edge(n, s, inlet=model.data(inlet_index, Qt.EditRole))
+
+    return G
 
 from graphview import GraphView
 if __name__ == "__main__":

@@ -15,25 +15,29 @@ from flowgraph import (
     flowgraph_to_nx
 )
 
-class TestFlowGraphToNetworkX(unittest.TestCase):
+class Test_FlowGraph_To_NetworkX(unittest.TestCase):
     def test_simple_graph(self):
         graph = FlowGraph()
         op1 = ExpressionOperator("a + b", name="A")
         op2 = ExpressionOperator("x*x", name="B")
+        op3 = ExpressionOperator("text", name="C")
         graph.appendOperator(op1)
         graph.appendOperator(op2)
+        graph.appendOperator(op3)
         graph.insertLink(0, op1.outlets()[0], op2.inlets()[0])
+        graph.insertLink(0, op2.outlets()[0], op3.inlets()[0])
 
         G = flowgraph_to_nx(graph)
         # Check that the graph has the correct nodes
         self.assertEqual(list(G.nodes()), [
-            "A", "B"
+            "A", "B", "C"
         ])
 
         # Check that all the nodes has the correct attributes
         self.assertEqual(list(G.nodes(data=True)), [
             ("A", {"expression": "a + b", 'inlets': ['a', 'b']}),
-            ("B", {"expression": "x*x", 'inlets': ['x']})
+            ("B", {"expression": "x*x", 'inlets': ['x']}),
+            ("C", {"expression": "text", 'inlets': ['text']})
         ])
 
         # Check that a specific node has the correct attributes
@@ -43,8 +47,12 @@ class TestFlowGraphToNetworkX(unittest.TestCase):
 
         #
         self.assertEqual(list(G.edges(data=True)), [
-            ("A", "B", {'inlet':'x'})
+            ("A", "B", {'inlet':'x'}),
+            ("B", "C", {'inlet':'text'})
         ])
+
+    
+
 
 if __name__ == '__main__':
     # Run the tests

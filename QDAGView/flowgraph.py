@@ -102,7 +102,6 @@ class ExpressionOperator:
         """Evaluate the operator."""
         return f"Evaluating {self._expression}"
 
-    
 @dataclass()
 class Inlet:
     name: str = "Inlet"
@@ -117,7 +116,7 @@ class Inlet:
     def __hash__(self):
         return hash((self.name, self.operator))
 
-
+    
 @dataclass()
 class Outlet:
     name: str = "Outlet"
@@ -131,7 +130,6 @@ class Outlet:
 
     def __hash__(self):
         return hash((self.name, self.operator))
-
 
 @dataclass()
 class Link:
@@ -268,7 +266,6 @@ class FlowGraph:
             self._out_links[source].append(link)
         link.source = source
         return True
-
 
 import networkx as nx
 def flowgraph_to_nx(graph: FlowGraph) -> nx.MultiDiGraph:

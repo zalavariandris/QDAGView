@@ -187,7 +187,7 @@ class GraphDelegate(QObject):
             return True
         return False
 
-    def addLink(self, model:QAbstractItemModel, outlet:QModelIndex|QPersistentModelIndex, inlet:QModelIndex|QPersistentModelIndex):
+    def addLink(self, model:QAbstractItemModel, outlet:QModelIndex|QPersistentModelIndex, inlet:QModelIndex|QPersistentModelIndex)->bool:
         """Add a child item to the currently selected item."""
         assert model is not None, "Source model must be set before adding child items"
         assert outlet.isValid()
@@ -205,9 +205,11 @@ class GraphDelegate(QObject):
         if model.insertRows(position, 1, inlet):
             link_index = model.index(position, 0, inlet)
             new_link_name = f"{'Link'}#{position + 1}"
-            model.setData(link_index, new_link_name, role=Qt.ItemDataRole.DisplayRole)
-            model.setData(link_index, outlet, role=GraphDataRole.SourceRole)
-        
+            if model.setData(link_index, new_link_name, role=Qt.ItemDataRole.DisplayRole):
+              if model.setData(link_index, outlet, role=GraphDataRole.SourceRole):
+                return True
+        return False
+
     ## UPDATE MODEL
     def setLinkSource(self, model:QAbstractItemModel, link:QModelIndex|QPersistentModelIndex, source:QModelIndex|QPersistentModelIndex):
         """
