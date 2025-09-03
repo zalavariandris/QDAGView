@@ -18,10 +18,8 @@ def get_unbound_nodes(code: str) -> list[str]:
     used: list[str] = []  # Changed to list to preserve order
     used_set: set[str] = set()  # Keep set for O(1) lookup
 
-    # Iterative AST traversal using a stack
-    stack = [tree]
-    while stack:
-        node = stack.pop()
+    # Recursive AST traversal to maintain order
+    def visit_node(node):
         if isinstance(node, ast.Name):
             if isinstance(node.ctx, ast.Load):  # This is a variable being used
                 if node.id not in assigned and node.id not in used_set:
@@ -30,12 +28,17 @@ def get_unbound_nodes(code: str) -> list[str]:
                     
             elif isinstance(node.ctx, ast.Store):  # This is a variable being assigned
                 assigned.add(node.id)
-        stack.extend(ast.iter_child_nodes(node))
+        
+        # Visit child nodes in order
+        for child in ast.iter_child_nodes(node):
+            visit_node(child)
+    
+    visit_node(tree)
 
     # Unbound variables are used variables that are not assigned
     unbound = [var for var in used if var not in assigned]
 
-    return list(reversed(unbound))
+    return unbound
 
 
 class ExpressionOperator:
@@ -147,10 +150,24 @@ class FlowGraph:
         self._in_links: DefaultDict[Inlet, List[Link]] = defaultdict(list)
         self._out_links: DefaultDict[Outlet, List[Link]] = defaultdict(list)
 
+    ## CREATE
+    def createOperator(self, expression: str, name: str) -> ExpressionOperator:
+        """Create a new operator and add it to the graph."""
+        operator = ExpressionOperator(expression, name)
+        self._operators.append(operator)
+        return operator
+
     ## READ
     def operators(self) -> List[ExpressionOperator]:
         """Return the list of nodes in the graph."""
         return self._operators
+    
+    def inlets(self, operator: ExpressionOperator) -> List[Inlet]:
+        return operator.inlets()
+
+    def outlets(self, op: ExpressionOperator) -> List[Outlet]:
+        """Return the list of outlets for the given operator."""
+        return op.outlets()
 
     def inLinks(self, inlet: Inlet) -> List[Link]:
         assert isinstance(inlet, Inlet), "Inlet must be an instance of Inlet"

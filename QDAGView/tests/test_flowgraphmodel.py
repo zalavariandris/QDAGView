@@ -17,9 +17,6 @@ import networkx as nx
 
 
 
-
-
-
 class TestFlowGraphModel(unittest.TestCase):
     def setUp(self):
         self.model = FlowGraphModel()  
@@ -30,45 +27,6 @@ class TestFlowGraphModel(unittest.TestCase):
         model = FlowGraphModel()
         self.assertEqual(model.rowCount(), 0, "Initial model should have zero rows")
         self.assertEqual(model.data(QModelIndex(), Qt.DisplayRole), None, "No data in empty model")
-
-
-    def isModelInSyncWithData(self, model:FlowGraphModel):
-        """Check that the model's data matches the underlying data structure."""
-
-
-
-        # if node_count != len(nodes):
-        #     return False
-
-        # for node_row in range(node_count):
-        #     node_index = model.index(node_row, 0)
-        #     node = nodes[node_row]
-
-        #     if model.data(node_index.siblingAtColumn(1), Qt.EditRole) != node.expression():
-        #         return False
-            
-        #     # Check inlets
-        #     inlet_count = model.rowCount(node_index) - 1
-        #     if inlet_count != len(node.inlets() ):
-        #         return False
-
-        #     for inlet_row in range(inlet_count):
-        #         inlet_index = model.index(inlet_row, 0, node_index)
-        #         inlet = node.inlets()[inlet_row]
-        #         if model.data(inlet_index, Qt.EditRole) != inlet.name:
-        #             return False
-
-        #         # check links
-        #         link_count = model.rowCount(inlet_index)
-        #         for link_row in range(link_count):
-        #             link_index = model.index(link_row, 0, inlet_index)
-        #             link = graph.inLinks(inlet)
-                    
-        #             if model.data(link_index, GraphDataRole.SourceRole) != link.name:
-        #                 return False
-
-        # return True
-    
 
     ## Default Node
     def test_default_expression(self):

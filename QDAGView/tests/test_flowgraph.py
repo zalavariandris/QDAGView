@@ -16,21 +16,23 @@ from flowgraph import (
 )
 
 
-class TestParsingExpressions(unittest.TestCase):
-    """Test cases for parsing expressions."""
-
-    def test_get_unbound_nodes(self):
-        code = """x+y"""
-        unbound = get_unbound_nodes(code)
-        self.assertIn("x", unbound)
-        self.assertIn("y", unbound)
 
 
 class TestExpressionOperator(unittest.TestCase):
     def test_initial_expression(self):
-        op = ExpressionOperator("a + b")
-        inlets = op.inlets()
-        self.assertEqual({inlet.name for inlet in inlets}, {"a", "b"})
+        self.assertEqual(get_unbound_nodes("a+b"), ["a", "b"])
+        self.assertEqual(get_unbound_nodes("x*x"), ["x"])
+        self.assertEqual(get_unbound_nodes("a + b"), ["a", "b"])
+        self.assertEqual(get_unbound_nodes("text"), ["text"])
+        self.assertEqual(get_unbound_nodes("x*y+a"), ["x", "y", "a"])
+        self.assertEqual(get_unbound_nodes("a*x+a"), ["a", "x"])
+
+        self.assertEqual([inlet.name for inlet in ExpressionOperator("a+b").inlets()], ["a", "b"])
+        self.assertEqual([inlet.name for inlet in ExpressionOperator("a + b").inlets()], ["a", "b"])
+        self.assertEqual([inlet.name for inlet in ExpressionOperator("x*x").inlets()], ["x"])
+        self.assertEqual([inlet.name for inlet in ExpressionOperator("text").inlets()], ["text"])
+        self.assertEqual([inlet.name for inlet in ExpressionOperator("x*y+a").inlets()], ["x", "y", "a"])
+        self.assertEqual([inlet.name for inlet in ExpressionOperator("a*x+a").inlets()], ["a", "x"])
 
     def test_inlets_with_multiple_occurrences(self):
         op = ExpressionOperator("a + a + a + b")
@@ -61,6 +63,40 @@ class TestExpressionOperator(unittest.TestCase):
 
  
 class TestFlowGraph(unittest.TestCase):
+    def test_operators(self):
+        graph = FlowGraph()
+
+        # create a single operator
+        A = graph.createOperator("a+b", "A")
+        self.assertIsInstance(A, ExpressionOperator, "Failed to create operator A")
+
+        # create a second operator
+        B = graph.createOperator("x*x", "B")
+        self.assertIsInstance( B, ExpressionOperator, "Failed to create operator B" )
+        
+        #
+        self.assertEqual(graph.nodes(), [A, B])
+
+        # check inlets
+        self.assertEqual(len(A.inlets()), 2)
+        self.assertEqual(len(B.inlets()), 1)
+
+        # update inlets
+        A.setExpression("x*x")
+        self.assertEqual(len(A.inlets()), 1)
+        
+        A.setExpression("x * y")
+        self.assertEqual(len(A.inlets()), 2)
+
+        A.setExpression("a+b+c")
+        self.assertEqual(len(A.inlets()), 3)
+
+        A.setExpression("a")
+        self.assertEqual(len(A.inlets()), 1)
+
+        A.setExpression("x*x")
+        self.assertEqual(len(A.inlets()), 1)
+    
     def setUp(self):
         """setup a simple graph
         [op1] ──c→ [op2]

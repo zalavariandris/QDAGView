@@ -111,7 +111,7 @@ class FlowGraphModel(QAbstractItemModel):
         """Get the item from a QModelIndex."""
         if not index.isValid():
             return None
-        item = index.internalPointer()
+        item = QModelIndex(index).internalPointer()
         assert isinstance(item, (ExpressionOperator | Inlet | Outlet | Link))
         return item
 
@@ -212,7 +212,7 @@ class FlowGraphModel(QAbstractItemModel):
                 return False
 
     def columnCount(self, parent=QModelIndex()):
-        parent_item:FlowGraph | ExpressionOperator | Inlet | Outlet | Link = self.invisibleRootItem() if not parent.isValid() else parent.internalPointer()
+        parent_item:FlowGraph | ExpressionOperator | Inlet | Outlet | Link = self.invisibleRootItem() if not parent.isValid() else QModelIndex(parent).internalPointer()
         
         match parent_item:
             case FlowGraph():
@@ -315,46 +315,56 @@ class FlowGraphModel(QAbstractItemModel):
     
     def setData(self, index:QModelIndex, value, role:int = Qt.ItemDataRole.EditRole)->bool:
         if not index.isValid():
+            print("Invalid index")
             return False
-        
-        item = index.internalPointer()
+
+        item = index.sibling(index.row(), 0).internalPointer()
         match item:
             case ExpressionOperator():
                 operator = item
                 match index.column():
-                    case 0:
+                    case 0: # name
+                        name_index = index.sibling(index.row(), 0)
                         match role:
                             case Qt.ItemDataRole.EditRole | Qt.ItemDataRole.DisplayRole:
                                 if not isinstance(value, str):
                                     return False
                                 operator.setName(value)
-                                self.dataChanged.emit(index, index, [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
+                                self.dataChanged.emit(name_index, name_index, [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
                                 return True
-                    case 1:
+                            case _:
+                                return False
+                    case 1: # expression
+                        operator_index = index.sibling(index.row(), 0)
+                        expression_index = index.sibling(index.row(), 1)
                         match role:
                             case Qt.ItemDataRole.EditRole | Qt.ItemDataRole.DisplayRole:
                                 if not isinstance(value, str):
+                                    print("expression value must be a string")
                                     return False # Ensure value is a string
+                                
                                 previous_inlets = list(operator.inlets())
                                 operator.setExpression(value)
                                 next_inlets = list(operator.inlets())
-                                self.dataChanged.emit(index, index, [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
 
-                                # emit necessary signals
+                                # emit dataChanged signal for the operator expression
+                                self.dataChanged.emit(expression_index, expression_index, [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
+
+                                # if inlets changed, we need to update the model and emit necessary signals
                                 inlet_count = max(len(previous_inlets), len(next_inlets))
                                 self.dataChanged.emit(
-                                    self.index(0, 0, index),
-                                    self.index(inlet_count, self.columnCount(index), index),
+                                    self.index(0, 0, operator_index),
+                                    self.index(inlet_count, self.columnCount(operator_index), operator_index),
                                     [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole]
                                 )
 
                                 if len(previous_inlets) < len(next_inlets):
-                                    self.beginInsertRows(index, len(previous_inlets), len(next_inlets)-1)
+                                    self.beginInsertRows(operator_index, len(previous_inlets), len(next_inlets)-1)
                                     # inlets were already updated in the underlying data
                                     self.endInsertRows()
 
                                 if len(previous_inlets) > len(next_inlets):
-                                    self.beginRemoveRows(index, len(next_inlets), len(previous_inlets)-1)
+                                    self.beginRemoveRows(operator_index, len(next_inlets), len(previous_inlets)-1)
                                     # inlets were already updated in the underlying data
                                     self.endRemoveRows()
 
@@ -518,31 +528,7 @@ class FlowGraphModel(QAbstractItemModel):
         return script_text
         
 
-import networkx as nx
-def itemmodel_to_nx(model:FlowGraphModel)->nx.MultiDiGraph:
-    G = nx.MultiDiGraph()
 
-    # add nodes
-    for node_row in range(model.rowCount()):
-        node_index = model.index(node_row, 0)
-
-        n = model.data(node_index, Qt.EditRole)
-        G.add_node(n, 
-            expression=model.data(node_index.siblingAtColumn(1), Qt.EditRole),
-            inlets=[model.data(model.index(inlet_row, 0, node_index), Qt.EditRole) for inlet_row in range(model.rowCount(node_index) - 1)]
-        )
-
-    for node_row in range(model.rowCount()):
-        for inlet_row in range(model.rowCount(model.index(node_row, 0)) - 1):
-            inlet_index = model.index(inlet_row, 0, node_index)
-            for link_row in range(model.rowCount(inlet_index)):
-                link_index = model.index(link_row, 0, inlet_index)
-                source_outlet_index = model.data(link_index, role=GraphDataRole.SourceRole)
-                source_node_index = source_outlet_index.parent()
-                s = model.data(source_node_index, Qt.EditRole)
-                G.add_edge(n, s, inlet=model.data(inlet_index, Qt.EditRole))
-
-    return G
 
 from graphview import GraphView
 if __name__ == "__main__":
