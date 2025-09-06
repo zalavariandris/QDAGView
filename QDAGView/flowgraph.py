@@ -57,19 +57,22 @@ class ExpressionOperator:
         """Reset the inlets based on the current expression."""
         variables = get_unbound_nodes(self._expression)
 
-        if len(variables) == len(self._inlets):
-            for var, inlet in zip(variables, self._inlets):
-                inlet.name = var
-
+        # Add new inlets if needed
         if len(variables) > len(self._inlets):
             for var in variables:
                 if var not in [inlet.name for inlet in self._inlets]:
                     self._inlets.append(Inlet(var, self))
 
+        # Remove any inlets that are no longer needed
         if len(variables) < len(self._inlets):
-            for inlet in self._inlets[:]:
+            for inlet in self._inlets[len(variables):]:
                 if inlet.name not in variables:
                     self._inlets.remove(inlet)
+
+        # update inlet names
+        for var, inlet in zip(variables, self._inlets):
+            inlet.name = var
+        
 
     def setExpression(self, expression:str):
         """Set the expression of the operator."""

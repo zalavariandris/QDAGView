@@ -14,86 +14,72 @@ Manual tests
 - [x] link head to inlet: reconnect link
 """
 
+
+# Add parent directory to path so we can import the module
 import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# unittest
 import unittest
 
+# QT
 from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 
+# model
+from core import GraphDataRole
+from flowgraphmodel import FlowGraphModel
+from itemmodel_graphhelper import ItemGraphHelper
 
-def addNode(model:QStandardItemModel, name:str, content:str):
-    item = QStandardItem(name)
-    item.setData(RowKind.NODE, GraphDataRole.KindRole)
-    model.appendRow([item, QStandardItem(content)])
-    return item.index()
-
-def addInlet(model:QStandardItemModel, node:QStandardItem, name:str):
-    item = QStandardItem(name)
-    item.setData(RowKind.INLET, GraphDataRole.KindRole)
-    node.appendRow(item)
-    return item
-
-def addOutlet(model:QStandardItemModel, node:QStandardItem, name:str):
-    item = QStandardItem(name)
-    item.setData(RowKind.OUTLET, GraphDataRole.KindRole)
-    node.appendRow(item)
-    return item
-
-def addLink(model:QStandardItemModel, source:QStandardItem, target:QStandardItem, data:str):
-    # add link to inlet, store as the children of the inlet
-    assert source.index().isValid(), "Source must be a valid index"
-    assert source.data(GraphDataRole.KindRole) == RowKind.OUTLET, "Source must be an outlet"
-    item = QStandardItem()
-    item.setData(RowKind.LINK, GraphDataRole.KindRole)
-    item.setData(f"{source.index().parent().data(Qt.ItemDataRole.DisplayRole)}.{source.data(Qt.ItemDataRole.DisplayRole)}", Qt.ItemDataRole.DisplayRole)
-    item.setData(QPersistentModelIndex(source.index()), GraphDataRole.SourceRole)
-    target.appendRow([item, QStandardItem(data)])
-
-
-from graphview import GraphView, RowKind, GraphDataRole
+# view
+from graphview import GraphView
 app = QApplication(sys.argv)  # Only one QApplication per app
 
 
-class TestLinks(unittest.TestCase):
-    def setUp(self):
-        self.view = GraphView()
-        self.model = QStandardItemModel()
-        self.view.setAdapter(self.model)
-        # add node1
-        self.node1 = QStandardItem("node1")
-        self.node1.setData(RowKind.NODE, GraphDataRole.KindRole)
-        self.model.appendRow([self.node1, QStandardItem("")])
+class TestGraphView(unittest.TestCase):
+    def test_operators(self):
+        model = FlowGraphModel()
+        helper = ItemGraphHelper(model)
+        view = GraphView()
+        view.setModel(model)
 
-        self.out1 = QStandardItem("out")
-        self.out1.setData(RowKind.OUTLET, GraphDataRole.KindRole)
-        self.node1.appendRow(self.out1)
-
-        # add node2
-        self.node2 = QStandardItem("node2")
-        self.node2.setData(RowKind.NODE, GraphDataRole.KindRole)
-        self.model.appendRow([self.node2, QStandardItem("")])
-
-        self.in1 = QStandardItem("in")
-        self.in1.setData(RowKind.OUTLET, GraphDataRole.KindRole)
-        self.node2.appendRow(self.in1)
+        # create a single operator
+        A = helper.createOperator("a+b", "A")
+        assert A.isValid(), "Failed to create operator A"
+        assert model.rowCount(QModelIndex()) == 1
+        assert QPersistentModelIndex(A) in {A: "A"}
+        self.assertEqual( len(view.toNetworkX().nodes()), 1)
+        self.assertIn("A", view.toNetworkX().nodes, "Operator A not in graph")
+        self.assertEqual(view.toNetworkX().nodes["A"]["expression"], "a+b", "Operator A expression incorrect")
         
-    def test_link_creation(self):
-        # link
-        link = QStandardItem("link")
-        link.setData(QPersistentModelIndex( self.out1.index() ), GraphDataRole.SourceRole)
-        self.in1.appendRow(link)
+        # set node expression
+        helper.setExpression(A, "x*y")
+        self.assertEqual(view.toNetworkX().nodes["A"]["expression"], "x*y", "Operator A expression incorrect after setExpression")
 
-        # test if link has a corresponding widget
-        link_id = QPersistentModelIndex(link.index())
-        self.assertIn(link_id, self.view._row_widgets)
-        self.assertIsInstance(self.view._row_widgets[link_id], QGraphicsItem)
+        # check inlets
+        assert model.rowCount(A) == 3 # 2 inlets + 1 outlet
+        assert len(helper.inlets(A)) == 2
+        self.assertEqual( view.toNetworkX().nodes["A"]["inlets"], ['x', 'y'], "Operator A inlets incorrect")
 
-    def test_link_geometry_update(self):
-        ...
+        # set node expression
+        helper.setExpression(A, "k*k")
+        self.assertEqual(view.toNetworkX().nodes["A"]["expression"], "k*k", "Operator A expression incorrect after setExpression")
+        assert len(helper.inlets(A)) == 1
+        self.assertEqual( view.toNetworkX().nodes["A"]["inlets"], ['k'], "Operator A inlets incorrect after setExpression")
 
-class TestGraphView_UnsupportedModelStructures(unittest.TestCase):
-     ...
+        # # create a second operator
+        # B = helper.createOperator("x*x", "B")
+        # self.assertEqual( len(view.toNetworkX().nodes()), 2)
+        # self.assertIn("B", view.toNetworkX().nodes, "Operator B not in graph")
+        # self.assertEqual(view.toNetworkX().nodes["B"]["expression"], "x*x", "Operator B expression incorrect")
+
+        # assert [inlet.data(Qt.ItemDataRole.EditRole) for inlet in helper.inlets()] == ["x"]
+        # self.assertEqual( view.toNetworkX().nodes["B"]["inlets"], ['x'], "Operator B inlets incorrect")
+
+# class TestGraphView_UnsupportedModelStructures(unittest.TestCase):
+#      ...
 
 if __name__ == "__main__":
 	unittest.main()

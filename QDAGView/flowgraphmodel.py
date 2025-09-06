@@ -351,22 +351,25 @@ class FlowGraphModel(QAbstractItemModel):
                                 self.dataChanged.emit(expression_index, expression_index, [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
 
                                 # if inlets changed, we need to update the model and emit necessary signals
-                                inlet_count = max(len(previous_inlets), len(next_inlets))
-                                self.dataChanged.emit(
-                                    self.index(0, 0, operator_index),
-                                    self.index(inlet_count, self.columnCount(operator_index), operator_index),
-                                    [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole]
-                                )
 
-                                if len(previous_inlets) < len(next_inlets):
+                                # insert or remove rows as needed
+                                if len(next_inlets) > len(previous_inlets):
                                     self.beginInsertRows(operator_index, len(previous_inlets), len(next_inlets)-1)
                                     # inlets were already updated in the underlying data
                                     self.endInsertRows()
 
-                                if len(previous_inlets) > len(next_inlets):
+                                if len(next_inlets) < len(previous_inlets):
                                     self.beginRemoveRows(operator_index, len(next_inlets), len(previous_inlets)-1)
                                     # inlets were already updated in the underlying data
                                     self.endRemoveRows()
+
+                                # # update inlets that may have changed names
+                                # inlet_count = max(len(previous_inlets), len(next_inlets))
+                                # self.dataChanged.emit(
+                                #     self.index(0, 0, operator_index),
+                                #     self.index(inlet_count-1, self.columnCount(operator_index), operator_index),
+                                #     [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole]
+                                # )
 
                                 return True
                             case _:

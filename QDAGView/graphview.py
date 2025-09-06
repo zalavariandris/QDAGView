@@ -38,7 +38,7 @@ from graphdelegate import GraphDelegate
 from dataclasses import dataclass
 
 
-
+import networkx as nx
 @dataclass
 class Payload:
     index: QModelIndex | None
@@ -134,6 +134,7 @@ class GraphView(QGraphicsView):
         self._selection:QItemSelectionModel | None = None
         self._selection_connections = []
 
+        assert isinstance(delegate, GraphDelegate) or delegate is None, "Invalid delegate"
         self._delegate = delegate if delegate else GraphDelegate()
         self._delegate.portPositionChanged.connect(self.onPortScenePositionChanged)
 
@@ -495,7 +496,7 @@ class GraphView(QGraphicsView):
     @Slot(QModelIndex, int, int)
     def onRowsAboutToBeRemoved(self, parent:QModelIndex, start:int, end:int):
         assert self._model, "Model must be set before handling rows removed!"
-
+        print(f"Rows about to be removed: parent={parent}, start={start}, end={end}")
         def get_children(index:QModelIndex) -> Iterable[QModelIndex]:
             if not index.isValid():
                 return []
@@ -506,11 +507,11 @@ class GraphView(QGraphicsView):
 
             return []
         
-        sorted_indexes = bfs(
+        sorted_indexes = list(bfs(
             *[self._model.index(row, 0, parent) for row in range(start, end + 1)], 
             children=get_children, 
             reverse=True
-        )
+        ))
         
         scene = self.scene()
         assert scene is not None
@@ -692,8 +693,7 @@ class GraphView(QGraphicsView):
             
             if cell_widget:= self.cellFromIndex(index):
                 text = index.data(Qt.ItemDataRole.DisplayRole)
-                print(f"update cell data {index.internalPointer()} to {text}")
-                cell_widget.setDisplayText(text)
+                cell_widget.setText(text)
 
     ## Linking
     def startLinking(self, payload:Payload)->bool:
@@ -1032,6 +1032,35 @@ class GraphView(QGraphicsView):
             editor.setFocus(Qt.FocusReason.MouseFocusReason)
             editor.editingFinished.connect(lambda editor = editor, cell_widget=cell_widget, index=index: onEditingFinished(editor, cell_widget, index) )
     
+    def toNetworkX(self)-> nx.MultiDiGraph:
+        G = nx.MultiDiGraph()
+        port_to_node: dict[QGraphicsItem, NodeWidget] = {}
+        all_widgets = list(self._widgets.values())
+        for widget in all_widgets:
+            # collect nodes and ports
+            if isinstance(widget, NodeWidget):
+                node_widget = cast(NodeWidget, widget)
+                node_name = widget.cells()[0].text()
+                expression_text = widget.cells()[1].text()
+                assert node_name not in G.nodes, f"Duplicate node name: {node_name}"
+                inlet_names = []
+                for inlet_widget in node_widget.inlets():
+                    inlet_name = inlet_widget.cells()[0].text()
+                    inlet_names.append(inlet_name)
+                    port_to_node[inlet_widget] = node_widget
+                assert node_name not in G.nodes, f"Duplicate node name: {node_name}"
+                G.add_node(node_name, inlets=inlet_names, expression=expression_text)
+                
+            # collect links
+            elif isinstance(widget, LinkWidget):
+                source_outlet = self._link_source[widget]
+                target_inlet = self._link_target[widget]
+                assert source_outlet is not None and target_inlet is not None, "Link source and target must be valid"
+                source_node_widget = port_to_node[source_outlet]
+                target_node_widget = port_to_node[target_inlet]
+                G.add_edge(source_node_widget.cells()[0].text(), target_node_widget.cells()[0].text(), inlet=target_inlet.cells()[0].text(), outlet=source_outlet.cells()[0].text())
+        return G
+
     # def dragEnterEvent(self, event)->None:
     #     if event.mimeData().hasFormat(GraphMimeType.InletData) or event.mimeData().hasFormat(GraphMimeType.OutletData):
     #         # Create a draft link if the mime data is for inlets or outlets

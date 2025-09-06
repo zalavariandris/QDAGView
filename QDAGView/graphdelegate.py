@@ -137,6 +137,56 @@ class GraphDelegate(QObject):
                 outlet_count += 1
         return outlet_count
 
+    ## Widgets
+    def createNodeWidget(self, parent_widget:QGraphicsScene | QGraphicsScene, index:QModelIndex) -> 'NodeWidget':
+        assert isinstance(parent_widget, QGraphicsScene)
+        widget = NodeWidget()
+        parent_widget.addItem(widget)
+        return widget
+
+    def destroyNodeWidget(self, parent_widget:QGraphicsScene, widget:NodeWidget):
+        assert isinstance(parent_widget, QGraphicsScene)
+        parent_widget.removeItem(widget)
+
+    def createInletWidget(self, parent_widget:'NodeWidget', index:QModelIndex) -> 'InletWidget':
+        widget = InletWidget()
+        node_index = index.parent()
+        pos = self.inletCount(node_index)
+        parent_widget.insertInlet(pos, widget)
+        widget.scenePositionChanged.connect(lambda pos, idx=QPersistentModelIndex(index): self.portPositionChanged.emit(idx))
+        return widget
+    
+    def destroyInletWidget(self, parent_widget:'NodeWidget', widget:InletWidget):
+        assert isinstance(parent_widget, NodeWidget)
+        node_widget = parent_widget
+        inlet_widget = cast(InletWidget, widget)
+        node_widget.removeInlet(inlet_widget)
+    
+    def createOutletWidget(self, parent_widget:'NodeWidget', index:QModelIndex) -> 'OutletWidget':
+        widget = OutletWidget()
+        node_index = index.parent()
+        pos = self.outletCount(node_index)
+        parent_widget.insertOutlet(pos, widget)
+        widget.scenePositionChanged.connect(lambda pos, idx=QPersistentModelIndex(index): self.portPositionChanged.emit(idx))
+        return widget
+    
+    def destroyOutletWidget(self, parent_widget:'NodeWidget', widget:OutletWidget):
+        assert isinstance(parent_widget, NodeWidget)
+        outlet_widget = cast(OutletWidget, widget)
+        node_widget = parent_widget
+        node_widget.removeOutlet(outlet_widget)
+        
+    def createLinkWidget(self, parent_widget:QGraphicsItem | QGraphicsScene, index:QModelIndex) -> 'LinkWidget':
+        assert isinstance(parent_widget, InletWidget)
+        link_widget = LinkWidget()
+        parent_widget.scene().addItem(link_widget)
+        return link_widget
+    
+    def destroyLinkWidget(self, parent_widget:QGraphicsItem | QGraphicsScene, widget:LinkWidget):
+        assert isinstance(parent_widget, InletWidget)
+        link_widget = cast(LinkWidget, widget)
+        parent_widget.scene().removeItem(link_widget)
+
     ## CREATE MODEL
     def addNode(self, model:QAbstractItemModel, subgraph:QModelIndex|QPersistentModelIndex=QModelIndex()):
         position = model.rowCount(subgraph)
@@ -231,55 +281,6 @@ class GraphDelegate(QObject):
         assert link.isValid(), "Link index must be valid"
         model.removeRows(link.row(), 1, link.parent())
 
-    ## Widgets
-    def createNodeWidget(self, parent_widget:QGraphicsScene | QGraphicsScene, index:QModelIndex) -> 'NodeWidget':
-        assert isinstance(parent_widget, QGraphicsScene)
-        widget = NodeWidget()
-        parent_widget.addItem(widget)
-        return widget
-
-    def destroyNodeWidget(self, parent_widget:QGraphicsScene, widget:NodeWidget):
-        assert isinstance(parent_widget, QGraphicsScene)
-        parent_widget.removeItem(widget)
-
-    def createInletWidget(self, parent_widget:'NodeWidget', index:QModelIndex) -> 'InletWidget':
-        widget = InletWidget()
-        node_index = index.parent()
-        pos = self.inletCount(node_index)
-        parent_widget.insertInlet(pos, widget)
-        widget.scenePositionChanged.connect(lambda pos, idx=QPersistentModelIndex(index): self.portPositionChanged.emit(idx))
-        return widget
-    
-    def destroyInletWidget(self, parent_widget:'NodeWidget', widget:InletWidget):
-        assert isinstance(parent_widget, NodeWidget)
-        node_widget = parent_widget
-        inlet_widget = cast(InletWidget, widget)
-        node_widget.removeInlet(inlet_widget)
-    
-    def createOutletWidget(self, parent_widget:'NodeWidget', index:QModelIndex) -> 'OutletWidget':
-        widget = OutletWidget()
-        node_index = index.parent()
-        pos = self.outletCount(node_index)
-        parent_widget.insertOutlet(pos, widget)
-        widget.scenePositionChanged.connect(lambda pos, idx=QPersistentModelIndex(index): self.portPositionChanged.emit(idx))
-        return widget
-    
-    def destroyOutletWidget(self, parent_widget:'NodeWidget', widget:OutletWidget):
-        assert isinstance(parent_widget, NodeWidget)
-        outlet_widget = cast(OutletWidget, widget)
-        node_widget = parent_widget
-        node_widget.removeOutlet(outlet_widget)
-        
-    def createLinkWidget(self, parent_widget:QGraphicsItem | QGraphicsScene, index:QModelIndex) -> 'LinkWidget':
-        assert isinstance(parent_widget, InletWidget)
-        link_widget = LinkWidget()
-        parent_widget.scene().addItem(link_widget)
-        return link_widget
-    
-    def destroyLinkWidget(self, parent_widget:QGraphicsItem | QGraphicsScene, widget:LinkWidget):
-        assert isinstance(parent_widget, InletWidget)
-        link_widget = cast(LinkWidget, widget)
-        parent_widget.scene().removeItem(link_widget)
 
     ## QT delegate
     def createEditor(self, parent:QWidget, option:QStyleOptionViewItem, index:QModelIndex|QPersistentModelIndex) -> QWidget:

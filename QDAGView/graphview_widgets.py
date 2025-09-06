@@ -31,11 +31,11 @@ class CellWidget(QGraphicsProxyWidget):
                 editor.setParent(None)
         self.setWidget(editor)
 
-    def displayText(self):
+    def text(self):
         label = self.widget()
         return label.text() if label else ""
 
-    def setDisplayText(self, text:str):
+    def setText(self, text:str):
         label = self.widget()
         label.setText(text)
 
@@ -59,6 +59,10 @@ class BaseRowWidget(QGraphicsWidget):
     def removeCell(self, cell:CellWidget):
         layout = cast(QGraphicsLinearLayout, self.layout())
         layout.removeItem(cell)
+
+    def cells(self) -> list[CellWidget]:
+        layout = cast(QGraphicsLinearLayout, self.layout())
+        return [layout.itemAt(i) for i in range(layout.count())]
 
     def paint(self, painter, option, /, widget:QWidget|None = None):
         painter.setBrush(QColor("lightblue"))
@@ -95,23 +99,13 @@ class PortWidget(BaseRowWidget):
 class InletWidget(PortWidget):
     def __init__(self, parent: QGraphicsItem | None = None):
         super().__init__(parent=parent)
-        self.setAcceptDrops(True)
+        self.setAcceptDrops(True)    
 
-    # def paint(self, painter:QPainter, option, /, widget:QWidget|None = None):
-    #     # return
-    #     painter.setBrush(QColor("lightblue"))
-    #     painter.drawRect(option.rect)
-    
 
 class OutletWidget(PortWidget):
     def __init__(self, parent: QGraphicsItem | None = None):
         super().__init__(parent=parent)
         self.setAcceptDrops(True)
-
-    # def paint(self, painter, option, /, widget:QWidget|None = None):
-    #     return
-    #     painter.setBrush(QColor("purple"))
-    #     painter.drawRect(option.rect)
 
 
 class NodeWidget(BaseRowWidget):
@@ -142,6 +136,10 @@ class NodeWidget(BaseRowWidget):
         layout = self._inlets_layout
         layout.removeItem(inlet)
 
+    def inlets(self) -> list[InletWidget]:
+        layout = self._inlets_layout
+        return [layout.itemAt(i) for i in range(layout.count())]
+
     def insertOutlet(self, pos: int, outlet: OutletWidget):
         layout = self._outlets_layout
         layout.insertItem(pos, outlet)
@@ -150,6 +148,10 @@ class NodeWidget(BaseRowWidget):
         layout = self._outlets_layout
         layout.removeItem(outlet)
 
+    def outlets(self) -> list[OutletWidget]:
+        layout = self._outlets_layout
+        return [layout.itemAt(i) for i in range(layout.count())]
+
     def insertCell(self, pos, cell):
         layout = self._cells_layout
         layout.insertItem(pos, cell)
@@ -157,6 +159,10 @@ class NodeWidget(BaseRowWidget):
     def removeCell(self, cell):
         layout = self._cells_layout
         layout.removeItem(cell)
+
+    def cells(self) -> list[CellWidget]:
+        layout = self._cells_layout
+        return [layout.itemAt(i) for i in range(layout.count())]
 
     def paint(self, painter: QPainter, option: QStyleOption, widget=None):
         rect = option.rect       
@@ -187,8 +193,12 @@ class LinkWidget(BaseRowWidget):
     def removeCell(self, cell:CellWidget):
         layout = cast(QGraphicsLinearLayout, self.layout())
         layout.removeItem(cell)
-        
-    def line(self)->QLineF:
+
+    def cells(self) -> list[CellWidget]:
+        layout = cast(QGraphicsLinearLayout, self.layout())
+        return [layout.itemAt(i) for i in range(layout.count())]
+
+    def line(self) -> QLineF:
         """Get the line of the link widget."""
         return self._line
     
