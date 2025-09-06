@@ -24,6 +24,10 @@ from graphview_widgets import (
     BaseRowWidget, CellWidget, NodeWidget, InletWidget, OutletWidget, LinkWidget, PortWidget
 )
 from utils.geo import makeLineBetweenShapes, makeLineToShape, makeArrowShape, getShapeCenter
+
+import logging
+
+
 # from pylive.utils.geo import makeLineBetweenShapes, makeLineToShape
 # from pylive.utils.qt import distribute_items_horizontal
 # from pylive.utils.unique import make_unique_name
@@ -118,7 +122,7 @@ def payloadToMimeData(payload:Payload) -> QMimeData:
         return None
     
     index_path = indexToPath(payload.index)
-    print(f"Creating mime data for index: {payload.index}, path: {index_path}, type: {payload.kind}")
+    logger.debug(f"Creating mime data for index: {payload.index}, path: {index_path}, type: {payload.kind}")
     mime.setData(payload.kind, index_path.encode("utf-8"))
     return mime
     
@@ -216,62 +220,64 @@ class GraphView(QGraphicsView):
         """
 
         if not index.isValid():
-            print(f"Index is invalid: {index}")
+            logger.warning(f"Index is invalid: {index}")
             return None
         
         persistent_idx = QPersistentModelIndex(index)
+
+        return self._widgets.get(persistent_idx, None)
         
-        # Debug: Check if the persistent index is valid
-        if not persistent_idx.isValid():
-            print(f"Persistent index became invalid: {indexToPath(index)}")
-            return None
+        # # Debug: Check if the persistent index is valid
+        # if not persistent_idx.isValid():
+        #     print(f"Persistent index became invalid: {indexToPath(index)}")
+        #     return None
         
-        # Debug: Print detailed lookup information
-        print(f"Looking for widget with index: {indexToPath(persistent_idx)}")
-        print(f"Persistent index details: row={persistent_idx.row()}, col={persistent_idx.column()}, internal_ptr={QModelIndex(persistent_idx).internalPointer()}")
+        # # Debug: Print detailed lookup information
+        # print(f"Looking for widget with index: {indexToPath(persistent_idx)}")
+        # print(f"Persistent index details: row={persistent_idx.row()}, col={persistent_idx.column()}, internal_ptr={QModelIndex(persistent_idx).internalPointer()}")
         
-        # Debug: Show all available keys
-        print(f"Available widget keys ({len(self._widgets)}):")
-        for i, key in enumerate(self._widgets.keys()):
-            if i < 10:  # Only show first 10 to avoid spam
-                print(f"  [{i}] {indexToPath(key)} (row={key.row()}, col={key.column()}, ptr={QModelIndex(key).internalPointer()})")
-            elif i == 10:
-                print(f"  ... and {len(self._widgets) - 10} more")
-                break
+        # # Debug: Show all available keys
+        # print(f"Available widget keys ({len(self._widgets)}):")
+        # for i, key in enumerate(self._widgets.keys()):
+        #     if i < 10:  # Only show first 10 to avoid spam
+        #         print(f"  [{i}] {indexToPath(key)} (row={key.row()}, col={key.column()}, ptr={QModelIndex(key).internalPointer()})")
+        #     elif i == 10:
+        #         print(f"  ... and {len(self._widgets) - 10} more")
+        #         break
         
-        # Debug: Check for exact matches
-        exact_matches = []
-        for key in self._widgets.keys():
-            if (key.row() == persistent_idx.row() and 
-                key.column() == persistent_idx.column() and
-                indexToPath(key) == indexToPath(persistent_idx)):
-                exact_matches.append(key)
+        # # Debug: Check for exact matches
+        # exact_matches = []
+        # for key in self._widgets.keys():
+        #     if (key.row() == persistent_idx.row() and 
+        #         key.column() == persistent_idx.column() and
+        #         indexToPath(key) == indexToPath(persistent_idx)):
+        #         exact_matches.append(key)
         
-        print(f"Found {len(exact_matches)} potential matches by row/col/path")
+        # print(f"Found {len(exact_matches)} potential matches by row/col/path")
         
-        # Check if internal pointers match
-        ptr_matches = []
-        for key in exact_matches:
-            if QModelIndex(key).internalPointer() == QModelIndex(persistent_idx).internalPointer():
-                ptr_matches.append(key)
+        # # Check if internal pointers match
+        # ptr_matches = []
+        # for key in exact_matches:
+        #     if QModelIndex(key).internalPointer() == QModelIndex(persistent_idx).internalPointer():
+        #         ptr_matches.append(key)
         
-        print(f"Found {len(ptr_matches)} matches with same internal pointer")
+        # print(f"Found {len(ptr_matches)} matches with same internal pointer")
         
-        widget = self._widgets.get(persistent_idx, None)
-        if widget is None:
-            print(f"ERROR: Widget not found despite visible matches!")
-            # Try to find with manual comparison
-            for key, widget_val in self._widgets.items():
-                if (key.row() == persistent_idx.row() and 
-                    key.column() == persistent_idx.column() and
-                    indexToPath(key) == indexToPath(persistent_idx)):
-                    print(f"Manual match found! Key hash: {hash(key)}, Search hash: {hash(persistent_idx)}")
-                    print(f"Key == Search: {key == persistent_idx}")
-                    break
-        else:
-            print(f"SUCCESS: Widget found: {type(widget).__name__}")
+        # widget = self._widgets.get(persistent_idx, None)
+        # if widget is None:
+        #     print(f"ERROR: Widget not found despite visible matches!")
+        #     # Try to find with manual comparison
+        #     for key, widget_val in self._widgets.items():
+        #         if (key.row() == persistent_idx.row() and 
+        #             key.column() == persistent_idx.column() and
+        #             indexToPath(key) == indexToPath(persistent_idx)):
+        #             print(f"Manual match found! Key hash: {hash(key)}, Search hash: {hash(persistent_idx)}")
+        #             print(f"Key == Search: {key == persistent_idx}")
+        #             break
+        # else:
+        #     print(f"SUCCESS: Widget found: {type(widget).__name__}")
         
-        return widget
+        # return widget
     
     def indexFromCell(self, cell:CellWidget) -> QModelIndex:
         """
@@ -553,7 +559,7 @@ class GraphView(QGraphicsView):
     @Slot(QModelIndex, int, int)
     def onRowsAboutToBeRemoved(self, parent:QModelIndex, start:int, end:int):
         assert self._model, "Model must be set before handling rows removed!"
-        print(f"Rows about to be removed: parent={indexToPath(parent)}, start={start}, end={end}")
+        # print(f"Rows about to be removed: parent={indexToPath(parent)}, start={start}, end={end}")
         def get_children(index:QModelIndex) -> Iterable[QModelIndex]:
             if not index.isValid():
                 return []
@@ -576,7 +582,7 @@ class GraphView(QGraphicsView):
         for row_index in sorted_indexes:
             row_widget = self.rowWidgetFromIndex(row_index)
             if row_widget is None:
-                print("Row widget not found for index:", indexToPath(row_index))
+                logger.warning(f"Row widget not found for index: {indexToPath(row_index)}")
                 # breakpoint()
                 # Already removed, skip
                 continue
@@ -911,35 +917,35 @@ class GraphView(QGraphicsView):
                 outlet_index = payload.index
                 assert outlet_index.isValid(), "Outlet index must be valid"
                 inlet_index = target_index
-                self._delegate.addLink(self._model, outlet_index, inlet_index)
-                success = True
+                if self._delegate.addLink(self._model, outlet_index, inlet_index):
+                    success = True
 
             case "inlet", GraphItemType.OUTLET:
                 # inlet dropped on outlet
                 inlet_index = payload.index
                 assert inlet_index.isValid(), "Inlet index must be valid"
                 outlet_index = target_index
-                self._delegate.addLink(self._model, outlet_index, inlet_index)
-                success = True
+                if self._delegate.addLink(self._model, outlet_index, inlet_index):
+                    success = True
 
             case "head", GraphItemType.INLET:
                 # link head dropped on inlet
                 link_index = payload.index
                 new_inlet_index = target_index
                 current_outlet_index = self._delegate.linkSource(link_index)
-                self._delegate.removeLink(self._model, link_index)
-                self._delegate.addLink(self._model, current_outlet_index, new_inlet_index)
-                success = True
+                if self._delegate.removeLink(self._model, link_index):
+                    if self._delegate.addLink(self._model, current_outlet_index, new_inlet_index):
+                        success = True
 
             case "tail", GraphItemType.OUTLET:
                 # link tail dropped on outlet
                 link_index = payload.index
                 new_outlet_index = target_index
                 current_inlet_index = self._delegate.linkTarget(link_index)
-                self._delegate.removeLink(self._model, link_index)
-                self._delegate.addLink(self._model, new_outlet_index, current_inlet_index)
-                success = True
-            
+                if self._delegate.removeLink(self._model, link_index):
+                    if self._delegate.addLink(self._model, new_outlet_index, current_inlet_index):
+                        success = True
+
             case 'tail', _:
                 # tail dropped on empty space
                 link_index = payload.index
@@ -948,8 +954,8 @@ class GraphView(QGraphicsView):
                 link_target = self._delegate.linkTarget(link_index)
                 IsLinked = link_source and link_source.isValid() and link_target and link_target.isValid()
                 if IsLinked:
-                    self._delegate.removeLink(self._model, link_index)
-                    success = True
+                    if self._delegate.removeLink(self._model, link_index):
+                        success = True
 
             case 'head', _:
                 # head dropped on empty space
@@ -959,8 +965,8 @@ class GraphView(QGraphicsView):
                 link_target = self._delegate.linkTarget(link_index)
                 IsLinked = link_source and link_source.isValid() and link_target and link_target.isValid()
                 if IsLinked:
-                    self._delegate.removeLink(self._model, link_index)
-                    success =  True
+                    if self._delegate.removeLink(self._model, link_index):
+                        success = True
 
         # cleanup DraftLink
         if self._draft_link:
@@ -1066,8 +1072,11 @@ class GraphView(QGraphicsView):
             
             pos = QPoint(int(event.position().x()), int(event.position().y())) # Ensure pos is in integer coordinates
             drop_target = self.rowAt(pos)  # Ensure the index is updated
-            self.finishLinking(self._linking_payload, drop_target)
-            
+            if not self.finishLinking(self._linking_payload, drop_target):
+                # Handle failed linking
+                logger.warning("WARNING: Linking failed!")
+                pass
+
         else:
             super().mouseReleaseEvent(event)
 
@@ -1110,6 +1119,10 @@ class GraphView(QGraphicsView):
                     inlet_name = inlet_widget.cells()[0].text()
                     inlet_names.append(inlet_name)
                     port_to_node[inlet_widget] = node_widget
+
+                for outlet_widget in node_widget.outlets():
+                    port_to_node[outlet_widget] = node_widget
+
                 assert node_name not in G.nodes, f"Duplicate node name: {node_name}"
                 G.add_node(node_name, inlets=inlet_names, expression=expression_text)
                 
@@ -1120,7 +1133,11 @@ class GraphView(QGraphicsView):
                 assert source_outlet is not None and target_inlet is not None, "Link source and target must be valid"
                 source_node_widget = port_to_node[source_outlet]
                 target_node_widget = port_to_node[target_inlet]
-                G.add_edge(source_node_widget.cells()[0].text(), target_node_widget.cells()[0].text(), inlet=target_inlet.cells()[0].text(), outlet=source_outlet.cells()[0].text())
+                G.add_edge(
+                    source_node_widget.cells()[0].text(), 
+                    target_node_widget.cells()[0].text(), 
+                    target_inlet.cells()[0].text()
+                )
         return G
 
     # def dragEnterEvent(self, event)->None:

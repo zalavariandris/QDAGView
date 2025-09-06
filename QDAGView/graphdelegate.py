@@ -214,6 +214,7 @@ class GraphDelegate(QObject):
             assert new_index.isValid(), "Created index is not valid"
             new_inlet_name = f"{'in'}#{position + 1}"
             success = model.setData(new_index, new_inlet_name, Qt.ItemDataRole.DisplayRole)
+            # by default node children are inlets. dont need to set GraphItemType.INLET explicitly
             assert success, "Failed to set data for the new child item"
             return True
         return False
@@ -255,8 +256,8 @@ class GraphDelegate(QObject):
         if model.insertRows(position, 1, inlet):
             link_index = model.index(position, 0, inlet)
             new_link_name = f"{'Link'}#{position + 1}"
-            if model.setData(link_index, new_link_name, role=Qt.ItemDataRole.DisplayRole):
-              if model.setData(link_index, outlet, role=GraphDataRole.SourceRole):
+            if model.setData(link_index, outlet, role=GraphDataRole.SourceRole):
+                model.setData(link_index, new_link_name, role=Qt.ItemDataRole.DisplayRole)
                 return True
         return False
 
@@ -272,15 +273,14 @@ class GraphDelegate(QObject):
         model.setData(link, source, role=GraphDataRole.SourceRole)
 
     ## DELETE MODEL
-    def removeLink(self, model:QAbstractItemModel, link:QModelIndex|QPersistentModelIndex):
+    def removeLink(self, model:QAbstractItemModel, link:QModelIndex|QPersistentModelIndex)->bool:
         """
         Remove a link from the graph.
         This removes the link at the specified index from the model.
         """
         assert model, "Source model must be set before removing a link"
         assert link.isValid(), "Link index must be valid"
-        model.removeRows(link.row(), 1, link.parent())
-
+        return model.removeRows(link.row(), 1, link.parent())
 
     ## QT delegate
     def createEditor(self, parent:QWidget, option:QStyleOptionViewItem, index:QModelIndex|QPersistentModelIndex) -> QWidget:

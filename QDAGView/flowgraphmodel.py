@@ -12,13 +12,13 @@ from core import GraphDataRole, GraphItemType
 from utils import bfs
 
 from flowgraph import FlowGraph, ExpressionOperator, Inlet, Outlet, Link
-
+import logging
+logger = logging.getLogger(__name__)
 
 class FlowGraphModel(QAbstractItemModel):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._root = FlowGraph()
-        self._root._model = self  # Set the model reference in the root item
+        self._root = FlowGraph() 
 
     def invisibleRootItem(self) -> FlowGraph:
         """Return the root item of the model."""
@@ -211,7 +211,7 @@ class FlowGraphModel(QAbstractItemModel):
             case _:
                 return False
 
-    def columnCount(self, parent=QModelIndex()):
+    def columnCount(self, parent=QModelIndex())->int:
         parent_item:FlowGraph | ExpressionOperator | Inlet | Outlet | Link = self.invisibleRootItem() if not parent.isValid() else QModelIndex(parent).internalPointer()
         
         match parent_item:
@@ -233,7 +233,7 @@ class FlowGraphModel(QAbstractItemModel):
             case _:
                 raise Exception(f"Invalid parent item type: {type(parent_item)}")
 
-    def data(self, index:QModelIndex, role=Qt.ItemDataRole.DisplayRole):
+    def data(self, index:QModelIndex, role=Qt.ItemDataRole.DisplayRole)->object|None:
 
         if not index.isValid():
             return None
@@ -315,7 +315,7 @@ class FlowGraphModel(QAbstractItemModel):
     
     def setData(self, index:QModelIndex, value, role:int = Qt.ItemDataRole.EditRole)->bool:
         if not index.isValid():
-            print("Invalid index")
+            logger.warning("Invalid index")
             return False
 
         item = index.sibling(index.row(), 0).internalPointer()
@@ -340,30 +340,29 @@ class FlowGraphModel(QAbstractItemModel):
                         match role:
                             case Qt.ItemDataRole.EditRole | Qt.ItemDataRole.DisplayRole:
                                 if not isinstance(value, str):
-                                    print("expression value must be a string")
+                                    logger.warning("expression value must be a string")
                                     return False
                                 
+                                current_inlet_count = len(operator.inlets())
                                 previous_inlets = list(operator.inlets())
                                 
                                 # DON'T change the data yet - first calculate what will change
                                 temp_operator = ExpressionOperator(value)  # Create temporary to see what inlets would be
                                 next_inlets = list(temp_operator.inlets())
-                                
-                                # Signal removals BEFORE changing data
-                                if len(next_inlets) < len(previous_inlets):
-                                    self.beginRemoveRows(operator_index, len(next_inlets), len(previous_inlets)-1)
+                                new_inlet_count = len(next_inlets)
+
+                                if new_inlet_count < current_inlet_count:
+                                    # Signal removals if there are less inlets
+                                    self.beginRemoveRows(operator_index, new_inlet_count, current_inlet_count-1)
                                     operator.setExpression(value)  # NOW change the data
                                     self.endRemoveRows()
-                                
-                                # Signal insertions BEFORE changing data  
-                                elif len(next_inlets) > len(previous_inlets):
-                                    self.beginInsertRows(operator_index, len(previous_inlets), len(next_inlets)-1)
-                                    if len(next_inlets) < len(previous_inlets):  # Handle case where we already changed it above
-                                        pass  # Data already changed
-                                    else:
-                                        operator.setExpression(value)  # Change the data
+
+                                elif new_inlet_count > current_inlet_count:
+                                    # Signal insertions if there are more inlets
+                                    self.beginInsertRows(operator_index, current_inlet_count, new_inlet_count-1)
+                                    operator.setExpression(value)  # Change the data
                                     self.endInsertRows()
-                                
+
                                 else:
                                     # No structure change, just update the expression
                                     operator.setExpression(value)
@@ -371,6 +370,14 @@ class FlowGraphModel(QAbstractItemModel):
                                 # emit dataChanged signal for the operator expression
                                 self.dataChanged.emit(expression_index, expression_index, [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
                                 
+                                # emit dataChanged for all inlets because their names are derived from the operator's expression,
+                                # and updating the expression may change the names of all inlets
+                                if new_inlet_count > 0:
+                                    self.dataChanged.emit(
+                                        self.index(0, 0, operator_index),
+                                        self.index(new_inlet_count-1, self.columnCount(operator_index), operator_index),
+                                        [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole]
+                                    )
                                 return True
                             case _:
                                 return False
@@ -475,7 +482,7 @@ class FlowGraphModel(QAbstractItemModel):
                 graph = parent_item
                 self.beginRemoveRows(parent, row, row + count - 1)
                 for i in reversed(range(row, row + count)):
-                    print(f"Removing operator at index {i}")
+                    logger.info(f"Removing operator at index {i}")
                     operators = graph.operators()
                     if i < len(operators):
                         operator = operators[i]
@@ -491,22 +498,25 @@ class FlowGraphModel(QAbstractItemModel):
                 return False
             
             case Inlet():
-                inlet = parent_item
+                inlet_item = parent_item
                 graph = self.invisibleRootItem()
                 self.beginRemoveRows(parent, row, row + count - 1)
                 # Remove links connected to this inlet
                 # This is a simplified implementation - you may need more sophisticated link management
-                for i in reversed(range(row, row + count)):
-                    link = self.index(i, 0, parent).internalPointer()
+                for link_row in reversed(range(row, row + count)):
+                    link_index = self.index(link_row, 0, parent)
+                    if not link_index.isValid():
+                        logger.warning(f"Invalid link index at row {link_row}")
+                        continue
+                    link = link_index.internalPointer()
                     assert isinstance(link, Link), f"Expected Link, got {type(link)}"
+                    outlet = link.source
                     if not graph.removeLink(link):
-                        self.endRemoveRows()
-                        return False
-                    pass # TODO: Implement link removal logic
+                        logger.warning(f"Failed to remove link at row {link_row}")
                 self.endRemoveRows()
                 return True
             case _:
-                print(f"Invalid parent item type: {type(parent_item)}")
+                logger.warning(f"Invalid parent item type: {type(inlet_item)}")
                 return False
 
     def evaluate(self, index: QModelIndex) -> Any:
@@ -524,7 +534,7 @@ class FlowGraphModel(QAbstractItemModel):
                 if len(outlets) > 0:
                     params[inlet.name] = outlets[0].operator.name()
 
-            line = f"{op.name()} = {op.expression()}({ ",".join(f"{k}={v}" for k, v in params.items()) })"
+            line = f"{op.name()} = {op.expression()}({', '.join(f'{k}={v}' for k, v in params.items())})"
             
             script_text += f"{line}\n"
             
