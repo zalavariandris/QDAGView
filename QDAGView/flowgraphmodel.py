@@ -341,36 +341,36 @@ class FlowGraphModel(QAbstractItemModel):
                             case Qt.ItemDataRole.EditRole | Qt.ItemDataRole.DisplayRole:
                                 if not isinstance(value, str):
                                     print("expression value must be a string")
-                                    return False # Ensure value is a string
+                                    return False
                                 
                                 previous_inlets = list(operator.inlets())
-                                operator.setExpression(value)
-                                next_inlets = list(operator.inlets())
+                                
+                                # DON'T change the data yet - first calculate what will change
+                                temp_operator = ExpressionOperator(value)  # Create temporary to see what inlets would be
+                                next_inlets = list(temp_operator.inlets())
+                                
+                                # Signal removals BEFORE changing data
+                                if len(next_inlets) < len(previous_inlets):
+                                    self.beginRemoveRows(operator_index, len(next_inlets), len(previous_inlets)-1)
+                                    operator.setExpression(value)  # NOW change the data
+                                    self.endRemoveRows()
+                                
+                                # Signal insertions BEFORE changing data  
+                                elif len(next_inlets) > len(previous_inlets):
+                                    self.beginInsertRows(operator_index, len(previous_inlets), len(next_inlets)-1)
+                                    if len(next_inlets) < len(previous_inlets):  # Handle case where we already changed it above
+                                        pass  # Data already changed
+                                    else:
+                                        operator.setExpression(value)  # Change the data
+                                    self.endInsertRows()
+                                
+                                else:
+                                    # No structure change, just update the expression
+                                    operator.setExpression(value)
 
                                 # emit dataChanged signal for the operator expression
                                 self.dataChanged.emit(expression_index, expression_index, [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
-
-                                # if inlets changed, we need to update the model and emit necessary signals
-
-                                # insert or remove rows as needed
-                                if len(next_inlets) > len(previous_inlets):
-                                    self.beginInsertRows(operator_index, len(previous_inlets), len(next_inlets)-1)
-                                    # inlets were already updated in the underlying data
-                                    self.endInsertRows()
-
-                                if len(next_inlets) < len(previous_inlets):
-                                    self.beginRemoveRows(operator_index, len(next_inlets), len(previous_inlets)-1)
-                                    # inlets were already updated in the underlying data
-                                    self.endRemoveRows()
-
-                                # # update inlets that may have changed names
-                                # inlet_count = max(len(previous_inlets), len(next_inlets))
-                                # self.dataChanged.emit(
-                                #     self.index(0, 0, operator_index),
-                                #     self.index(inlet_count-1, self.columnCount(operator_index), operator_index),
-                                #     [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole]
-                                # )
-
+                                
                                 return True
                             case _:
                                 return False

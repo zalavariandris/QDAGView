@@ -1,11 +1,12 @@
 #####################
 # The Network Scene #
 #####################
-
+from __future__ import annotations
+import pdb
 #
 # A Graph view that directly connects to QStandardItemModel
 #
-from __future__ import annotations
+
 import traceback
 
 from enum import Enum
@@ -32,7 +33,7 @@ import logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-from core import GraphDataRole, GraphItemType, GraphMimeType
+from core import GraphDataRole, GraphItemType, GraphMimeType, indexToPath
 from utils import bfs
 from graphdelegate import GraphDelegate
 from dataclasses import dataclass
@@ -213,8 +214,64 @@ class GraphView(QGraphicsView):
         This is used to identify the node in the model.
         Returns None if the widget does not exist for the given index.
         """
-        idx = QPersistentModelIndex(index)
-        return self._widgets.get(idx, None)
+
+        if not index.isValid():
+            print(f"Index is invalid: {index}")
+            return None
+        
+        persistent_idx = QPersistentModelIndex(index)
+        
+        # Debug: Check if the persistent index is valid
+        if not persistent_idx.isValid():
+            print(f"Persistent index became invalid: {indexToPath(index)}")
+            return None
+        
+        # Debug: Print detailed lookup information
+        print(f"Looking for widget with index: {indexToPath(persistent_idx)}")
+        print(f"Persistent index details: row={persistent_idx.row()}, col={persistent_idx.column()}, internal_ptr={QModelIndex(persistent_idx).internalPointer()}")
+        
+        # Debug: Show all available keys
+        print(f"Available widget keys ({len(self._widgets)}):")
+        for i, key in enumerate(self._widgets.keys()):
+            if i < 10:  # Only show first 10 to avoid spam
+                print(f"  [{i}] {indexToPath(key)} (row={key.row()}, col={key.column()}, ptr={QModelIndex(key).internalPointer()})")
+            elif i == 10:
+                print(f"  ... and {len(self._widgets) - 10} more")
+                break
+        
+        # Debug: Check for exact matches
+        exact_matches = []
+        for key in self._widgets.keys():
+            if (key.row() == persistent_idx.row() and 
+                key.column() == persistent_idx.column() and
+                indexToPath(key) == indexToPath(persistent_idx)):
+                exact_matches.append(key)
+        
+        print(f"Found {len(exact_matches)} potential matches by row/col/path")
+        
+        # Check if internal pointers match
+        ptr_matches = []
+        for key in exact_matches:
+            if QModelIndex(key).internalPointer() == QModelIndex(persistent_idx).internalPointer():
+                ptr_matches.append(key)
+        
+        print(f"Found {len(ptr_matches)} matches with same internal pointer")
+        
+        widget = self._widgets.get(persistent_idx, None)
+        if widget is None:
+            print(f"ERROR: Widget not found despite visible matches!")
+            # Try to find with manual comparison
+            for key, widget_val in self._widgets.items():
+                if (key.row() == persistent_idx.row() and 
+                    key.column() == persistent_idx.column() and
+                    indexToPath(key) == indexToPath(persistent_idx)):
+                    print(f"Manual match found! Key hash: {hash(key)}, Search hash: {hash(persistent_idx)}")
+                    print(f"Key == Search: {key == persistent_idx}")
+                    break
+        else:
+            print(f"SUCCESS: Widget found: {type(widget).__name__}")
+        
+        return widget
     
     def indexFromCell(self, cell:CellWidget) -> QModelIndex:
         """
@@ -458,11 +515,11 @@ class GraphView(QGraphicsView):
                     yield child_index
                 return []
             
-            sorted_indexes = bfs(
+            sorted_indexes:List[QModelIndex] = list(bfs(
                 *[self._model.index(row, 0, parent) for row in range(start, end + 1)], 
                 children=get_children, 
                 reverse=False
-            )
+            ))
 
             for row_index in sorted_indexes:
                 # create the row widget
@@ -496,7 +553,7 @@ class GraphView(QGraphicsView):
     @Slot(QModelIndex, int, int)
     def onRowsAboutToBeRemoved(self, parent:QModelIndex, start:int, end:int):
         assert self._model, "Model must be set before handling rows removed!"
-        print(f"Rows about to be removed: parent={parent}, start={start}, end={end}")
+        print(f"Rows about to be removed: parent={indexToPath(parent)}, start={start}, end={end}")
         def get_children(index:QModelIndex) -> Iterable[QModelIndex]:
             if not index.isValid():
                 return []
@@ -519,6 +576,8 @@ class GraphView(QGraphicsView):
         for row_index in sorted_indexes:
             row_widget = self.rowWidgetFromIndex(row_index)
             if row_widget is None:
+                print("Row widget not found for index:", indexToPath(row_index))
+                # breakpoint()
                 # Already removed, skip
                 continue
 
@@ -530,7 +589,10 @@ class GraphView(QGraphicsView):
                     del self._cells[QPersistentModelIndex(cell_index)]
 
             # Remove the row widget from the scene
-            parent_widget = self._widgets.get(QPersistentModelIndex(row_index.parent()), scene)
+            if row_index.parent().isValid():
+                parent_widget = self.rowWidgetFromIndex(row_index.parent())
+            else:
+                parent_widget = scene
             self._destroyRowWidget(parent_widget, row_widget, row_index)
 
             # Clean up orphaned widgets and cells to avoid memory leaks
