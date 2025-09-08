@@ -37,7 +37,7 @@ import logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-from core import GraphDataRole, GraphItemType, GraphMimeType, indexToPath
+from core import GraphDataRole, GraphItemType, GraphMimeType, indexToString
 from utils import bfs
 from graphdelegate import GraphDelegate
 from dataclasses import dataclass
@@ -50,26 +50,6 @@ class Payload:
     kind: Literal['head', 'tail', 'inlet', 'outlet']
 
 
-def indexFromPath(model, path:str) -> QModelIndex:
-    """
-    Parse a path string to a persistent model index.
-    This is used to convert the path string back to a QModelIndex.
-    """
-    path = list(map(int, path.split("/")))
-
-    idx = model.index(path[0], 0, QModelIndex())
-    for row in path[1:]:
-        idx = model.index(row, 0, idx)
-    return idx
-
-# Convert index to path string
-def indexToPath(index:QModelIndex|QPersistentModelIndex) -> str:
-    path = []
-    idx = index
-    while idx.isValid():
-        path.append(idx.row())
-        idx = idx.parent()
-    return "/".join(map(str, reversed(path)))
 
     
 def payloadFromMimeData(model, mime:QMimeData) -> Payload:
@@ -103,7 +83,7 @@ def payloadFromMimeData(model, mime:QMimeData) -> Payload:
         # No valid mime type found
         return None
 
-    index = indexFromPath(model, index_path)
+    index = indexFromPath(model, list(map(int, index_path.split("/"))))
 
     return Payload(index=index, kind=drag_source_type)
 
@@ -121,7 +101,7 @@ def payloadToMimeData(payload:Payload) -> QMimeData:
     if mime_type is None:
         return None
     
-    index_path = indexToPath(payload.index)
+    index_path = "/".join(map(str, indexToString(payload.index)))
     logger.debug(f"Creating mime data for index: {payload.index}, path: {index_path}, type: {payload.kind}")
     mime.setData(payload.kind, index_path.encode("utf-8"))
     return mime
@@ -151,6 +131,8 @@ class GraphView(QGraphicsView):
 
         # store model widget relations
         self._widgets: bidict[QPersistentModelIndex, BaseRowWidget] = bidict()
+        self._widget_by_path: list[Tuple[NodeWidget, list[Tuple[InletWidget, list[LinkWidget]]]]] = []
+        self._path_by_widget: dict[list[int], BaseRowWidget] = {}
         self._cells: bidict[QPersistentModelIndex, CellWidget] = bidict()
 
         self._link_source: defaultdict[LinkWidget, list[OutletWidget]] = defaultdict(list)
@@ -196,7 +178,7 @@ class GraphView(QGraphicsView):
         scene = self.scene()
         assert scene
         scene.clear()
-        self._widgets.clear()
+        self.clearWidgets()
         self._cells.clear()
         if self._model.rowCount(QModelIndex()) > 0:
             self.onRowsInserted(QModelIndex(), 0, self._model.rowCount(QModelIndex()) - 1)
@@ -204,15 +186,8 @@ class GraphView(QGraphicsView):
     def model(self) -> QAbstractItemModel | None:
         return self._model
     
-    def indexFromRowWidget(self, widget:QGraphicsItem) -> QModelIndex:
-        """
-        Get the index of the node widget in the model.
-        This is used to identify the node in the model.
-        """
-        idx = self._widgets.inverse[widget]
-        return QModelIndex(idx)
-    
-    def rowWidgetFromIndex(self, index:QModelIndex|QPersistentModelIndex) -> BaseRowWidget|None:
+    ## Manage Widgets
+    def widgetFromIndex(self, index:QModelIndex|QPersistentModelIndex) -> BaseRowWidget|None:
         """
         Get the widget from the index.
         This is used to identify the node in the model.
@@ -223,100 +198,35 @@ class GraphView(QGraphicsView):
             logger.warning(f"Index is invalid: {index}")
             return None
         
+        # convert to persistent index
         persistent_idx = QPersistentModelIndex(index)
-
-        return self._widgets.get(persistent_idx, None)
-        
-        # # Debug: Check if the persistent index is valid
-        # if not persistent_idx.isValid():
-        #     print(f"Persistent index became invalid: {indexToPath(index)}")
-        #     return None
-        
-        # # Debug: Print detailed lookup information
-        # print(f"Looking for widget with index: {indexToPath(persistent_idx)}")
-        # print(f"Persistent index details: row={persistent_idx.row()}, col={persistent_idx.column()}, internal_ptr={QModelIndex(persistent_idx).internalPointer()}")
-        
-        # # Debug: Show all available keys
-        # print(f"Available widget keys ({len(self._widgets)}):")
-        # for i, key in enumerate(self._widgets.keys()):
-        #     if i < 10:  # Only show first 10 to avoid spam
-        #         print(f"  [{i}] {indexToPath(key)} (row={key.row()}, col={key.column()}, ptr={QModelIndex(key).internalPointer()})")
-        #     elif i == 10:
-        #         print(f"  ... and {len(self._widgets) - 10} more")
-        #         break
-        
-        # # Debug: Check for exact matches
-        # exact_matches = []
-        # for key in self._widgets.keys():
-        #     if (key.row() == persistent_idx.row() and 
-        #         key.column() == persistent_idx.column() and
-        #         indexToPath(key) == indexToPath(persistent_idx)):
-        #         exact_matches.append(key)
-        
-        # print(f"Found {len(exact_matches)} potential matches by row/col/path")
-        
-        # # Check if internal pointers match
-        # ptr_matches = []
-        # for key in exact_matches:
-        #     if QModelIndex(key).internalPointer() == QModelIndex(persistent_idx).internalPointer():
-        #         ptr_matches.append(key)
-        
-        # print(f"Found {len(ptr_matches)} matches with same internal pointer")
-        
-        # widget = self._widgets.get(persistent_idx, None)
-        # if widget is None:
-        #     print(f"ERROR: Widget not found despite visible matches!")
-        #     # Try to find with manual comparison
-        #     for key, widget_val in self._widgets.items():
-        #         if (key.row() == persistent_idx.row() and 
-        #             key.column() == persistent_idx.column() and
-        #             indexToPath(key) == indexToPath(persistent_idx)):
-        #             print(f"Manual match found! Key hash: {hash(key)}, Search hash: {hash(persistent_idx)}")
-        #             print(f"Key == Search: {key == persistent_idx}")
-        #             break
-        # else:
-        #     print(f"SUCCESS: Widget found: {type(widget).__name__}")
-        
-        # return widget
+        return self._widgets.get(persistent_idx, None)       
     
-    def indexFromCell(self, cell:CellWidget) -> QModelIndex:
+    def setWidgetForIndex(self, widget:BaseRowWidget, index:QModelIndex|QPersistentModelIndex):
         """
-        Get the index of the cell widget in the model.
-        This is used to identify the cell in the model.
+        Set the widget for the given index.
+        This is used to identify the node in the model.
         """
-        idx = self._cells.inverse[cell]
+        assert isinstance(widget, BaseRowWidget), f"Widget must be a subclass of BaseRowWidget, got {type(widget)}"
+        self._widgets[QPersistentModelIndex(index)] = widget
+
+    def unsetWidgetForIndex(self, widget:BaseRowWidget, index:QModelIndex|QPersistentModelIndex):
+        del self._widgets[QPersistentModelIndex(index)]
+
+    def indexFromRowWidget(self, widget:QGraphicsItem) -> QModelIndex:
+        """
+        Get the index of the node widget in the model.
+        This is used to identify the node in the model.
+        """
+        idx = self._widgets.inverse[widget]
         return QModelIndex(idx)
     
-    def cellFromIndex(self, index:QModelIndex|QPersistentModelIndex) -> CellWidget|None:
-        idx = QPersistentModelIndex(index)
-        return self._cells.get(idx, None)
 
-    def rowAt(self, point:QPoint) -> QModelIndex:
-        """
-        Find the index at the given position.
-        point is in untransformed viewport coordinates, just like QMouseEvent::pos().
-        """
-
-        all_widgets = set(self._widgets.values())
-        for item in self.items(point):
-            if item in all_widgets:
-                # If the item is a widget, return its index
-                return self.indexFromRowWidget(item)
-        return QModelIndex()
+    def widgets(self) -> List[BaseRowWidget]:
+        return list(self._widgets.values())
     
-    def indexAt(self, point:QPoint) -> QModelIndex:
-        """
-        Find the index at the given position.
-        point is in untransformed viewport coordinates, just like QMouseEvent::pos().
-        """
-        all_cells = set(self._cells.values())
-        for item in self.items(point):
-            if item in all_cells:
-                # If the item is a cell, return its index
-                return self.indexFromCell(item)
-            
-        # fallback to rowAt if no cell is found
-        return self.rowAt(point)
+    def clearWidgets(self):
+        self._widgets.clear()
 
     def _createRowWidget(self, parent_widget:QGraphicsItem|QGraphicsScene, index:QModelIndex|QPersistentModelIndex) -> BaseRowWidget:
         """
@@ -349,9 +259,9 @@ class GraphView(QGraphicsView):
                 widget = self._delegate.createLinkWidget(parent_widget, index)
 
                 source_index = self._delegate.linkSource(index)
-                source_widget = self.rowWidgetFromIndex(source_index) if source_index is not None else None
+                source_widget = self.widgetFromIndex(source_index) if source_index is not None else None
                 target_index = self._delegate.linkTarget(index)
-                target_widget = self.rowWidgetFromIndex(target_index)
+                target_widget = self.widgetFromIndex(target_index)
 
                 # unlink
                 self._unlinkWidget(widget)
@@ -433,6 +343,46 @@ class GraphView(QGraphicsView):
         #     case _:
         #         raise ValueError(f"Unknown parent widget type: {type(parent_widget)}")
 
+    ## Manage cells
+    def indexFromCell(self, cell:CellWidget) -> QModelIndex:
+        """
+        Get the index of the cell widget in the model.
+        This is used to identify the cell in the model.
+        """
+        idx = self._cells.inverse[cell]
+        return QModelIndex(idx)
+    
+    def cellFromIndex(self, index:QModelIndex|QPersistentModelIndex) -> CellWidget|None:
+        idx = QPersistentModelIndex(index)
+        return self._cells.get(idx, None)
+
+    def rowAt(self, point:QPoint) -> QModelIndex:
+        """
+        Find the index at the given position.
+        point is in untransformed viewport coordinates, just like QMouseEvent::pos().
+        """
+
+        all_widgets = set(self.widgets())
+        for item in self.items(point):
+            if item in all_widgets:
+                # If the item is a widget, return its index
+                return self.indexFromRowWidget(item)
+        return QModelIndex()
+    
+    def indexAt(self, point:QPoint) -> QModelIndex:
+        """
+        Find the index at the given position.
+        point is in untransformed viewport coordinates, just like QMouseEvent::pos().
+        """
+        all_cells = set(self._cells.values())
+        for item in self.items(point):
+            if item in all_cells:
+                # If the item is a cell, return its index
+                return self.indexFromCell(item)
+            
+        # fallback to rowAt if no cell is found
+        return self.rowAt(point)
+
     def _unlinkWidget(self, link_widget:LinkWidget):
         source_widget = self._link_source[link_widget]
         target_widget = self._link_target[link_widget]
@@ -493,7 +443,7 @@ class GraphView(QGraphicsView):
 
     def onPortScenePositionChanged(self, index:QPersistentModelIndex):
         """Reposition all links connected to the moved port widget."""
-        widget = self._widgets.get(QPersistentModelIndex(index), None)
+        widget = self.widgetFromIndex(index)
 
         if isinstance(widget, OutletWidget):
             link_widgets = list(self._outlet_links.get(widget, []))
@@ -529,12 +479,12 @@ class GraphView(QGraphicsView):
 
             for row_index in sorted_indexes:
                 # create the row widget
-                parent_widget = self.rowWidgetFromIndex(row_index.parent()) if row_index.parent().isValid() else self.scene()
+                parent_widget = self.widgetFromIndex(row_index.parent()) if row_index.parent().isValid() else self.scene()
                 row_widget = self._createRowWidget(parent_widget, row_index)
                 assert isinstance(row_widget, BaseRowWidget), f"Widget must be a subclass of BaseRowWidget, got {type(row_widget)}"
                 
                 # Store the widget in the _widgets dictionary
-                self._widgets[QPersistentModelIndex(row_index)] = row_widget
+                self.setWidgetForIndex(row_widget, row_index)
 
                 # add cells to the row widget
                 for col in range(self._model.columnCount(row_index.parent())):
@@ -559,7 +509,7 @@ class GraphView(QGraphicsView):
     @Slot(QModelIndex, int, int)
     def onRowsAboutToBeRemoved(self, parent:QModelIndex, start:int, end:int):
         assert self._model, "Model must be set before handling rows removed!"
-        # print(f"Rows about to be removed: parent={indexToPath(parent)}, start={start}, end={end}")
+
         def get_children(index:QModelIndex) -> Iterable[QModelIndex]:
             if not index.isValid():
                 return []
@@ -580,9 +530,9 @@ class GraphView(QGraphicsView):
         assert scene is not None
         scene.blockSignals(True)
         for row_index in sorted_indexes:
-            row_widget = self.rowWidgetFromIndex(row_index)
+            row_widget = self.widgetFromIndex(row_index)
             if row_widget is None:
-                logger.warning(f"Row widget not found for index: {indexToPath(row_index)}")
+                logger.warning(f"Row widget not found for index: {indexToString(row_index)}")
                 # breakpoint()
                 # Already removed, skip
                 continue
@@ -596,13 +546,13 @@ class GraphView(QGraphicsView):
 
             # Remove the row widget from the scene
             if row_index.parent().isValid():
-                parent_widget = self.rowWidgetFromIndex(row_index.parent())
+                parent_widget = self.widgetFromIndex(row_index.parent())
             else:
                 parent_widget = scene
             self._destroyRowWidget(parent_widget, row_widget, row_index)
 
             # Clean up orphaned widgets and cells to avoid memory leaks
-            del self._widgets[QPersistentModelIndex(row_index)]
+            self.unsetWidgetForIndex(row_widget, row_index)
                 
         scene.blockSignals(False)
 
@@ -623,11 +573,11 @@ class GraphView(QGraphicsView):
                 index = self._model.index(row, top_left.column(), top_left.parent())
                 match self._delegate.itemType(index):
                     case GraphItemType.LINK:
-                        link_widget = cast(LinkWidget, self.rowWidgetFromIndex(index))
+                        link_widget = cast(LinkWidget, self.widgetFromIndex(index))
                         if link_widget:
 
-                            source_widget = self.rowWidgetFromIndex(self._delegate.linkSource(index))
-                            target_widget = self.rowWidgetFromIndex(self._delegate.linkTarget(index))
+                            source_widget = self.widgetFromIndex(self._delegate.linkSource(index))
+                            target_widget = self.widgetFromIndex(self._delegate.linkTarget(index))
 
                             self._unlinkWidget(link_widget)
 
@@ -638,7 +588,7 @@ class GraphView(QGraphicsView):
             # if an inlet or outlet type is changed, we need to update the widget
             for row in range(top_left.row(), bottom_right.row() + 1):
                 index = self._model.index(row, top_left.column(), top_left.parent())
-                if widget := self.rowWidgetFromIndex(index):
+                if widget := self.widgetFromIndex(index):
                     ... # TODO replace Widget
 
         for row in range(top_left.row(), bottom_right.row() + 1):
@@ -670,13 +620,13 @@ class GraphView(QGraphicsView):
         
         for index in deselected_indexes:
             if index.isValid() and index.column() == 0:
-                if widget:=self.rowWidgetFromIndex(index):
+                if widget:=self.widgetFromIndex(index):
                     if widget.scene() and widget.isSelected():
                         widget.setSelected(False)
 
         for index in selected_indexes:
             if index.isValid() and index.column() == 0:
-                if widget:=self.rowWidgetFromIndex(index):
+                if widget:=self.widgetFromIndex(index):
                     if widget.scene() and not widget.isSelected():
                         widget.setSelected(True)
         
@@ -873,21 +823,21 @@ class GraphView(QGraphicsView):
                 return None
 
 
-        link_widget = self.rowWidgetFromIndex(link_index) if link_index else self._draft_link
+        link_widget = self.widgetFromIndex(link_index) if link_index else self._draft_link
 
         if outlet_index and inlet_index and self._delegate.canLink(outlet_index, inlet_index):
-            outlet_widget = self.rowWidgetFromIndex(outlet_index)
-            inlet_widget = self.rowWidgetFromIndex(inlet_index)
+            outlet_widget = self.widgetFromIndex(outlet_index)
+            inlet_widget = self.widgetFromIndex(inlet_index)
             line = makeLineBetweenShapes(outlet_widget, inlet_widget)
             line = QLineF(link_widget.mapFromScene(line.p1()), link_widget.mapFromScene(line.p2()))
 
         elif outlet_index:
-            outlet_widget = self.rowWidgetFromIndex(outlet_index)
+            outlet_widget = self.widgetFromIndex(outlet_index)
             line = makeLineBetweenShapes(outlet_widget, self.mapToScene(pos))
             line = QLineF(link_widget.mapFromScene(line.p1()), link_widget.mapFromScene(line.p2()))
 
         elif inlet_index:
-            inlet_widget = self.rowWidgetFromIndex(inlet_index)
+            inlet_widget = self.widgetFromIndex(inlet_index)
             line = makeLineBetweenShapes(self.mapToScene(pos), inlet_widget)
             line = QLineF(link_widget.mapFromScene(line.p1()), link_widget.mapFromScene(line.p2()))
 
@@ -984,7 +934,7 @@ class GraphView(QGraphicsView):
         if self._state == GraphView.State.LINKING:
 
             if self._delegate.itemType(self._linking_payload.index) == GraphItemType.LINK:
-                link_widget = cast(LinkWidget, self.rowWidgetFromIndex(self._linking_payload.index))
+                link_widget = cast(LinkWidget, self.widgetFromIndex(self._linking_payload.index))
                 assert link_widget is not None, "Link widget must not be None"
                 source_widget = self._link_source.get(link_widget, None)
                 target_widget = self._link_target.get(link_widget, None)
@@ -1032,7 +982,7 @@ class GraphView(QGraphicsView):
                         source_index = self._delegate.linkSource(link_index)
                         target_index = self._delegate.linkTarget(link_index)
                         if source_index and source_index.isValid() and target_index and target_index.isValid():
-                            link_widget = cast(LinkWidget, self.rowWidgetFromIndex(link_index))
+                            link_widget = cast(LinkWidget, self.widgetFromIndex(link_index))
                             local_pos = link_widget.mapFromScene(scene_pos)  # Ensure scene_pos is in the correct coordinate system
                             tail_distance = (local_pos-link_widget.line().p1()).manhattanLength()
                             head_distance = (local_pos-link_widget.line().p2()).manhattanLength()
@@ -1106,7 +1056,7 @@ class GraphView(QGraphicsView):
     def toNetworkX(self)-> nx.MultiDiGraph:
         G = nx.MultiDiGraph()
         port_to_node: dict[QGraphicsItem, NodeWidget] = {}
-        all_widgets = list(self._widgets.values())
+        all_widgets = list(self.widgets())
         for widget in all_widgets:
             # collect nodes and ports
             if isinstance(widget, NodeWidget):

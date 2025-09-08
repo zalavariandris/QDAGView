@@ -15,6 +15,23 @@ from flowgraph import FlowGraph, ExpressionOperator, Inlet, Outlet, Link
 import logging
 logger = logging.getLogger(__name__)
 
+
+def indexFromRowSequence(model, path:list[int]) -> QModelIndex:
+    idx = model.index(path[0], 0, QModelIndex())
+    for row in path[1:]:
+        idx = model.index(row, 0, idx)
+    return idx
+
+# Convert index to path string
+def indexToRowSequence(index:QModelIndex|QPersistentModelIndex) -> list[int]:
+    path = []
+    idx = index
+    while idx.isValid():
+        path.append(idx.row())
+        idx = idx.parent()
+    return list[reversed(path)]
+
+
 class FlowGraphModel(QAbstractItemModel):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -342,7 +359,7 @@ class FlowGraphModel(QAbstractItemModel):
                                 if not isinstance(value, str):
                                     logger.warning("expression value must be a string")
                                     return False
-                                
+                                                                
                                 current_inlet_count = len(operator.inlets())
                                 previous_inlets = list(operator.inlets())
                                 

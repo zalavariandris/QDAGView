@@ -23,7 +23,7 @@ class GraphMimeType(StrEnum):
     LinkHeadData = 'application/link/target'
 
 from typing import List
-def indexToPath(index: QModelIndex) -> List[str]:
+def indexToString(index: QModelIndex) -> List[str]:
     """
     Print the path of a QModelIndex in a tree structure.
     
