@@ -558,8 +558,6 @@ class FlowGraphModel(QAbstractItemModel):
         return script_text
         
 
-
-
 from graphview import GraphView
 if __name__ == "__main__":
     import sys

@@ -202,11 +202,12 @@ class FlowGraph:
         assert node in self._operators
         def outputNodes(node: ExpressionOperator) -> Iterable[ExpressionOperator]:
             """Get all output nodes of the given operator."""
-            for link in self._out_links[node]:
-                if link.source.operator is not None:
-                    yield link.source.operator
+            for outlet in node.outlets():
+                for link in self._out_links[outlet]:
+                    if link.target and link.target.operator is not None:
+                        yield link.target.operator
         
-        for n in bfs(node, outputNodes):
+        for n in bfs(node, children=outputNodes):
             yield n
 
     def evaluate(self, node: ExpressionOperator) -> str:

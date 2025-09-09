@@ -5,12 +5,22 @@ from typing import Iterable, List, Callable
 def bfs(*root, children:Callable, reverse:bool=False) -> List:
     queue:List = [*root]
     result = list()
+    visited = set()  # Track visited nodes to prevent cycles
+    
     while queue:
         index = queue.pop(0)  # Remove from front for proper BFS
+        
+        # Skip if already visited to prevent infinite loops in cyclic graphs
+        if index in visited:
+            continue
+            
+        visited.add(index)
         result.append(index)
+        
         for child in children(index):
-            queue.append(child)
-
+            # Only add child to queue if not already visited
+            if child not in visited:
+                queue.append(child)
 
     return reversed(result) if reverse else result
 

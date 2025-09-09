@@ -9,6 +9,7 @@ from core import GraphDataRole, GraphItemType
 from graphview_widgets import NodeWidget, InletWidget, OutletWidget, LinkWidget
 
 
+
 class GraphDelegate(QObject):
     """
     Delegate for the GraphView.
@@ -184,6 +185,7 @@ class GraphDelegate(QObject):
     
     def destroyLinkWidget(self, parent_widget:QGraphicsItem | QGraphicsScene, widget:LinkWidget):
         assert isinstance(parent_widget, InletWidget)
+        assert isinstance(widget, LinkWidget)
         link_widget = cast(LinkWidget, widget)
         parent_widget.scene().removeItem(link_widget)
 
