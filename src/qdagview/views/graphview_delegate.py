@@ -11,24 +11,47 @@ from qtpy.QtCore import *
 from qtpy.QtWidgets import *
 
 from ..core import GraphDataRole, GraphItemType
+from ..utils import makeArrowShape
 from .widgets import (
     NodeWidget, InletWidget, OutletWidget, LinkWidget, CellWidget, BaseWidget
 )
 
 
+
 class GraphDelegate(QObject):
     """
-    Delegate for the GraphView.
-    This is used to handle events and interactions with the graph view.
+    Delegate for GraphViews that can be safely shared between multiple views.
+    
+    This delegate is stateless and doesn't manage connections directly.
+    Each GraphView is responsible for managing its own connections and widget lookups.
     """
 
-    portPositionChanged = Signal(QPersistentModelIndex)
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # No instance state - this makes the delegate shareable
 
     ## QUERY MODEL
     def linkSource(self, link_index:QModelIndex|QPersistentModelIndex) -> QModelIndex|None:
-        source_index = link_index.data(GraphDataRole.SourceRole)
-        assert source_index is None or source_index.isValid(), f"Source index must be valid or None, got: {source_index}"
-        return QModelIndex(source_index) if source_index else None
+        """Return the (non-persistent) QModelIndex of the link source if present.
+
+        Internally we store a QPersistentModelIndex to survive model changes.
+        We convert it back to a QModelIndex for client code to keep backward compatibility.
+        """
+        stored = link_index.data(GraphDataRole.SourceRole)
+        if stored is None:
+            return None
+        # Allow legacy storage of plain QModelIndex; migrate silently
+        if isinstance(stored, QModelIndex):
+            if not stored.isValid():
+                return None
+            return stored
+        if isinstance(stored, QPersistentModelIndex):
+            if not stored.isValid():
+                return None
+            return QModelIndex(stored)
+        # Unexpected type – ignore gracefully
+        logger.warning(f"Unexpected SourceRole payload type: {type(stored)}")
+        return None
     
     def linkTarget(self, link_index:QModelIndex|QPersistentModelIndex) -> QModelIndex:
         assert link_index.isValid(), "Link index must be valid"
@@ -80,7 +103,7 @@ class GraphDelegate(QObject):
             return True  # No specific row kind, so always valid
         elif item_type == GraphItemType.SUBGRAPH:
             return not index.isValid()
-        if item_type == GraphItemType.NODE:
+        elif item_type == GraphItemType.NODE:  # Fix: Add missing elif
             return index.parent() == QModelIndex()
         elif item_type == GraphItemType.INLET:
             return index.parent().isValid() and index.parent().parent() == QModelIndex()
@@ -88,6 +111,8 @@ class GraphDelegate(QObject):
             return index.parent().isValid() and index.parent().parent() == QModelIndex()
         elif item_type == GraphItemType.LINK:
             return index.parent().isValid() and index.parent().parent().isValid() and index.parent().parent().parent() == QModelIndex()
+        else:
+            return False  # Explicit return for unhandled cases
 
     def canLink(self, source:QModelIndex, target:QModelIndex)->bool:
         """
@@ -141,64 +166,41 @@ class GraphDelegate(QObject):
                 outlet_count += 1
         return outlet_count
 
-    ## Widget Factory
-    def createNodeWidget(self, parent_widget: QGraphicsScene, index: QModelIndex) -> 'NodeWidget':
-        if not isinstance(parent_widget, QGraphicsScene):
-            raise TypeError("Parent widget must be a QGraphicsScene")
-        widget = NodeWidget()
-        parent_widget.addItem(widget)
-        return widget
+    def _getInletPosition(self, node_index: QModelIndex, inlet_row: int) -> int:
+        """Get the position of an inlet within just the inlets of a node."""
+        model = node_index.model()
+        inlet_position = 0
+        for row in range(inlet_row):
+            child_index = model.index(row, 0, node_index)
+            if self.itemType(child_index) == GraphItemType.INLET:
+                inlet_position += 1
+        return inlet_position
 
-    def destroyNodeWidget(self, parent_widget:QGraphicsScene, widget:NodeWidget):
-        assert isinstance(parent_widget, QGraphicsScene)
-        parent_widget.removeItem(widget)
+    def _getOutletPosition(self, node_index: QModelIndex, outlet_row: int) -> int:
+        """Get the position of an outlet within just the outlets of a node."""
+        model = node_index.model()
+        outlet_position = 0
+        for row in range(outlet_row):
+            child_index = model.index(row, 0, node_index)
+            if self.itemType(child_index) == GraphItemType.OUTLET:
+                outlet_position += 1
+        return outlet_position
 
-    def createInletWidget(self, parent_widget:NodeWidget, index:QModelIndex) -> 'InletWidget':
-        widget = InletWidget()
-        parent_widget.insertInlet(index.column(), widget)
-        widget.scenePositionChanged.connect(lambda pos, idx=QPersistentModelIndex(index): self.portPositionChanged.emit(idx))
-        return widget
-    
-    def destroyInletWidget(self, parent_widget:NodeWidget, widget:InletWidget):
-        assert isinstance(parent_widget, NodeWidget)
-        node_widget = parent_widget
-        inlet_widget = cast(InletWidget, widget)
-        node_widget.removeInlet(inlet_widget)
-    
-    def createOutletWidget(self, parent_widget:NodeWidget, index:QModelIndex) -> 'OutletWidget':
-        widget = OutletWidget()
-        node_index = index.parent()
-        pos = self.outletCount(node_index)
-        parent_widget.insertOutlet(pos, widget)
-        widget.scenePositionChanged.connect(lambda pos, idx=QPersistentModelIndex(index): self.portPositionChanged.emit(idx))
-        return widget
-    
-    def destroyOutletWidget(self, parent_widget:NodeWidget, widget:OutletWidget):
-        assert isinstance(parent_widget, NodeWidget)
-        outlet_widget = cast(OutletWidget, widget)
-        node_widget = parent_widget
-        node_widget.removeOutlet(outlet_widget)
-        
-    def createLinkWidget(self, parent_widget:InletWidget, index:QModelIndex) -> LinkWidget:
-        assert isinstance(parent_widget, InletWidget)
-        link_widget = LinkWidget()
-        parent_widget.scene().addItem(link_widget)
-        return link_widget
-    
-    def destroyLinkWidget(self, parent_widget:InletWidget, widget:LinkWidget):
-        assert isinstance(parent_widget, InletWidget)
-        assert isinstance(widget, LinkWidget)
-        parent_widget.scene().removeItem(widget)
+    ## drawing
+    def paintNode(self, painter:QPainter, option:QStyleOptionViewItem, index: QModelIndex|QPersistentModelIndex):
+        ...
 
-    def createCellWidget(self, parent_widget:BaseWidget, index:QModelIndex) -> CellWidget:
-        cell = CellWidget()
-        parent_widget.insertCell(index.column(), cell)
-        return cell
+    def paintInlet(self, painter:QPainter, option:QStyleOptionViewItem, index: QModelIndex|QPersistentModelIndex):
+        ...
 
-    def destroyCellWidget(self, parent_widget:BaseWidget, widget:CellWidget):
-        assert isinstance(parent_widget, (NodeWidget, InletWidget, OutletWidget, LinkWidget))
-        cell_widget = cast(CellWidget, widget)
-        parent_widget.removeCell(cell_widget)
+    def paintOutlet(self, painter:QPainter, option:QStyleOptionViewItem, index: QModelIndex|QPersistentModelIndex):
+        ...
+
+    def paintLink(self, painter:QPainter, option:QStyleOptionViewItem, index: QModelIndex|QPersistentModelIndex):
+        ...
+
+    def paintCell(self, painter:QPainter, option:QStyleOptionViewItem, index: QModelIndex|QPersistentModelIndex):
+        ...
 
     ## MODIFY MODEL
     def addNode(self, model:QAbstractItemModel, subgraph:QModelIndex|QPersistentModelIndex=QModelIndex()):
@@ -269,7 +271,8 @@ class GraphDelegate(QObject):
         if model.insertRows(position, 1, inlet):
             link_index = model.index(position, 0, inlet)
             new_link_name = f"{'Link'}#{position + 1}"
-            if model.setData(link_index, outlet, role=GraphDataRole.SourceRole):
+            persistent_outlet = outlet if isinstance(outlet, QPersistentModelIndex) else QPersistentModelIndex(outlet)
+            if model.setData(link_index, persistent_outlet, role=GraphDataRole.SourceRole):
                 model.setData(link_index, new_link_name, role=Qt.ItemDataRole.DisplayRole)
                 return True
         return False
@@ -282,7 +285,8 @@ class GraphDelegate(QObject):
         assert model, "Source model must be set before setting a link source"
         assert link.isValid(), "Link index must be valid"
         assert source.isValid(), "Source index must be valid"
-        model.setData(link, source, role=GraphDataRole.SourceRole)
+        persistent_source = source if isinstance(source, QPersistentModelIndex) else QPersistentModelIndex(source)
+        model.setData(link, persistent_source, role=GraphDataRole.SourceRole)
 
     def removeLink(self, model:QAbstractItemModel, link:QModelIndex|QPersistentModelIndex)->bool:
         """
@@ -295,7 +299,7 @@ class GraphDelegate(QObject):
 
     ## QT delegate
     def createEditor(self, parent:QWidget, option:QStyleOptionViewItem, index:QModelIndex|QPersistentModelIndex) -> QWidget:
-        return QLineEdit(parent=None)
+        return QLineEdit(parent=parent)
 
     def setEditorData(self, editor:QWidget, index:QModelIndex|QPersistentModelIndex):
         if isinstance(editor, QLineEdit):

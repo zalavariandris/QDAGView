@@ -36,6 +36,7 @@ from .widgets import (
     NodeWidget, InletWidget, OutletWidget, LinkWidget, CellWidget
 )
 from .graphview_delegate import GraphDelegate
+from .widget_factory import WidgetFactory
 
 
 @dataclass
@@ -112,7 +113,8 @@ class GraphView(QGraphicsView):
 
         assert isinstance(delegate, GraphDelegate) or delegate is None, "Invalid delegate"
         self._delegate = delegate if delegate else GraphDelegate()
-        self._delegate.portPositionChanged.connect(self.handlePortPositionChanged)
+        self._factory = WidgetFactory()
+        self._factory.portPositionChanged.connect(self.handlePortPositionChanged)
 
         ## State of the graph view
         self._state = GraphView.State.IDLE
@@ -276,16 +278,17 @@ class GraphView(QGraphicsView):
                 case GraphItemType.SUBGRAPH:
                     raise NotImplementedError("Subgraphs are not yet supported in the graph view")
                 case GraphItemType.NODE:
-                    row_widget = self._delegate.createNodeWidget(parent_widget, row_index)
+                    row_widget = self._factory.createNodeWidget(parent_widget, row_index)
                 case GraphItemType.INLET:
                     assert isinstance(parent_widget, NodeWidget)
-                    row_widget = self._delegate.createInletWidget(parent_widget, row_index)
+                    row_widget = self._factory.createInletWidget(parent_widget, row_index)
+                    
                 case GraphItemType.OUTLET:
                     assert isinstance(parent_widget, NodeWidget)
-                    row_widget = self._delegate.createOutletWidget(parent_widget, row_index)
+                    row_widget = self._factory.createOutletWidget(parent_widget, row_index)
                 case GraphItemType.LINK:
-                    assert isinstance(parent_widget, InletWidget)
-                    row_widget = self._delegate.createLinkWidget(parent_widget, row_index)
+                    # Links are added to the scene, not to the inlet widget
+                    row_widget = self._factory.createLinkWidget(self.scene(), row_index)
                     # link management
                     source_index = self._delegate.linkSource(row_index)
                     source_widget = self._widget_manager.getWidget(source_index) if source_index is not None else None
@@ -302,7 +305,7 @@ class GraphView(QGraphicsView):
             # Add cells for each column
             for col in range(self._model.columnCount(row_index.parent())):
                 cell_index = self._model.index(row_index.row(), col, row_index.parent())
-                cell_widget = self._delegate.createCellWidget(row_widget, cell_index)
+                cell_widget = self._factory.createCellWidget(row_widget, cell_index)
                 self._cell_manager.insertCell(cell_index, cell_widget)
                 self._set_cell_data(cell_index, roles=[Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
 
@@ -350,7 +353,7 @@ class GraphView(QGraphicsView):
             for col in range(self._model.columnCount(row_index.parent())):
                 cell_index = self._model.index(row_index.row(), col, row_index.parent())
                 if cell_widget := self._cell_manager.getCell(cell_index):
-                    self._delegate.destroyCellWidget(row_widget, cell_widget)
+                    self._factory.destroyCellWidget(row_widget, cell_widget)
                     self._cell_manager.removeCell(cell_index)
 
             # Remove the row widget from the scene
@@ -364,16 +367,16 @@ class GraphView(QGraphicsView):
                 case GraphItemType.SUBGRAPH:
                     raise NotImplementedError("Subgraphs are not yet supported in the graph view")
                 case GraphItemType.NODE:
-                    self._delegate.destroyNodeWidget(scene, row_widget)
+                    self._factory.destroyNodeWidget(scene, row_widget)
                     self._widget_manager.removeWidget(row_index, row_widget)
                 case GraphItemType.INLET:
-                    self._delegate.destroyInletWidget(parent_widget, row_widget)
+                    self._factory.destroyInletWidget(parent_widget, row_widget)
                     self._widget_manager.removeWidget(row_index, row_widget)
                 case GraphItemType.OUTLET:
-                    self._delegate.destroyOutletWidget(parent_widget, row_widget)
+                    self._factory.destroyOutletWidget(parent_widget, row_widget)
                     self._widget_manager.removeWidget(row_index, row_widget)
                 case GraphItemType.LINK:
-                    self._delegate.destroyLinkWidget(parent_widget, row_widget)
+                    self._factory.destroyLinkWidget(scene, row_widget)
                     self._link_manager.unlink(row_widget)
                     self._widget_manager.removeWidget(row_index, row_widget)
 
@@ -563,21 +566,9 @@ class GraphView(QGraphicsView):
                 self.scene().addItem(self._draft_link)
 
         self._state = GraphView.State.LINKING
-        self._linking_payload = payload
-        
-        # mime = payload.toMimeData()
-        # if mime is None:
-        #     return False
-        
-        # drag = QDrag(self)
-        # drag.setMimeData(mime)
+        self._linking_payload = payload        
 
-        # # Execute drag
-        # try:
-        #     action = drag.exec(Qt.DropAction.LinkAction)
-        # except Exception as err:
-        #     traceback.print_exc()
-        # return True
+        return True
 
     def updateLinking(self, payload:Payload, pos:QPoint):
         """

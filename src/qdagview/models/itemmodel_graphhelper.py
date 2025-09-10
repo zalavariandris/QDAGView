@@ -66,7 +66,8 @@ class ItemGraphHelper:
         assert self.model.insertRows(position, 1, inlet)
         new_link_index = self.model.index(position, 0, inlet)
         assert new_link_index.isValid(), "Created index is not valid"
-        assert self.model.setData(new_link_index, outlet, GraphDataRole.SourceRole), "Failed to set data for the new link"
+        persistent_outlet = outlet if isinstance(outlet, QPersistentModelIndex) else QPersistentModelIndex(outlet)
+        assert self.model.setData(new_link_index, persistent_outlet, GraphDataRole.SourceRole), "Failed to set data for the new link"
         return QPersistentModelIndex(new_link_index)
 
     def deleteLink(self, link:QModelIndex|QPersistentModelIndex):

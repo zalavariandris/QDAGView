@@ -2,12 +2,12 @@
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-py-modules = ["qgraphview"]
+[tool.setuptools.packages.find]
+where = ["src"]
 
 
 [project]
-name = "QDAGView"
+name = "qdagview"
 version = "0.1.0"
 description = "Direct Acyclic Graph View, following the QT's Model-View architecture."
 authors = [

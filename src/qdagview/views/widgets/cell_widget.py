@@ -3,6 +3,9 @@ from qtpy.QtGui import *
 from qtpy.QtCore import *
 from qtpy.QtWidgets import *
 
+if TYPE_CHECKING:
+    from ..graphview_delegate import GraphDelegate
+
 
 class CellWidget(QGraphicsProxyWidget):
     def __init__(self, parent: QGraphicsItem | None = None):
@@ -18,6 +21,22 @@ class CellWidget(QGraphicsProxyWidget):
         # Make CellWidget transparent to drag events so parent can handle them
         # self.setAcceptDrops(False)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, False)
+        
+        # Delegate reference for painting
+        self._delegate: 'GraphDelegate' = None
+        self._model_index: QPersistentModelIndex = QPersistentModelIndex()
+    
+    def setDelegate(self, delegate: 'GraphDelegate'):
+        """Set the delegate for this widget."""
+        self._delegate = delegate
+    
+    def setModelIndex(self, index: QModelIndex):
+        """Set the model index this widget represents."""
+        self._model_index = QPersistentModelIndex(index)
+    
+    def modelIndex(self) -> QPersistentModelIndex:
+        """Get the model index this widget represents."""
+        return self._model_index
 
     def setEditorWidget(self, editor: QWidget | None):
         if editor is None:
