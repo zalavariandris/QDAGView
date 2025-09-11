@@ -177,6 +177,7 @@ class FlowGraph:
         return [link for link in self._in_links[inlet]]
 
     def outLinks(self, outlet: Outlet) -> List[Link]:
+        assert isinstance(outlet, Outlet), "Outlet must be an instance of Outlet"
         return [link for link in self._out_links[outlet]]
 
     def links(self):

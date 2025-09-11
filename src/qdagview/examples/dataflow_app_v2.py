@@ -4,7 +4,7 @@ from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 from typing import List
 
-from qdagview.models import FlowGraphModel, ExpressionOperator
+from qdagview.models import FlowGraphModel, ExpressionOperator, ItemGraphHelper
 from qdagview.views import GraphView
 
 
@@ -17,6 +17,7 @@ if __name__ == "__main__":
             self.setWindowTitle("DataFlow")
             self.setGeometry(100, 100, 800, 600)
             self.model = FlowGraphModel(self)
+            self.helper = ItemGraphHelper(self.model)
             self.selection = QItemSelectionModel(self.model)
 
             self.toolbar = QMenuBar(self)
@@ -64,7 +65,7 @@ if __name__ == "__main__":
         @Slot()
         def appendOperator(self):
             """Add a new operator to the graph."""
-            self.model.insertRows(0, 1, QModelIndex())
+            self.helper.createOperator("a+b", "NewOp")
 
         @Slot()
         def removeSelectedItems(self):

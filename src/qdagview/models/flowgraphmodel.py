@@ -480,7 +480,33 @@ class FlowGraphModel(QAbstractItemModel):
         parent_item:FlowGraph|ExpressionOperator|Inlet|Outlet|Link = self.invisibleRootItem() if not parent.isValid() else parent.internalPointer()
         match parent_item:
             case FlowGraph():
+                # remove nodes
                 graph = parent_item
+
+                # first remove outgoing links
+                links_to_remove:List[QModelIndex] = []
+                for row in range(row, row + count):
+                    node_idx = self.index(row, 0, parent)
+                    node = cast(ExpressionOperator, node_idx.internalPointer())
+                    for outlet in node.outlets():
+                        for link in graph.outLinks(outlet):
+                            link_index = self.indexFromItem(link)
+                            if link_index.isValid():
+                                links_to_remove.append(link_index)
+
+                # group links by their target inlet
+                links_by_inlet: DefaultDict[QModelIndex, List[QModelIndex]] = defaultdict(list)
+                for link in links_to_remove:
+                    inlet = link.parent()
+                    links_by_inlet[inlet].append(link)
+
+                for inlet in sorted(links_by_inlet.keys(), key=lambda x: (x.row()), reverse=True):
+                    # Remove links in reverse order to avoid shifting issues
+                    links = links_by_inlet[inlet]
+                    for link in sorted(links, key=lambda x: x.row(), reverse=True):
+                        self.removeRows(link.row(), 1, inlet)
+
+                # remove the nodes
                 self.beginRemoveRows(parent, row, row + count - 1)
                 for i in reversed(range(row, row + count)):
                     logger.info(f"Removing operator at index {i}")

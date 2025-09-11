@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import weakref
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,10 @@ class WidgetFactory(QObject):
             raise TypeError("Parent widget must be a QGraphicsScene")
         if not isinstance(widget, NodeWidget):
             raise TypeError("Widget must be a NodeWidget")
+        
         parent_widget.removeItem(widget)
+        # Schedule widget for deletion - this automatically disconnects all signals
+        widget.deleteLater()
 
     def createInletWidget(self, parent_widget: NodeWidget, index: QModelIndex) -> 'InletWidget':
         if not isinstance(parent_widget, NodeWidget):
@@ -48,10 +52,15 @@ class WidgetFactory(QObject):
         widget = InletWidget()
         parent_widget.insertInlet(index.row(), widget)
         
-        # Store persistent index to avoid closure issues
+        # Store the persistent index directly on the widget
+        # This avoids closure issues entirely
         persistent_index = QPersistentModelIndex(index)
+        widget.setProperty("modelIndex", persistent_index)
+        
+        # Connect using a simple lambda that gets the property
         widget.scenePositionChanged.connect(
-            lambda: self.portPositionChanged.emit(persistent_index) if persistent_index.isValid() else None
+            lambda: self.portPositionChanged.emit(widget.property("modelIndex")) 
+            if widget.property("modelIndex").isValid() else None
         )
         return widget
     
@@ -61,8 +70,9 @@ class WidgetFactory(QObject):
         if not isinstance(widget, InletWidget):
             raise TypeError("Widget must be an InletWidget")
         
-        widget.scenePositionChanged.disconnect()
         parent_widget.removeInlet(widget)
+        # Schedule widget for deletion - this automatically disconnects all signals
+        widget.deleteLater()
     
     def createOutletWidget(self, parent_widget: NodeWidget, index: QModelIndex) -> 'OutletWidget':
         if not isinstance(parent_widget, NodeWidget):
@@ -75,10 +85,15 @@ class WidgetFactory(QObject):
         outlet_position = index.row()
         parent_widget.insertOutlet(outlet_position, widget)
         
-        # Store persistent index to avoid closure issues
+        # Store the persistent index directly on the widget
+        # This avoids closure issues entirely
         persistent_index = QPersistentModelIndex(index)
+        widget.setProperty("modelIndex", persistent_index)
+        
+        # Connect using a simple lambda that gets the property
         widget.scenePositionChanged.connect(
-            lambda: self.portPositionChanged.emit(persistent_index) if persistent_index.isValid() else None
+            lambda: self.portPositionChanged.emit(widget.property("modelIndex")) 
+            if widget.property("modelIndex").isValid() else None
         )
         return widget
     
@@ -88,8 +103,9 @@ class WidgetFactory(QObject):
         if not isinstance(widget, OutletWidget):
             raise TypeError("Widget must be an OutletWidget")
         
-        widget.scenePositionChanged.disconnect()
         parent_widget.removeOutlet(widget)
+        # Schedule widget for deletion - this automatically disconnects all signals
+        widget.deleteLater()
         
     def createLinkWidget(self, scene: QGraphicsScene, index: QModelIndex) -> LinkWidget:
         """Create a link widget. Links are added directly to the scene."""
@@ -107,8 +123,10 @@ class WidgetFactory(QObject):
             raise TypeError("Scene must be a QGraphicsScene")
         if not isinstance(widget, LinkWidget):
             raise TypeError("Widget must be a LinkWidget")
-        
+                
         scene.removeItem(widget)
+        # Schedule widget for deletion to prevent memory leaks
+        widget.deleteLater()
 
     def createCellWidget(self, parent_widget: BaseWidget, index: QModelIndex) -> CellWidget:
         if not isinstance(parent_widget, BaseWidget):
@@ -127,3 +145,5 @@ class WidgetFactory(QObject):
             raise TypeError("Widget must be a CellWidget")
         
         parent_widget.removeCell(widget)
+        # Schedule widget for deletion - this automatically disconnects all signals
+        widget.deleteLater()
