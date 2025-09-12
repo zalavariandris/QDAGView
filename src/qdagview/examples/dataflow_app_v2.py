@@ -4,8 +4,8 @@ from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 from typing import List
 
-from qdagview.models import FlowGraphModel, ExpressionOperator, ItemGraphHelper
-from qdagview.views import GraphView
+from qdagview.models import FlowGraphModel, ExpressionOperator
+from qdagview.views import GraphView, GraphController
 
 
 if __name__ == "__main__":
@@ -17,7 +17,7 @@ if __name__ == "__main__":
             self.setWindowTitle("DataFlow")
             self.setGeometry(100, 100, 800, 600)
             self.model = FlowGraphModel(self)
-            self.helper = ItemGraphHelper(self.model)
+            self.controller = GraphController(self.model)
             self.selection = QItemSelectionModel(self.model)
 
             self.toolbar = QMenuBar(self)
@@ -65,7 +65,7 @@ if __name__ == "__main__":
         @Slot()
         def appendOperator(self):
             """Add a new operator to the graph."""
-            self.helper.createOperator("a+b", "NewOp")
+            self.controller.addNode()
 
         @Slot()
         def removeSelectedItems(self):
@@ -74,7 +74,7 @@ if __name__ == "__main__":
             selected_indexes = self.selection.selectedIndexes()
             if not selected_indexes:
                 return
-
+            
             # Filter only top-level indexes (remove children if parent is selected)
             def is_descendant(index, selected_set):
                 parent = index.parent()

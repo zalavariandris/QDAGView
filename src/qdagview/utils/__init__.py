@@ -8,8 +8,11 @@ from .geo import (
     makeLineBetweenShapes, 
     makeLineToShape, 
     makeArrowShape, 
-    getShapeCenter
-)
+    getShapeCenter,
+    makeVerticalRoundedPath,
+    makeHorizontalRoundedPath)
+
+from .qt import distribute_items_horizontal
 
 # Import unique utilities
 from .unique import make_unique_name
@@ -72,7 +75,11 @@ __all__ = [
     'makeLineBetweenShapes',
     'makeLineToShape', 
     'makeArrowShape',
+    'makeVerticalRoundedPath',
+    'makeHorizontalRoundedPath',
     'getShapeCenter',
     # Naming utilities
-    'make_unique_name'
+    'make_unique_name',
+    # Qt utilities
+    'distribute_items_horizontal',
 ]

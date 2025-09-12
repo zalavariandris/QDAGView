@@ -436,7 +436,7 @@ def create_rightward_path(path: QPainterPath, A: QPointF, B: QPointF, r1: float,
         path.arcTo(A.x() + r1, B.y() + r2 * 2, r2 * 2, -r2 * 2, 180, 90)
 
 
-def makeVerticalRoundedPath(line: QLineF):
+def makeVerticalRoundedPath(line: QLineF, width=1.0)->QPainterPath:
     """Creates a rounded path between two points with automatic radius adjustment.
     
     Args:

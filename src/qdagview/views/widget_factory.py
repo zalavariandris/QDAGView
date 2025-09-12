@@ -12,7 +12,7 @@ from qtpy.QtCore import *
 from qtpy.QtWidgets import *
 
 from .widgets import (
-    NodeWidget, InletWidget, OutletWidget, LinkWidget, CellWidget, BaseWidget
+    NodeWidget, PortWidget, LinkWidget, CellWidget
 )
 
 if TYPE_CHECKING:
@@ -23,6 +23,7 @@ class WidgetFactory(QObject):
     portPositionChanged = Signal(QPersistentModelIndex)
 
     ## Widget Factory
+    @override
     def createNodeWidget(self, parent_widget: QGraphicsScene, index: QModelIndex) -> 'NodeWidget':
         if not isinstance(parent_widget, QGraphicsScene):
             raise TypeError("Parent widget must be a QGraphicsScene")
@@ -33,6 +34,7 @@ class WidgetFactory(QObject):
         parent_widget.addItem(widget)
         return widget
 
+    @override
     def destroyNodeWidget(self, parent_widget: QGraphicsScene, widget: NodeWidget):
         if not isinstance(parent_widget, QGraphicsScene):
             raise TypeError("Parent widget must be a QGraphicsScene")
@@ -40,16 +42,15 @@ class WidgetFactory(QObject):
             raise TypeError("Widget must be a NodeWidget")
         
         parent_widget.removeItem(widget)
-        # Schedule widget for deletion - this automatically disconnects all signals
-        widget.deleteLater()
 
-    def createInletWidget(self, parent_widget: NodeWidget, index: QModelIndex) -> 'InletWidget':
+    @override
+    def createInletWidget(self, parent_widget: NodeWidget, index: QModelIndex) -> PortWidget:
         if not isinstance(parent_widget, NodeWidget):
             raise TypeError("Parent widget must be a NodeWidget")
         if not index.isValid():
             raise ValueError("Index must be valid")
         
-        widget = InletWidget()
+        widget = PortWidget()
         parent_widget.insertInlet(index.row(), widget)
         
         # Store the persistent index directly on the widget
@@ -64,23 +65,25 @@ class WidgetFactory(QObject):
         )
         return widget
     
-    def destroyInletWidget(self, parent_widget: NodeWidget, widget: InletWidget):
+    @override
+    def destroyInletWidget(self, parent_widget: NodeWidget, widget: PortWidget):
         if not isinstance(parent_widget, NodeWidget):
             raise TypeError("Parent widget must be a NodeWidget")
-        if not isinstance(widget, InletWidget):
-            raise TypeError("Widget must be an InletWidget")
+        if not isinstance(widget, PortWidget):
+            raise TypeError("Widget must be an PortWidget")
         
         parent_widget.removeInlet(widget)
         # Schedule widget for deletion - this automatically disconnects all signals
         widget.deleteLater()
     
-    def createOutletWidget(self, parent_widget: NodeWidget, index: QModelIndex) -> 'OutletWidget':
+    @override
+    def createOutletWidget(self, parent_widget: NodeWidget, index: QModelIndex) -> PortWidget:
         if not isinstance(parent_widget, NodeWidget):
             raise TypeError("Parent widget must be a NodeWidget")
         if not index.isValid():
             raise ValueError("Index must be valid")
         
-        widget = OutletWidget()
+        widget = PortWidget()
         # Fix: Use actual row position instead of hardcoded 0
         outlet_position = index.row()
         parent_widget.insertOutlet(outlet_position, widget)
@@ -97,16 +100,18 @@ class WidgetFactory(QObject):
         )
         return widget
     
-    def destroyOutletWidget(self, parent_widget: NodeWidget, widget: OutletWidget):
+    @override
+    def destroyOutletWidget(self, parent_widget: NodeWidget, widget: PortWidget):
         if not isinstance(parent_widget, NodeWidget):
             raise TypeError("Parent widget must be a NodeWidget")
-        if not isinstance(widget, OutletWidget):
-            raise TypeError("Widget must be an OutletWidget")
-        
+        if not isinstance(widget, PortWidget):
+            raise TypeError("Widget must be a PortWidget")
+
         parent_widget.removeOutlet(widget)
         # Schedule widget for deletion - this automatically disconnects all signals
         widget.deleteLater()
         
+    @override
     def createLinkWidget(self, scene: QGraphicsScene, index: QModelIndex) -> LinkWidget:
         """Create a link widget. Links are added directly to the scene."""
         if not isinstance(scene, QGraphicsScene):
@@ -118,6 +123,7 @@ class WidgetFactory(QObject):
         scene.addItem(link_widget)
         return link_widget
     
+    @override
     def destroyLinkWidget(self, scene: QGraphicsScene, widget: LinkWidget):
         if not isinstance(scene, QGraphicsScene):
             raise TypeError("Scene must be a QGraphicsScene")
@@ -128,9 +134,10 @@ class WidgetFactory(QObject):
         # Schedule widget for deletion to prevent memory leaks
         widget.deleteLater()
 
-    def createCellWidget(self, parent_widget: BaseWidget, index: QModelIndex) -> CellWidget:
-        if not isinstance(parent_widget, BaseWidget):
-            raise TypeError("Parent widget must be a BaseWidget")
+    @override
+    def createCellWidget(self, parent_widget: NodeWidget|PortWidget|LinkWidget, index: QModelIndex) -> CellWidget:
+        if not isinstance(parent_widget, (NodeWidget, PortWidget, LinkWidget)):
+            raise TypeError("Parent widget must be a NodeWidget, PortWidget, or LinkWidget")
         if not index.isValid():
             raise ValueError("Index must be valid")
         
@@ -138,9 +145,10 @@ class WidgetFactory(QObject):
         parent_widget.insertCell(index.column(), cell)
         return cell
 
-    def destroyCellWidget(self, parent_widget: BaseWidget, widget: CellWidget):
-        if not isinstance(parent_widget, BaseWidget):
-            raise TypeError("Parent widget must be a BaseWidget")
+    @override
+    def destroyCellWidget(self, parent_widget: NodeWidget|PortWidget|LinkWidget, widget: CellWidget):
+        if not isinstance(parent_widget, (NodeWidget, PortWidget, LinkWidget)):
+            raise TypeError("Parent widget must be a NodeWidget, PortWidget, or LinkWidget")
         if not isinstance(widget, CellWidget):
             raise TypeError("Widget must be a CellWidget")
         

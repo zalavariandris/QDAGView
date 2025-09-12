@@ -5,10 +5,8 @@ Provides graph models, views, and interaction components for building graph-base
 """
 
 # Import main public API components
-from .base_widget import BaseWidget
 from .cell_widget import CellWidget
-from .inlet_widget import InletWidget
-from .outlet_widget import OutletWidget
+from .port_widget import PortWidget
 from .link_widget import LinkWidget
 from .node_widget import NodeWidget
 
@@ -16,8 +14,6 @@ __all__ = [
     # Main components (most commonly used)
     'NodeWidget',
     'CellWidget',
-    'InletWidget',
-    'OutletWidget',
-    'LinkWidget',
-    'BaseWidget'
+    'PortWidget',
+    'LinkWidget'
 ]

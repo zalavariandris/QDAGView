@@ -7,51 +7,38 @@ if TYPE_CHECKING:
     from ..graphview_delegate import GraphDelegate
 
 
-class CellWidget(QGraphicsProxyWidget):
+class CellWidget(QGraphicsTextItem):
     def __init__(self, parent: QGraphicsItem | None = None):
-        super().__init__(parent=parent)
-        self._label = QLabel("")
-        self._label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        # self._label.setStyleSheet("background: orange;")
-        self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
-        self.setWidget(self._label)
-        # self.setAutoFillBackground(False)
-        
+        super().__init__("port", parent=parent)
+
         # Make CellWidget transparent to drag events so parent can handle them
         # self.setAcceptDrops(False)
+        font = self.font()
+        font.setPointSize(8)
+        self.setFont(font)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, False)
-        
-        # Delegate reference for painting
-        self._delegate: 'GraphDelegate' = None
-        self._model_index: QPersistentModelIndex = QPersistentModelIndex()
     
-    def setDelegate(self, delegate: 'GraphDelegate'):
-        """Set the delegate for this widget."""
-        self._delegate = delegate
-    
-    def setModelIndex(self, index: QModelIndex):
-        """Set the model index this widget represents."""
-        self._model_index = QPersistentModelIndex(index)
-    
-    def modelIndex(self) -> QPersistentModelIndex:
-        """Get the model index this widget represents."""
-        return self._model_index
-
     def setEditorWidget(self, editor: QWidget | None):
-        if editor is None:
-            editor = self._label
-        else:
-            # Ensure the editor is not parented elsewhere
-            if editor.parent() is not None:
-                editor.setParent(None)
-        self.setWidget(editor)
+        raise NotImplementedError
+        # if editor is None:
+        #     editor = self._label
+        # else:
+        #     # Ensure the editor is not parented elsewhere
+        #     if editor.parent() is not None:
+        #         editor.setParent(None)
+        # self.setWidget(editor)
 
     def text(self):
-        label = self.widget()
-        return label.text() if label else ""
+        return self.toPlainText()
 
     def setText(self, text:str):
-        label = self.widget()
-        label.setText(text)
+        self.setPlainText(text)
+
+    def boundingRect(self):
+        return super().boundingRect()
+    
+    def paint(self, painter:QPainter, option, /, widget:QWidget|None = None):
+        # painter.setBrush(QColor(100,100,200,50))
+        # painter.drawRect(option.rect)
+        super().paint(painter, option, widget)
         

@@ -3,31 +3,86 @@ from qtpy.QtGui import *
 from qtpy.QtCore import *
 from qtpy.QtWidgets import *
 
-from .base_widget import BaseWidget
+from .cell_widget import CellWidget
 
 
-class PortWidget(BaseWidget):
+class PortWidget(QGraphicsObject):
     scenePositionChanged = Signal(QPointF)
     def __init__(self, parent: QGraphicsItem | None = None):
         super().__init__(parent=parent)
-        # self._links:List[LinkWidget] = []
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsScenePositionChanges, True)
+        self.setAcceptHoverEvents(True)
+        self.setAcceptDrops(True)
 
-    def itemChange(self, change, value):
+        self._cells: List[CellWidget] = []
+
+    def setTextAlignment(self, alignment:Qt.AlignmentFlag):
+        match alignment:
+            case Qt.AlignmentFlag.AlignLeft:
+                ...
+            case Qt.AlignmentFlag.AlignRight:
+                ...
+            case Qt.AlignmentFlag.AlignHCenter:
+                ...
+            case Qt.AlignmentFlag.AlignTop:
+                ...
+            case Qt.AlignmentFlag.AlignBottom:
+                ...
+            case Qt.AlignmentFlag.AlignVCenter:
+                ...
+            case Qt.AlignmentFlag.AlignBaseline:
+                ...
+            case Qt.AlignmentFlag.AlignCenter:
+                ...
+            case _:
+                raise ValueError(f"Unsupported alignment: {alignment}")
+
+    def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value: Any):
         match change:
             case QGraphicsItem.GraphicsItemChange.ItemScenePositionHasChanged:
                 if self.scene():
                     # Emit signal when position changes
                     self.scenePositionChanged.emit(value)
-
-                    # # Update all links connected to this port
-                    # for link in self._links:
-                    #     link.updateLine()
-
                     
         return super().itemChange(change, value)
 
-    def paint(self, painter, option, /, widget = ...):
-        # return
-        painter.setBrush(self.palette().alternateBase())
-        painter.drawRect(option.rect)
+    # manage cells
+    def _arrangeCells(self, first=0, last=-1):
+        spacing = 20
+        width, height = self.boundingRect().width(), self.boundingRect().height()
+        for i, cell in enumerate(self._cells):
+            fm = QFontMetricsF(cell.font())
+            cell_y = height-cell.boundingRect().height()+fm.descent()
+            cell.setPos(width, cell_y + i*spacing)
+
+    def insertCell(self, pos:int, cell: CellWidget):
+        self._cells.insert(pos, cell)
+        cell.setParentItem(self)
+        self._arrangeCells(pos)
+
+
+        cell.setVisible(False)
+    
+    def removeCell(self, cell: CellWidget):
+        self._cells.remove(cell)
+        self._arrangeCells()
+
+    def cells(self) -> List[CellWidget]:
+        return [cell for cell in self._cells]
+
+    # customize appearance
+    def boundingRect(self):
+        return QRectF(0, 0, 8,8)
+    
+    def paint(self, painter:QPainter, option, /, widget = ...):
+        palette = self.scene().palette()
+        painter.setBrush(palette.alternateBase())
+        painter.drawEllipse(option.rect)
+
+    def hoverEnterEvent(self, event: QGraphicsSceneHoverEvent):
+        for cell in self._cells:
+            cell.setVisible(True)
+
+    def hoverLeaveEvent(self, event: QGraphicsSceneHoverEvent):
+        for cell in self._cells:
+            cell.setVisible(False)

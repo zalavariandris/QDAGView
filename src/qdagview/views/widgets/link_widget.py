@@ -8,32 +8,38 @@ from .cell_widget import CellWidget
 from ...utils import makeArrowShape
 
 
-class LinkWidget(BaseWidget):
+class LinkWidget(QGraphicsWidget):
     def __init__(self, parent: QGraphicsItem | None = None):
         super().__init__(parent=parent)
         # self.setZValue(-1)  # Ensure links are drawn below nodes
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
         self._line = QLineF(0, 0, 100, 100)
-        self._label = QLabel("Link")
-        # self._source: QGraphicsItem | None = None
-        # self._target: QGraphicsItem | None = None
+        self.__cells: List[CellWidget] = []
         self.setAcceptHoverEvents(True)
         # self.layout().
     
+    # manage cells
     def insertCell(self, pos:int, cell:CellWidget):
-        layout = cast(QGraphicsLinearLayout, self.layout())
-        layout.insertItem(pos, cell)
-        layout.setStretchFactor(cell, 0)  # Don't stretch the cell
-        layout.setAlignment(cell, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
+        self.__cells.insert(pos, cell)
+        cell.setParentItem(self)
+
+        for i, cell in enumerate(self.__cells[pos:]):
+            center = self._line.pointAt(0.5)
+            cell.setPos(center.x(), center.y() + (pos + i) * 20)
 
     def removeCell(self, cell:CellWidget):
-        layout = cast(QGraphicsLinearLayout, self.layout())
-        layout.removeItem(cell)
+        pos = self.__cells.index(cell)
+        self.__cells.remove(cell)
+        cell.setParentItem(None)
+        cell.deleteLater()
+        for i, cell in enumerate(self.__cells[pos:]):
+            center = self._line.pointAt(0.5)
+            cell.setPos(center.x(), center.y() + (pos + i) * 20)
 
     def cells(self) -> list[CellWidget]:
-        layout = cast(QGraphicsLinearLayout, self.layout())
-        return [layout.itemAt(i) for i in range(layout.count())]
+        return [cell for cell in self.__cells]
 
+    # manage appearance
     def line(self) -> QLineF:
         """Get the line of the link widget."""
         return self._line
@@ -46,9 +52,12 @@ class LinkWidget(BaseWidget):
 
         _ = QRectF(line.p1(), line.p2())
         _ = _.normalized()
-        self.layout().setGeometry(_)
-
         self.update()
+
+        # adjust cells position
+        for i, cell in enumerate(self.__cells):
+            center = self._line.pointAt(0.5)
+            cell.setPos(center.x(), center.y() + (i) * 20)
 
     def boundingRect(self):
         _ = QRectF(self._line.p1(), self._line.p2())

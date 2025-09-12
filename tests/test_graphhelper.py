@@ -12,7 +12,7 @@ from src.qdagview.models.flowgraphmodel import (
     FlowGraphModel
 )
 
-from src.qdagview.models.itemmodel_graphhelper import (
+from qdagview.models.graphhelper import (
     ItemGraphHelper
 )
 

@@ -3,7 +3,6 @@ from .flowgraph import FlowGraph, ExpressionOperator, Inlet, Outlet, Link
 from .flowgraphmodel import FlowGraphModel  
 from .graphmodel import GraphModel
 from .standardgraphmodel import StandardGraphModel, NodeItem, InletItem, OutletItem, BaseRowItem
-from .itemmodel_graphhelper import ItemGraphHelper
 
 __all__ = [
     # Core data structures
@@ -12,15 +11,15 @@ __all__ = [
     'Inlet', 
     'Outlet', 
     'Link',
+    
     # Qt Models
     'FlowGraphModel',
     'GraphModel', 
     'StandardGraphModel',
+
     # Model items
     'NodeItem',
     'InletItem', 
     'OutletItem',
-    'BaseRowItem',
-    # Helpers
-    'ItemGraphHelper'
+    'BaseRowItem'
 ]

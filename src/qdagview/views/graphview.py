@@ -2,7 +2,7 @@
 # The Graph View #
 ##################
 
-
+  
 #
 # A Graph view that directly connects to QStandardItemModel
 #
@@ -33,9 +33,10 @@ from .managers.link_manager import LinkManager
 from .managers.cell_manager import CellManager
 
 from .widgets import (
-    NodeWidget, InletWidget, OutletWidget, LinkWidget, CellWidget
+    NodeWidget, PortWidget, LinkWidget, CellWidget
 )
 from .graphview_delegate import GraphDelegate
+from .graph_controller import GraphController
 from .widget_factory import WidgetFactory
 
 
@@ -113,6 +114,7 @@ class GraphView(QGraphicsView):
 
         assert isinstance(delegate, GraphDelegate) or delegate is None, "Invalid delegate"
         self._delegate = delegate if delegate else GraphDelegate()
+        self._controller = GraphController()
         self._factory = WidgetFactory()
         self._factory.portPositionChanged.connect(self.handlePortPositionChanged)
 
@@ -160,7 +162,9 @@ class GraphView(QGraphicsView):
 
             for signal, slot in self._model_connections:
                 signal.connect(slot)
+
         self._model = model
+        self._controller.setModel(model)
         
         # populate initial scene
         ## clear
@@ -209,12 +213,10 @@ class GraphView(QGraphicsView):
         """Reposition all links connected to the moved port widget."""
         widget = self._widget_manager.getWidget(index)
 
-        if isinstance(widget, OutletWidget):
-            link_widgets = list(self._link_manager.getOutletLinks(widget))
-        elif isinstance(widget, InletWidget):
-            link_widgets = list(self._link_manager.getInletLinks(widget))
-        else:
-            return
+        link_widgets: list[LinkWidget] = []
+        link_widgets.extend(self._link_manager.getOutletLinks(widget))
+        link_widgets.extend(self._link_manager.getInletLinks(widget))
+
 
         for link_widget in link_widgets:
             source_widget = self._link_manager.getLinkSource(link_widget)
@@ -274,7 +276,7 @@ class GraphView(QGraphicsView):
         for row_index in sorted_indexes:
             # Widget Factory
             parent_widget = self._widget_manager.getWidget(row_index.parent()) if row_index.parent().isValid() else self.scene()
-            match self._delegate.itemType(row_index):
+            match self._controller.itemType(row_index):
                 case GraphItemType.SUBGRAPH:
                     raise NotImplementedError("Subgraphs are not yet supported in the graph view")
                 case GraphItemType.NODE:
@@ -290,14 +292,14 @@ class GraphView(QGraphicsView):
                     # Links are added to the scene, not to the inlet widget
                     row_widget = self._factory.createLinkWidget(self.scene(), row_index)
                     # link management
-                    source_index = self._delegate.linkSource(row_index)
+                    source_index = self._controller.linkSource(row_index)
                     source_widget = self._widget_manager.getWidget(source_index) if source_index is not None else None
-                    target_index = self._delegate.linkTarget(row_index)
+                    target_index = self._controller.linkTarget(row_index)
                     target_widget = self._widget_manager.getWidget(target_index) if target_index is not None else None
                     self._link_manager.link(row_widget, source_widget, target_widget)
                     self._update_link_position(row_widget, source_widget, target_widget)
                 case _:
-                    raise ValueError(f"Unknown item type: {self._delegate.itemType(row_widget)}")
+                    raise ValueError(f"Unknown item type: {self._controller.itemType(row_widget)}")
 
             # widget management
             self._widget_manager.insertWidget(row_index, row_widget)
@@ -363,7 +365,7 @@ class GraphView(QGraphicsView):
                 parent_widget = scene
 
             ## widget factory
-            match self._delegate.itemType(row_index):
+            match self._controller.itemType(row_index):
                 case GraphItemType.SUBGRAPH:
                     raise NotImplementedError("Subgraphs are not yet supported in the graph view")
                 case GraphItemType.NODE:
@@ -403,12 +405,12 @@ class GraphView(QGraphicsView):
             # If the source role is changed, we need to update the link widget
             for row in range(top_left.row(), bottom_right.row() + 1):
                 index = self._model.index(row, top_left.column(), top_left.parent())
-                match self._delegate.itemType(index):
+                match self._controller.itemType(index):
                     case GraphItemType.LINK:
                         link_widget = cast(LinkWidget, self._widget_manager.getWidget(index))
                         if link_widget:
-                            source_widget = self._widget_manager.getWidget(self._delegate.linkSource(index))
-                            target_widget = self._widget_manager.getWidget(self._delegate.linkTarget(index))
+                            source_widget = self._widget_manager.getWidget(self._controller.linkSource(index))
+                            target_widget = self._widget_manager.getWidget(self._controller.linkTarget(index))
 
                             self._link_manager.unlink(link_widget)
                             self._link_manager.link(link_widget, source_widget, target_widget)
@@ -498,7 +500,6 @@ class GraphView(QGraphicsView):
         """
         return self._selection
     
-    # # 
     def syncSelectionModel(self):
         """update selection model from scene selection"""
         scene = self.scene()
@@ -554,7 +555,7 @@ class GraphView(QGraphicsView):
             # Already in linking state, cannot start linking
             return False
 
-        index_type = self._delegate.itemType(payload.index)
+        index_type = self._controller.itemType(payload.index)
         if index_type not in (GraphItemType.INLET, GraphItemType.OUTLET, GraphItemType.LINK):
             # Only inlets, outlets and links can be dragged
             return False
@@ -582,7 +583,7 @@ class GraphView(QGraphicsView):
         
         # Determine the source and target types
         target_index = self.rowAt(pos)  # Ensure the index is updated
-        drop_target_type = self._delegate.itemType(target_index)
+        drop_target_type = self._controller.itemType(target_index)
         drag_source_type = payload.kind
 
         # find relevant indexes
@@ -603,12 +604,12 @@ class GraphView(QGraphicsView):
                 # link tail dragged over outlet
                 link_index = payload.index
                 outlet_index = target_index
-                inlet_index = self._delegate.linkTarget(link_index)
+                inlet_index = self._controller.linkTarget(link_index)
 
             case 'head', GraphItemType.INLET:
                 # link head dragged over inlet
                 link_index = payload.index
-                outlet_index = self._delegate.linkSource(link_index)
+                outlet_index = self._controller.linkSource(link_index)
                 inlet_index = target_index
 
             case 'outlet', _:
@@ -626,14 +627,14 @@ class GraphView(QGraphicsView):
             case 'head', _:
                 # link head dragged over empty space
                 link_index = payload.index
-                outlet_index = self._delegate.linkSource(link_index)
+                outlet_index = self._controller.linkSource(link_index)
                 inlet_index = None
 
             case 'tail', _:
                 # link tail dragged over empty space
                 link_index = payload.index
                 outlet_index = None
-                inlet_index = self._delegate.linkTarget(link_index)
+                inlet_index = self._controller.linkTarget(link_index)
 
             case _:
                 # No valid drag source or drop target, do nothing
@@ -642,7 +643,7 @@ class GraphView(QGraphicsView):
 
         link_widget = self._widget_manager.getWidget(link_index) if link_index else self._draft_link
 
-        if outlet_index and inlet_index and self._delegate.canLink(outlet_index, inlet_index):
+        if outlet_index and inlet_index and self._controller.canLink(outlet_index, inlet_index):
             outlet_widget = self._widget_manager.getWidget(outlet_index)
             inlet_widget = self._widget_manager.getWidget(inlet_index)
             line = makeLineBetweenShapes(outlet_widget, inlet_widget)
@@ -670,7 +671,7 @@ class GraphView(QGraphicsView):
             return False
         
         # Determine the drop target type
-        drop_target_type = self._delegate.itemType(target_index)
+        drop_target_type = self._controller.itemType(target_index)
 
         # Determine the drag source type based on the mime data
         drag_source_type:Literal['inlet', 'outlet', 'head', 'tail'] = payload.kind
@@ -684,7 +685,7 @@ class GraphView(QGraphicsView):
                 outlet_index = payload.index
                 assert outlet_index.isValid(), "Outlet index must be valid"
                 inlet_index = target_index
-                if self._delegate.addLink(self._model, outlet_index, inlet_index):
+                if self._controller.addLink(outlet_index, inlet_index):
                     success = True
 
             case "inlet", GraphItemType.OUTLET:
@@ -692,47 +693,47 @@ class GraphView(QGraphicsView):
                 inlet_index = payload.index
                 assert inlet_index.isValid(), "Inlet index must be valid"
                 outlet_index = target_index
-                if self._delegate.addLink(self._model, outlet_index, inlet_index):
+                if self._controller.addLink(outlet_index, inlet_index):
                     success = True
 
             case "head", GraphItemType.INLET:
                 # link head dropped on inlet
                 link_index = payload.index
                 new_inlet_index = target_index
-                current_outlet_index = self._delegate.linkSource(link_index)
-                if self._delegate.removeLink(self._model, link_index):
-                    if self._delegate.addLink(self._model, current_outlet_index, new_inlet_index):
+                current_outlet_index = self._controller.linkSource(link_index)
+                if self._controller.removeLink(link_index):
+                    if self._controller.addLink(current_outlet_index, new_inlet_index):
                         success = True
 
             case "tail", GraphItemType.OUTLET:
                 # link tail dropped on outlet
                 link_index = payload.index
                 new_outlet_index = target_index
-                current_inlet_index = self._delegate.linkTarget(link_index)
-                if self._delegate.removeLink(self._model, link_index):
-                    if self._delegate.addLink(self._model, new_outlet_index, current_inlet_index):
+                current_inlet_index = self._controller.linkTarget(link_index)
+                if self._controller.removeLink(link_index):
+                    if self._controller.addLink(new_outlet_index, current_inlet_index):
                         success = True
 
             case 'tail', _:
                 # tail dropped on empty space
                 link_index = payload.index
                 assert link_index.isValid(), "Link index must be valid"
-                link_source = self._delegate.linkSource(link_index)
-                link_target = self._delegate.linkTarget(link_index)
+                link_source = self._controller.linkSource(link_index)
+                link_target = self._controller.linkTarget(link_index)
                 IsLinked = link_source and link_source.isValid() and link_target and link_target.isValid()
                 if IsLinked:
-                    if self._delegate.removeLink(self._model, link_index):
+                    if self._controller.removeLink(link_index):
                         success = True
 
             case 'head', _:
                 # head dropped on empty space
                 link_index = payload.index
                 assert link_index.isValid(), "Link index must be valid"
-                link_source = self._delegate.linkSource(link_index)
-                link_target = self._delegate.linkTarget(link_index)
+                link_source = self._controller.linkSource(link_index)
+                link_target = self._controller.linkTarget(link_index)
                 IsLinked = link_source and link_source.isValid() and link_target and link_target.isValid()
                 if IsLinked:
-                    if self._delegate.removeLink(self._model, link_index):
+                    if self._controller.removeLink(link_index):
                         success = True
 
         # cleanup DraftLink
@@ -750,7 +751,7 @@ class GraphView(QGraphicsView):
         """
         if self._state == GraphView.State.LINKING:
 
-            if self._delegate.itemType(self._linking_payload.index) == GraphItemType.LINK:
+            if self._controller.itemType(self._linking_payload.index) == GraphItemType.LINK:
                 link_widget = cast(LinkWidget, self._widget_manager.getWidget(self._linking_payload.index))
                 assert link_widget is not None, "Link widget must not be None"
                 source_widget = self._link_manager.getLinkSource(link_widget)
@@ -785,7 +786,7 @@ class GraphView(QGraphicsView):
             index = self.rowAt(QPoint(int(pos.x()), int(pos.y())))  # Ensure the index is updated
             assert index is not None, f"got: {index}"
 
-            match self._delegate.itemType(index):
+            match self._controller.itemType(index):
                 case GraphItemType.INLET:
                     if self.startLinking(Payload(index, 'inlet')):
                         return
@@ -796,8 +797,8 @@ class GraphView(QGraphicsView):
                 case GraphItemType.LINK:
                     # If the item is a link, determine which end to drag
                     def getClosestLinkEnd(link_index:QModelIndex, scene_pos:QPointF) -> Literal['head', 'tail']:
-                        source_index = self._delegate.linkSource(link_index)
-                        target_index = self._delegate.linkTarget(link_index)
+                        source_index = self._controller.linkSource(link_index)
+                        target_index = self._controller.linkTarget(link_index)
                         if source_index and source_index.isValid() and target_index and target_index.isValid():
                             link_widget = cast(LinkWidget, self._widget_manager.getWidget(link_index))
                             local_pos = link_widget.mapFromScene(scene_pos)  # Ensure scene_pos is in the correct coordinate system
@@ -851,7 +852,7 @@ class GraphView(QGraphicsView):
         index = self.indexAt(QPoint(int(event.position().x()), int(event.position().y())))
 
         if not index.isValid():
-            self._delegate.addNode(self._model, QModelIndex())
+            self._controller.addNode(self._model, QModelIndex())
             # self._model.insertRows(0, 1, QModelIndex())
             return
             # return super().mouseDoubleClickEvent(event)

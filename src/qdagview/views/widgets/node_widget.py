@@ -3,70 +3,93 @@ from qtpy.QtGui import *
 from qtpy.QtCore import *
 from qtpy.QtWidgets import *
 
-from .base_widget import BaseWidget
 from .cell_widget import CellWidget
-from .inlet_widget import InletWidget
-from .outlet_widget import OutletWidget
+from .port_widget import PortWidget
+from ...utils import distribute_items_horizontal
 
-class NodeWidget(BaseWidget):
+class NodeWidget(QGraphicsItem):
     def __init__(self, parent: QGraphicsItem | None = None):
         super().__init__(parent=parent)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
 
-        layout = cast(QGraphicsLinearLayout, self.layout())
-        layout.setOrientation(Qt.Orientation.Vertical)
+        # manage ports
+        self._inlets: List[PortWidget] = []
+        self._outlets: List[PortWidget] = []
 
-        self._cells_layout = QGraphicsLinearLayout(Qt.Orientation.Vertical)
-        layout.addItem(self._cells_layout)
+        # manage cells
+        self._cells: List[CellWidget] = []
 
-        ports_layout = QGraphicsLinearLayout(Qt.Orientation.Horizontal)
-        layout.addItem(ports_layout)
+    # manage inlets
+    def _arrangeInlets(self, first=0, last=-1):
+        for i, inlet in enumerate(self._inlets):
+            inlet.setPos(0, -10)
+        distribute_items_horizontal(self._inlets, self.boundingRect().adjusted(10, 0, -10, 0), equal_spacing=False)
 
-        self._inlets_layout = QGraphicsLinearLayout(Qt.Orientation.Vertical)
-        self._outlets_layout = QGraphicsLinearLayout(Qt.Orientation.Vertical)
-        ports_layout.addItem(self._inlets_layout)
-        ports_layout.addItem(self._outlets_layout)
+    def insertInlet(self, pos: int, inlet: PortWidget):
+        self._inlets.insert(pos, inlet)
+        inlet.setParentItem(self)
+        self._arrangeInlets(pos)
 
-    def insertInlet(self, pos: int, inlet: InletWidget):
-        layout = self._inlets_layout
-        layout.insertItem(pos, inlet)
+    def removeInlet(self, inlet:PortWidget):
+        self._inlets.remove(inlet)
+        self._arrangeInlets()
 
-    def removeInlet(self, inlet:InletWidget):
-        layout = self._inlets_layout
-        layout.removeItem(inlet)
+    def inlets(self) -> list[PortWidget]:
+        return [inlet for inlet in self._inlets]
 
-    def inlets(self) -> list[InletWidget]:
-        layout = self._inlets_layout
-        return [layout.itemAt(i) for i in range(layout.count())]
+    # manage outlets
+    def _arrangeOutlets(self, first=0, last=-1):
+        for i, outlet in enumerate(self._outlets):
+            outlet.setPos(0, self.boundingRect().height() + 2)
+        distribute_items_horizontal(self._outlets, self.boundingRect().adjusted(10, 0, -10, 0), equal_spacing=False)
 
-    def insertOutlet(self, pos: int, outlet: OutletWidget):
-        layout = self._outlets_layout
-        layout.insertItem(pos, outlet)
+    def insertOutlet(self, pos: int, outlet: PortWidget):
+        self._outlets.insert(pos, outlet)
+        outlet.setParentItem(self)
+        self._arrangeOutlets(pos)
 
-    def removeOutlet(self, outlet: OutletWidget):
-        layout = self._outlets_layout
-        layout.removeItem(outlet)
+    def removeOutlet(self, outlet: PortWidget):
+        self._outlets.remove(outlet)
+        self._arrangeOutlets()
 
-    def outlets(self) -> list[OutletWidget]:
-        layout = self._outlets_layout
-        return [layout.itemAt(i) for i in range(layout.count())]
+    def outlets(self) -> list[PortWidget]:
+        return [outlet for outlet in self._outlets]
 
-    def insertCell(self, pos, cell):
-        layout = self._cells_layout
-        layout.insertItem(pos, cell)
-    
-    def removeCell(self, cell):
-        layout = self._cells_layout
-        layout.removeItem(cell)
+    # manage cells
+    def _arrangeCells(self, first=0, last=-1):
+        if len(self._cells) == 0:
+            return
+        
+        first_cell = self._cells[0]
+        first_cell.setPos(5, -2)  # First cell position
+
+
+        for i, cell in enumerate(self._cells[1:]):
+            cell.setPos(self.boundingRect().width(), -2 + i * 12)
+
+    def insertCell(self, pos, cell:QGraphicsItem):
+        self._cells.insert(pos, cell)
+        cell.setParentItem(self)
+        self._arrangeCells(pos)
+
+    def removeCell(self, cell: CellWidget):
+        self._cells.remove(cell)
+        self._arrangeCells()
 
     def cells(self) -> list[CellWidget]:
-        layout = self._cells_layout
-        return [layout.itemAt(i) for i in range(layout.count())]
+        return [cell for cell in self._cells]
 
+    # customize appearance
+    def boundingRect(self):
+        return QRectF(0, 0, 64, 20)
+    
     def paint(self, painter: QPainter, option: QStyleOption, widget=None):
-        rect = option.rect       
-        painter.setBrush(self.palette().alternateBase())
+        rect = option.rect
+        
+        palette = self.scene().palette()
+        painter.setBrush(palette.alternateBase())
         if self.isSelected():
-            painter.setBrush(self.palette().highlight())
+            painter.setBrush(palette.highlight())
+
         painter.drawRoundedRect(rect, 6, 6)

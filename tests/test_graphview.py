@@ -31,7 +31,7 @@ from qtpy.QtWidgets import *
 # model
 from core import GraphDataRole
 from src.qdagview.models.flowgraphmodel import FlowGraphModel
-from src.qdagview.models.itemmodel_graphhelper import ItemGraphHelper
+from qdagview.models.graphhelper import ItemGraphHelper
 
 # view
 from src.qdagview.views.graphview import GraphView

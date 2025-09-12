@@ -9,6 +9,7 @@ from .views import GraphView, GraphDelegate
 from .models import FlowGraphModel, FlowGraph, StandardGraphModel
 from .core import GraphDataRole, GraphItemType, GraphMimeType
 
+
 # Import subpackages for advanced usage
 from . import core
 from . import models  
