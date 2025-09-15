@@ -36,7 +36,7 @@ from .widgets import (
     NodeWidget, PortWidget, LinkWidget, CellWidget
 )
 from .graphview_delegate import GraphDelegate
-from .graph_controller import GraphController
+from .controllers.graph_controller import GraphController
 from .widget_factory import WidgetFactory
 
 
@@ -519,6 +519,7 @@ class GraphView(QGraphicsView):
                 for index in selected_indexes:
                     if index.isValid():
                         item_selection.select(index, index)
+                
                 return item_selection
 
             # perform selection on model
@@ -533,6 +534,8 @@ class GraphView(QGraphicsView):
             else:
                 self._selection.clearSelection()
                 self._selection.setCurrentIndex(QModelIndex(), QItemSelectionModel.SelectionFlag.Current | QItemSelectionModel.SelectionFlag.Rows)
+
+    ##
 
     def _set_cell_data(self, index:QModelIndex|QPersistentModelIndex, roles:list=[]):
         """Set the data for a cell widget."""

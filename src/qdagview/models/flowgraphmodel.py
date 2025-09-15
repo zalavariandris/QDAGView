@@ -488,6 +488,7 @@ class FlowGraphModel(QAbstractItemModel):
                 for row in range(row, row + count):
                     node_idx = self.index(row, 0, parent)
                     node = cast(ExpressionOperator, node_idx.internalPointer())
+                    
                     for outlet in node.outlets():
                         for link in graph.outLinks(outlet):
                             link_index = self.indexFromItem(link)

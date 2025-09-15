@@ -10,7 +10,7 @@ from qtpy.QtGui import *
 from qtpy.QtCore import *
 from qtpy.QtWidgets import *
 
-from ..core import GraphDataRole, GraphItemType
+from ...core import GraphDataRole, GraphItemType
 
 
 class GraphController:

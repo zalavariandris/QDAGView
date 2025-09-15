@@ -7,6 +7,12 @@ from typing import List
 from qdagview.models import FlowGraphModel, ExpressionOperator
 from qdagview.views import GraphView, GraphController
 
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+from qdagview.utils import group_consecutive_numbers
 
 if __name__ == "__main__":
     import sys
@@ -33,6 +39,8 @@ if __name__ == "__main__":
             self.tree.setModel(self.model)
             self.tree.setSelectionModel(self.selection)
             self.tree.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.SelectedClicked)
+            self.tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+            self.tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
             # model = GraphItemModel()
             # self.view.setModel(model)
             self.graphview = GraphView(parent=self)
@@ -70,40 +78,7 @@ if __name__ == "__main__":
         @Slot()
         def removeSelectedItems(self):
             """Remove the currently selected items from the graph."""
-            # Get all selected indexes, sort by depth (deepest first), and unique by (parent, row)
-            selected_indexes = self.selection.selectedIndexes()
-            if not selected_indexes:
-                return
-            
-            # Filter only top-level indexes (remove children if parent is selected)
-            def is_descendant(index, selected_set):
-                parent = index.parent()
-                while parent.isValid():
-                    if parent in selected_set:
-                        return True
-                    parent = parent.parent()
-                return False
-
-            selected_set = set(selected_indexes)
-            filtered_indexes = [
-                idx for idx in selected_indexes if not is_descendant(idx, selected_set)
-            ]
-
-            # Remove duplicates by (parent, row)
-            unique_keys = set()
-            unique_indexes = []
-            for idx in filtered_indexes:
-                key = (idx.parent(), idx.row())
-                if key not in unique_keys:
-                    unique_keys.add(key)
-                    unique_indexes.append(idx)
-
-            # Remove from bottom up (descending row order per parent)
-            unique_indexes.sort(key=lambda idx: (idx.parent(), -idx.row()))
-
-            for idx in unique_indexes:
-                if idx.isValid():
-                    self.model.removeRows(idx.row(), 1, idx.parent())
+            raise NotImplementedError("Remove functionality not implemented yet.")
 
         @Slot()
         def evaluateCurrent(self):
@@ -112,6 +87,10 @@ if __name__ == "__main__":
                 return
             result = self.model.evaluate(index)
             self.viewer.setText(result)
+
+
+
+    
 
     # graph = model.invisibleRootItem()
     # operator = Operator("TestOperator")
