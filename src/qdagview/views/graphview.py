@@ -34,9 +34,9 @@ from .managers.cell_manager import CellManager
 from .widgets import (
     NodeWidget, PortWidget, LinkWidget, CellWidget
 )
-from .graphview_delegate import GraphDelegate
+from .delegates.graphview_delegate import GraphDelegate
 from .controllers.graph_controller import GraphController
-from .widget_factory import WidgetFactory
+from .factories.widget_factory import WidgetFactory
 
 
 @dataclass
@@ -279,17 +279,39 @@ class GraphView(QGraphicsView):
                 case GraphItemType.SUBGRAPH:
                     raise NotImplementedError("Subgraphs are not yet supported in the graph view")
                 case GraphItemType.NODE:
-                    row_widget = self._factory.createNodeWidget(parent_widget, row_index)
+                    # widget factory
+                    row_widget = self._factory.createNodeWidget(self.scene(), row_index, self)
+
+
+                    # widget management
+                    self._widget_manager.insertWidget(row_index, row_widget)
+
                 case GraphItemType.INLET:
                     assert isinstance(parent_widget, NodeWidget)
-                    row_widget = self._factory.createInletWidget(parent_widget, row_index)
+                    # widget factory
+                    row_widget = self._factory.createInletWidget(parent_widget, row_index, self)
+
+
+                    # widget management
+                    self._widget_manager.insertWidget(row_index, row_widget)
                     
                 case GraphItemType.OUTLET:
                     assert isinstance(parent_widget, NodeWidget)
-                    row_widget = self._factory.createOutletWidget(parent_widget, row_index)
+                    # widget factory
+                    row_widget = self._factory.createOutletWidget(parent_widget, row_index, self)
+    
+
+                    # widget management
+                    self._widget_manager.insertWidget(row_index, row_widget)
+
                 case GraphItemType.LINK:
-                    # Links are added to the scene, not to the inlet widget
-                    row_widget = self._factory.createLinkWidget(self.scene(), row_index)
+                    assert isinstance(parent_widget, PortWidget)
+                    # widget factory
+                    row_widget = self._factory.createLinkWidget(self.scene(), row_index, self)
+
+                    # widget management
+                    self._widget_manager.insertWidget(row_index, row_widget)
+
                     # link management
                     source_index = self._controller.linkSource(row_index)
                     source_widget = self._widget_manager.getWidget(source_index) if source_index is not None else None
@@ -300,13 +322,11 @@ class GraphView(QGraphicsView):
                 case _:
                     raise ValueError(f"Unknown item type: {self._controller.itemType(row_widget)}")
 
-            # widget management
-            self._widget_manager.insertWidget(row_index, row_widget)
-            
+
             # Add cells for each column
             for col in range(self._model.columnCount(row_index.parent())):
                 cell_index = self._model.index(row_index.row(), col, row_index.parent())
-                cell_widget = self._factory.createCellWidget(row_widget, cell_index)
+                cell_widget = self._factory.createCellWidget(row_widget, cell_index, self)
                 self._cell_manager.insertCell(cell_index, cell_widget)
                 self._set_cell_data(cell_index, roles=[Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
 
@@ -855,23 +875,30 @@ class GraphView(QGraphicsView):
 
         if not index.isValid():
             self._controller.addNode(self._model, QModelIndex())
-            # self._model.insertRows(0, 1, QModelIndex())
             return
-            # return super().mouseDoubleClickEvent(event)
-                
+            
         def onEditingFinished(editor:QLineEdit, cell_widget:CellWidget, index:QModelIndex):
             self._delegate.setModelData(editor, self._model, index)
-            cell_widget.setEditorWidget(None)  # Clear the editor widget
             editor.deleteLater()
             self._set_cell_data(index, roles=[Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
 
         if cell_widget := self._cell_manager.getCell(index):
-            editor = self._delegate.createEditor(self, None, index)
-            assert editor.parent() is None, "Editor must not have a parent"
-            cell_widget.setEditorWidget(editor)  # Clear any existing editor widget
-            editor.setText(index.data(Qt.ItemDataRole.EditRole))
-            editor.setFocus(Qt.FocusReason.MouseFocusReason)
-            editor.editingFinished.connect(lambda editor = editor, cell_widget=cell_widget, index=index: onEditingFinished(editor, cell_widget, index) )
+            option = QStyleOptionViewItem()
+            scene_rect = cell_widget.mapRectToScene(cell_widget.boundingRect())
+            view_poly:QPolygon = self.mapFromScene(scene_rect)
+            rect = view_poly.boundingRect()
+            option.rect = rect
+            option.state = QStyle.StateFlag.State_Enabled | QStyle.StateFlag.State_Active
+            
+            editor = self._delegate.createEditor(self, option, index)
+            if editor:
+                # Ensure the editor is properly positioned and shown
+                editor.setParent(self)
+                editor.setGeometry(rect)
+                self._delegate.setEditorData(editor, index)
+                editor.show()  # Explicitly show the editor
+                editor.setFocus(Qt.FocusReason.MouseFocusReason)
+                editor.editingFinished.connect(lambda editor=editor, cell_widget=cell_widget, index=index: onEditingFinished(editor, cell_widget, index))
     
     ## Export to NetworkX
     def toNetworkX(self)-> nx.MultiDiGraph:

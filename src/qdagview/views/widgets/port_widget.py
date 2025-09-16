@@ -16,6 +16,8 @@ class PortWidget(QGraphicsObject):
 
         self._cells: List[CellWidget] = []
 
+        self._graphview = None
+
     def setTextAlignment(self, alignment:Qt.AlignmentFlag):
         match alignment:
             case Qt.AlignmentFlag.AlignLeft:
@@ -59,8 +61,6 @@ class PortWidget(QGraphicsObject):
         self._cells.insert(pos, cell)
         cell.setParentItem(self)
         self._arrangeCells(pos)
-
-
         cell.setVisible(False)
     
     def removeCell(self, cell: CellWidget):

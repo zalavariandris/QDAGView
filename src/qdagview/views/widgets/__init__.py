@@ -11,7 +11,6 @@ from .link_widget import LinkWidget
 from .node_widget import NodeWidget
 
 __all__ = [
-    # Main components (most commonly used)
     'NodeWidget',
     'CellWidget',
     'PortWidget',

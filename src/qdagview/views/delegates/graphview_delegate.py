@@ -9,14 +9,11 @@ from qtpy.QtGui import *
 from qtpy.QtCore import *
 from qtpy.QtWidgets import *
 
-from ..core import GraphDataRole, GraphItemType
-
+from ...core import GraphDataRole, GraphItemType
+from ...utils import makeArrowShape
 
 class GraphDelegate(QObject):
-    """
-    
-    """
-    ## drawing
+    ## Painting
     def paintNode(self, painter:QPainter, option:QStyleOptionViewItem, index: QModelIndex|QPersistentModelIndex):
         ...
 
@@ -32,10 +29,16 @@ class GraphDelegate(QObject):
     def paintCell(self, painter:QPainter, option:QStyleOptionViewItem, index: QModelIndex|QPersistentModelIndex):
         ...
 
-    ## QT delegate
+    ## Editors
     def createEditor(self, parent:QWidget, option:QStyleOptionViewItem, index:QModelIndex|QPersistentModelIndex) -> QWidget:
-        return QLineEdit(parent=parent)
-
+        editor = QLineEdit(parent=parent)
+        editor.setParent(parent)
+        return editor
+    
+    def updateEditorGeometry(self, editor:QWidget, option:QStyleOptionViewItem, index:QModelIndex|QPersistentModelIndex):
+        print("updateEditorGeometry", option.rect)
+        editor.setGeometry(option.rect)
+        
     def setEditorData(self, editor:QWidget, index:QModelIndex|QPersistentModelIndex):
         if isinstance(editor, QLineEdit):
             text = index.data(Qt.ItemDataRole.DisplayRole)

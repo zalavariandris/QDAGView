@@ -4,7 +4,7 @@ from qtpy.QtCore import *
 from qtpy.QtWidgets import *
 
 if TYPE_CHECKING:
-    from ..graphview_delegate import GraphDelegate
+    from ..delegates.graphview_delegate import GraphDelegate
 
 
 class CellWidget(QGraphicsTextItem):
@@ -18,16 +18,6 @@ class CellWidget(QGraphicsTextItem):
         self.setFont(font)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, False)
     
-    def setEditorWidget(self, editor: QWidget | None):
-        raise NotImplementedError
-        # if editor is None:
-        #     editor = self._label
-        # else:
-        #     # Ensure the editor is not parented elsewhere
-        #     if editor.parent() is not None:
-        #         editor.setParent(None)
-        # self.setWidget(editor)
-
     def text(self):
         return self.toPlainText()
 

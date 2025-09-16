@@ -20,6 +20,8 @@ class NodeWidget(QGraphicsItem):
         # manage cells
         self._cells: List[CellWidget] = []
 
+        self._graphview = None
+
     # manage inlets
     def _arrangeInlets(self, first=0, last=-1):
         for i, inlet in enumerate(self._inlets):

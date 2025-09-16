@@ -16,7 +16,9 @@ class LinkWidget(QGraphicsWidget):
         self._line = QLineF(0, 0, 100, 100)
         self.__cells: List[CellWidget] = []
         self.setAcceptHoverEvents(True)
-        # self.layout().
+
+        self._graphview = None
+
     
     # manage cells
     def insertCell(self, pos:int, cell:CellWidget):
@@ -74,12 +76,14 @@ class LinkWidget(QGraphicsWidget):
         return stroker.createStroke(path)
     
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget=None):
+        palette = option.palette
         if self.isSelected():
-            painter.setBrush(self.palette().accent())
+            painter.setBrush(palette.accent())
         elif option.state & QStyle.StateFlag.State_MouseOver:
             painter.setBrush(Qt.red)
         else:
-            painter.setBrush(self.palette().text())
+            painter.setBrush(palette.text())
         painter.setPen(Qt.PenStyle.NoPen)
         arrow = makeArrowShape(self._line, 2)
         painter.drawPath(arrow)
+        
