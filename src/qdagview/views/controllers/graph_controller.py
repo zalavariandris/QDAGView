@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import logging
-logging.basicConfig(level=logging.DEBUG)
+from collections import defaultdict
+from itertools import groupby
+from operator import attrgetter
+
 logger = logging.getLogger(__name__)
 
 from typing import *
@@ -265,3 +268,99 @@ class GraphController:
         assert self._model, "Source model must be set before removing a link"
         assert link.isValid(), "Link index must be valid"
         return self._model.removeRows(link.row(), 1, link.parent())
+
+    def batchRemove(self, indexes: List[QModelIndex|QPersistentModelIndex])->bool:
+        """
+        Batch remove multiple items from the graph.
+        
+        This method efficiently removes multiple items by:
+        1. Filtering out descendants to avoid double-deletion
+        2. Grouping by parent and consolidating adjacent rows into ranges
+        3. Removing in reverse order to prevent index shifting
+        
+        Args:
+            indexes: List of model indexes to remove
+            
+        Returns:
+            bool: True if all removals succeeded, False if any failed
+        """
+        assert self._model, "Source model must be set before removing an item"
+
+        if not indexes:
+            return True  # Nothing to remove, trivially succeed
+        
+        # force all to column 0, filter valid indexes, and create set for efficient operations
+        normalized_indexes = [idx.siblingAtColumn(0) for idx in indexes if idx.isValid()]
+        
+        # remove duplicates using set (faster than dict.fromkeys for this use case)
+        indexes_set = set(normalized_indexes)
+        indexes = list(indexes_set)  # Convert back to list, order doesn't matter for our algorithm
+
+        # filter out descendants using set operations for efficiency
+        def has_ancestor_in_set(index, index_set):
+            current = index.parent()
+            while current.isValid():
+                if current in index_set:
+                    return True
+                current = current.parent()
+            return False
+        
+        indexes = {idx for idx in indexes if not has_ancestor_in_set(idx, indexes_set)}
+
+        # Early exit if nothing left to remove after filtering
+        if not indexes:
+            return True
+
+        # group by parent using defaultdict
+        rows_by_parents = defaultdict(list)
+        for index in indexes:
+            rows_by_parents[index.parent()].append(index.row())
+
+        # consolidate adjacent rows into ranges using groupby
+        def sequence_to_ranges(rows: List[int]) -> List[Tuple[int, int]]:
+            """Convert list of row numbers into (start, count) ranges for consecutive rows.
+            
+            Example: [1, 2, 3, 7, 8, 10] → [(1, 3), (7, 2), (10, 1)]
+            """
+            if not rows:
+                return []
+                
+            rows = sorted(rows)
+            ranges = []
+            for _, group_items in groupby(enumerate(rows), lambda x: x[1] - x[0]):
+                group = list(group_items)
+                start = group[0][1]
+                count = len(group)
+                ranges.append((start, count))
+            return ranges
+        
+        ranges_by_parents = {parent: sequence_to_ranges(rows) for parent, rows in rows_by_parents.items()}
+        
+        # Sort parents by depth (deepest first) to ensure children are removed before parents
+        def get_depth(index: QModelIndex) -> int:
+            """Calculate the depth of an index in the tree (root = 0)"""
+            depth = 0
+            current = index
+            while current.isValid():
+                depth += 1
+                current = current.parent()
+            return depth
+        
+        sorted_parents = sorted(ranges_by_parents.keys(), key=get_depth, reverse=True)
+        
+        # Remove rows in reverse order to avoid index shifting issues
+        success = True
+        for parent in sorted_parents:
+            ranges = ranges_by_parents[parent]
+            # Sort ranges by starting row in descending order
+            ranges.sort(key=lambda r: r[0], reverse=True)
+            
+            for start_row, count in ranges:
+                if not self._model.removeRows(start_row, count, parent):
+                    success = False
+                    logger.warning(f"Failed to remove rows {start_row}-{start_row + count - 1} from parent {parent}")
+        
+        return success
+
+                
+                

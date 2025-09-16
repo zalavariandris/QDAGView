@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 from typing import *

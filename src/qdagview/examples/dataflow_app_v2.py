@@ -8,15 +8,13 @@ from qdagview.models import FlowGraphModel, ExpressionOperator
 from qdagview.views import GraphView, GraphController
 
 import logging
-
-logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 from qdagview.utils import group_consecutive_numbers
 
 if __name__ == "__main__":
     import sys
-
+    logging.basicConfig(level=logging.DEBUG)
     class MainWindow(QWidget):
         def __init__(self):
             super().__init__()
@@ -78,7 +76,9 @@ if __name__ == "__main__":
         @Slot()
         def removeSelectedItems(self):
             """Remove the currently selected items from the graph."""
-            raise NotImplementedError("Remove functionality not implemented yet.")
+            selected_indexes = self.selection.selectedRows()
+            print("Removing indexes:", selected_indexes)
+            self.controller.batchRemove(selected_indexes)
 
         @Slot()
         def evaluateCurrent(self):
@@ -87,10 +87,6 @@ if __name__ == "__main__":
                 return
             result = self.model.evaluate(index)
             self.viewer.setText(result)
-
-
-
-    
 
     # graph = model.invisibleRootItem()
     # operator = Operator("TestOperator")

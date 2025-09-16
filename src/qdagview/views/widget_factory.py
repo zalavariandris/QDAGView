@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import weakref
-logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 from typing import *

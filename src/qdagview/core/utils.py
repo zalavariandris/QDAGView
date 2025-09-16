@@ -50,3 +50,50 @@ def indexFromPath(model:QAbstractItemModel, path: Tuple[int, ...]) -> QModelInde
             raise KeyError(f"Path {path} not found in model")
 
     return current
+
+from typing import List
+def normalizeSelection(selection:QItemSelection) -> List[QModelIndex]:
+    """
+    Normalize a selection to only include top-level selected indexes.
+    Args:
+        selection: The selection to normalize
+    Returns:
+        A list of QModelIndex representing the top-level selected indexes.
+    """
+    selected_indexes = selection.indexes()
+    if not selected_indexes:
+        return []
+    
+    # force all to column 0
+    _ = map(lambda index: index.siblingAtColumn(0), selected_indexes)
+
+    # remove duplicates
+    selected_indexes = list(dict.fromkeys(selected_indexes))
+
+    # filter out descendants
+    def ancestors(index: QModelIndex):
+        current = index.parent()
+        while current.isValid():
+            yield current
+            current = current.parent()
+    
+    top_level_indexes = list(filter(lambda index: not any(ancestor in selected_indexes for ancestor in ancestors(index)), selected_indexes))
+
+    return top_level_indexes
+
+from typing import Dict
+def group_indexes_by_parent(indexes: List[QModelIndex]) -> Dict[QModelIndex, List[QModelIndex]]:
+    """
+    Group a list of QModelIndex by their parent index.
+    Args:
+        indexes: The list of QModelIndex to group
+    Returns:
+        A dictionary mapping parent QModelIndex to a list of its child QModelIndex.
+    """
+    grouped = {}
+    for index in indexes:
+        parent = index.parent()
+        if parent not in grouped:
+            grouped[parent] = []
+        grouped[parent].append(index)
+    return grouped

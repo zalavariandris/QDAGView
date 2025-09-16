@@ -5,7 +5,6 @@ from qtpy.QtCore import *
 from qtpy.QtWidgets import *
 
 import logging
-logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 

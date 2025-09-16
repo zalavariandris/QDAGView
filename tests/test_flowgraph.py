@@ -15,9 +15,6 @@ from src.qdagview.models.flowgraph import (
     flowgraph_to_nx
 )
 
-
-
-
 class TestExpressionOperator(unittest.TestCase):
     def test_initial_expression(self):
         self.assertEqual(get_unbound_nodes("a+b"), ["a", "b"])

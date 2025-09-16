@@ -485,8 +485,8 @@ class FlowGraphModel(QAbstractItemModel):
 
                 # first remove outgoing links
                 links_to_remove:List[QModelIndex] = []
-                for row in range(row, row + count):
-                    node_idx = self.index(row, 0, parent)
+                for node_row in range(row, row + count):
+                    node_idx = self.index(node_row, 0, parent)
                     node = cast(ExpressionOperator, node_idx.internalPointer())
                     
                     for outlet in node.outlets():
@@ -509,7 +509,7 @@ class FlowGraphModel(QAbstractItemModel):
 
                 # remove the nodes
                 self.beginRemoveRows(parent, row, row + count - 1)
-                for i in reversed(range(row, row + count)):
+                for i in reversed(list(range(row, row + count))):
                     logger.info(f"Removing operator at index {i}")
                     operators = graph.operators()
                     if i < len(operators):
