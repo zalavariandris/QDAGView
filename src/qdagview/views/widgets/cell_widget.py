@@ -17,7 +17,8 @@ class CellWidget(QGraphicsTextItem):
         font.setPointSize(8)
         self.setFont(font)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, False)
-    
+        self._graphview = None
+        
     def text(self):
         return self.toPlainText()
 
