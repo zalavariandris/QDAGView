@@ -13,10 +13,10 @@ from qtpy.QtGui import *
 from qtpy.QtCore import *
 from qtpy.QtWidgets import *
 
-from ...core import GraphDataRole, GraphItemType
+from ..core import GraphDataRole, GraphItemType
 
 
-class GraphController:
+class QItemModelGraphController:
     """
     
     """
@@ -30,34 +30,6 @@ class GraphController:
         return self._model
 
     ## QUERY MODEL
-    def linkSource(self, link_index:QModelIndex|QPersistentModelIndex) -> QModelIndex|None:
-        """Return the (non-persistent) QModelIndex of the link source if present.
-
-        Internally we store a QPersistentModelIndex to survive model changes.
-        We convert it back to a QModelIndex for client code to keep backward compatibility.
-        """
-        stored = link_index.data(GraphDataRole.SourceRole)
-        if stored is None:
-            return None
-        # Allow legacy storage of plain QModelIndex; migrate silently
-        if isinstance(stored, QModelIndex):
-            if not stored.isValid():
-                return None
-            return stored
-        if isinstance(stored, QPersistentModelIndex):
-            if not stored.isValid():
-                return None
-            return QModelIndex(stored)
-        # Unexpected type – ignore gracefully
-        logger.warning(f"Unexpected SourceRole payload type: {type(stored)}")
-        return None
-    
-    def linkTarget(self, link_index:QModelIndex|QPersistentModelIndex) -> QModelIndex:
-        assert link_index.isValid(), "Link index must be valid"
-        target_index = link_index.parent()
-        assert target_index.isValid(), "Target index must be valid"
-        return target_index
-    
     def itemType(self, index:QModelIndex|QPersistentModelIndex)-> GraphItemType | None:
         row_kind = index.data(GraphDataRole.TypeRole)
         if not row_kind:
@@ -113,24 +85,18 @@ class GraphController:
         else:
             return False  # Explicit return for unhandled cases
 
-    def canLink(self, source:QModelIndex, target:QModelIndex)->bool:
-        """
-        Check if linking is possible between the source and target indexes.
-        """
+    def nodes(self, subgraph:QModelIndex|None) -> List[QModelIndex]:
+        """Return a list of all node indexes in the model."""
+        if self._model is None:
+            return []
+        
+        nodes = []
+        for row in range(self._model.rowCount()):
+            index = self._model.index(row, 0, subgraph if subgraph is not None else QModelIndex())
+            if self.itemType(index) == GraphItemType.NODE:
+                nodes.append(index)
+        return nodes
 
-        if source.parent() == target.parent():
-            # Cannot link items in the same parent
-            return False
-        
-        source_type = self.itemType(source)
-        target_type = self.itemType(target)
-        if  (source_type, target_type) == (GraphItemType.INLET, GraphItemType.OUTLET) or \
-            (source_type, target_type) == (GraphItemType.OUTLET, GraphItemType.INLET):
-            # Both source and target must be either inlet or outlet
-            return True
-        
-        return False
-    
     def inletCount(self, node:QModelIndex|QPersistentModelIndex) -> int:
         """
         Get the number of inlets for a given node.
@@ -162,7 +128,119 @@ class GraphController:
             if self.itemType(child_index) == GraphItemType.OUTLET:
                 outlet_count += 1
         return outlet_count
+    
+    def nodeInlets(self, node:QModelIndex|QPersistentModelIndex) -> List[QModelIndex]:
+        """
+        Get a list of inlet indexes for a given node.
+        Args:
+            node (QModelIndex): The index of the node.
+        Returns:
+            List[QModelIndex]: A list of inlet indexes for the node.
+        """
+        assert self.itemType(node) == GraphItemType.NODE, "Node index must be of type NODE"
+        inlets = []
+        for row in range(self._model.rowCount(node)):
+            child_index = self._model.index(row, 0, node)
+            if self.itemType(child_index) == GraphItemType.INLET:
+                inlets.append(child_index)
+        return inlets
 
+    def nodeOutlets(self, node:QModelIndex|QPersistentModelIndex) -> List[QModelIndex]:
+        """
+        Get a list of outlet indexes for a given node.
+        Args:
+            node (QModelIndex): The index of the node.
+        Returns:
+            List[QModelIndex]: A list of outlet indexes for the node.
+        """
+        assert self.itemType(node) == GraphItemType.NODE, "Node index must be of type NODE"
+        outlets = []
+        for row in range(self._model.rowCount(node)):
+            child_index = self._model.index(row, 0, node)
+            if self.itemType(child_index) == GraphItemType.OUTLET:
+                outlets.append(child_index)
+        return outlets        
+
+    def inletLinks(self, inlet:QModelIndex|QPersistentModelIndex) -> List[QModelIndex]:
+        """
+        Get a list of link indexes for a given inlet.
+        Args:
+            inlet (QModelIndex): The index of the inlet.
+        Returns:
+            List[QModelIndex]: A list of link indexes for the inlet.
+        """
+        assert self.itemType(inlet) == GraphItemType.INLET, "Inlet index must be of type INLET"
+        links = []
+        for row in range(self._model.rowCount(inlet)):
+            child_index = self._model.index(row, 0, inlet)
+            if self.itemType(child_index) == GraphItemType.LINK:
+                links.append(child_index)
+        return links
+    
+    def outletLinks(self, outlet:QModelIndex|QPersistentModelIndex) -> List[QModelIndex]:
+        """
+        Get a list of link indexes for a given outlet.
+        Args:
+            outlet (QModelIndex): The index of the outlet.
+
+        Returns:
+            List[QModelIndex]: A list of link indexes for the outlet.
+        """
+        assert self.itemType(outlet) == GraphItemType.OUTLET, "Outlet index must be of type OUTLET"
+        links = []
+        for row in range(self._model.rowCount(outlet)):
+            child_index = self._model.index(row, 0, outlet)
+            if self.itemType(child_index) == GraphItemType.LINK:
+                links.append(child_index)
+        return links
+
+    def linkSource(self, link_index:QModelIndex|QPersistentModelIndex) -> QModelIndex|None:
+        """Return the (non-persistent) QModelIndex of the link source if present.
+
+        Internally we store a QPersistentModelIndex to survive model changes.
+        We convert it back to a QModelIndex for client code to keep backward compatibility.
+        """
+        stored = link_index.data(GraphDataRole.SourceRole)
+        if stored is None:
+            return None
+        # Allow legacy storage of plain QModelIndex; migrate silently
+        if isinstance(stored, QModelIndex):
+            if not stored.isValid():
+                return None
+            return stored
+        if isinstance(stored, QPersistentModelIndex):
+            if not stored.isValid():
+                return None
+            return QModelIndex(stored)
+        # Unexpected type – ignore gracefully
+        logger.warning(f"Unexpected SourceRole payload type: {type(stored)}")
+        return None
+    
+    def linkTarget(self, link_index:QModelIndex|QPersistentModelIndex) -> QModelIndex:
+        assert link_index.isValid(), "Link index must be valid"
+        target_index = link_index.parent()
+        assert target_index.isValid(), "Target index must be valid"
+        return target_index
+
+    # behaviour TODO: move to delegate
+    def canLink(self, source:QModelIndex, target:QModelIndex)->bool:
+        """
+        Check if linking is possible between the source and target indexes.
+        """
+
+        if source.parent() == target.parent():
+            # Cannot link items in the same parent
+            return False
+        
+        source_type = self.itemType(source)
+        target_type = self.itemType(target)
+        if  (source_type, target_type) == (GraphItemType.INLET, GraphItemType.OUTLET) or \
+            (source_type, target_type) == (GraphItemType.OUTLET, GraphItemType.INLET):
+            # Both source and target must be either inlet or outlet
+            return True
+        
+        return False
+    
     ## CREATE
     def addNode(self, subgraph:QModelIndex|QPersistentModelIndex=QModelIndex()):
         position = self._model.rowCount(subgraph)
@@ -217,9 +295,11 @@ class GraphController:
     def addLink(self, outlet:QModelIndex|QPersistentModelIndex, inlet:QModelIndex|QPersistentModelIndex)->bool:
         """Add a child item to the currently selected item."""
         assert self._model is not None, "Source model must be set before adding child items"
-        assert outlet.isValid()
+        assert isinstance(outlet, (QModelIndex, QPersistentModelIndex)), f"outlet must be a QModelIndex got: {outlet}"
+        assert outlet.isValid(), "Outlet must be a valid"
         assert self.itemType(outlet) == GraphItemType.OUTLET, "Outlet index must be of type OUTLET"
-        assert inlet.isValid()
+        assert isinstance(inlet, (QModelIndex, QPersistentModelIndex)), f"inlet must be a QModelIndex got: {inlet}"
+        assert inlet.isValid(), "Inlet must be a valid"
         assert self.itemType(inlet) == GraphItemType.INLET, "Inlet index must be of type INLET"
 
         # Add child to the selected item using generic methods
@@ -290,7 +370,12 @@ class GraphController:
             return True  # Nothing to remove, trivially succeed
         
         # force all to column 0, filter valid indexes, and create set for efficient operations
-        normalized_indexes = [idx.siblingAtColumn(0) for idx in indexes if idx.isValid()]
+        normalized_indexes = [idx.siblingAtColumn(0) for idx in indexes]
+
+        # fail removal if any nonexistent indexes are provided
+        if any(not idx.isValid() for idx in normalized_indexes):
+            return False
+        
         
         # remove duplicates using set (faster than dict.fromkeys for this use case)
         indexes_set = set(normalized_indexes)

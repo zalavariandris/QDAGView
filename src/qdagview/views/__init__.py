@@ -1,7 +1,6 @@
 # Views package - visual components and widgets
 from .graphview import GraphView
 from .delegates.graphview_delegate import GraphDelegate  
-from .controllers.graph_controller import GraphController
 from .widgets import (
     CellWidget, 
     NodeWidget, 
@@ -16,7 +15,6 @@ __all__ = [
     # Main view components
     'GraphView',
     'GraphDelegate',
-    'GraphController',
     'WidgetFactory',
     'LinkManager',
     'CellManager',

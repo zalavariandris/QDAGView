@@ -8,7 +8,7 @@ class InletWidget: pass
 class OutletWidget: pass
 
 
-class LinkManager:
+class LinkingManager:
     def __init__(self):
         self._link_source: Dict[LinkWidget, OutletWidget | None] = {}
         self._link_target: Dict[LinkWidget, InletWidget | None] = {}

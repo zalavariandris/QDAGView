@@ -5,12 +5,14 @@ from qtpy.QtWidgets import *
 from typing import List
 
 from qdagview.models import FlowGraphModel, ExpressionOperator
-from qdagview.views import GraphView, GraphController
+from qdagview.views import GraphView
+from qdagview import QItemModelGraphController
 
 import logging
 logger = logging.getLogger(__name__)
 
 from qdagview.utils import group_consecutive_numbers
+
 
 if __name__ == "__main__":
     import sys
@@ -21,7 +23,7 @@ if __name__ == "__main__":
             self.setWindowTitle("DataFlow")
             self.setGeometry(100, 100, 800, 600)
             self.model = FlowGraphModel(self)
-            self.controller = GraphController(self.model)
+            self.controller = QItemModelGraphController(self.model)
             self.selection = QItemSelectionModel(self.model)
 
             self.toolbar = QMenuBar(self)

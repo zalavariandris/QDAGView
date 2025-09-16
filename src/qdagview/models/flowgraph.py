@@ -73,7 +73,6 @@ class ExpressionOperator:
         for var, inlet in zip(variables, self._inlets):
             inlet.name = var
         
-
     def setExpression(self, expression:str):
         """Set the expression of the operator."""
         self._expression = expression

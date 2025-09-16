@@ -19,7 +19,7 @@ class WidgetFactory(QObject):
 
     ## Widget Factory
     @override
-    def createNodeWidget(self, parent_widget: QGraphicsScene, index: QModelIndex) -> 'NodeWidget':
+    def createNodeWidget(self, parent_widget: QGraphicsScene, index: QModelIndex, graphview=None) -> 'NodeWidget':
         if not isinstance(parent_widget, QGraphicsScene):
             raise TypeError("Parent widget must be a QGraphicsScene")
         if not index.isValid():
@@ -39,7 +39,7 @@ class WidgetFactory(QObject):
         parent_widget.removeItem(widget)
 
     @override
-    def createInletWidget(self, parent_widget: NodeWidget, index: QModelIndex) -> PortWidget:
+    def createInletWidget(self, parent_widget: NodeWidget, index: QModelIndex, graphview=None) -> PortWidget:
         if not isinstance(parent_widget, NodeWidget):
             raise TypeError("Parent widget must be a NodeWidget")
         if not index.isValid():
@@ -72,7 +72,7 @@ class WidgetFactory(QObject):
         widget.deleteLater()
     
     @override
-    def createOutletWidget(self, parent_widget: NodeWidget, index: QModelIndex) -> PortWidget:
+    def createOutletWidget(self, parent_widget: NodeWidget, index: QModelIndex, graphview=None) -> PortWidget:
         if not isinstance(parent_widget, NodeWidget):
             raise TypeError("Parent widget must be a NodeWidget")
         if not index.isValid():
@@ -107,7 +107,7 @@ class WidgetFactory(QObject):
         widget.deleteLater()
         
     @override
-    def createLinkWidget(self, scene: QGraphicsScene, index: QModelIndex) -> LinkWidget:
+    def createLinkWidget(self, scene: QGraphicsScene, index: QModelIndex, graphview=None) -> LinkWidget:
         """Create a link widget. Links are added directly to the scene."""
         if not isinstance(scene, QGraphicsScene):
             raise TypeError("Scene must be a QGraphicsScene")
@@ -130,7 +130,7 @@ class WidgetFactory(QObject):
         widget.deleteLater()
 
     @override
-    def createCellWidget(self, parent_widget: NodeWidget|PortWidget|LinkWidget, index: QModelIndex) -> CellWidget:
+    def createCellWidget(self, parent_widget: NodeWidget|PortWidget|LinkWidget, index: QModelIndex, graphview=None) -> CellWidget:
         if not isinstance(parent_widget, (NodeWidget, PortWidget, LinkWidget)):
             raise TypeError("Parent widget must be a NodeWidget, PortWidget, or LinkWidget")
         if not index.isValid():

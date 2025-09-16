@@ -4,23 +4,23 @@ from typing import Type
 
 class AbstractWidgetFactory(ABC):
     @abstractmethod
-    def createNodeWidget(self, parent_widget, index, graphview):
+    def createNodeWidget(self, parent_widget, index, graphview=None):
         pass
 
     @abstractmethod
-    def createInletWidget(self, parent_widget, index, graphview):
+    def createInletWidget(self, parent_widget, index, graphview=None):
         pass
 
     @abstractmethod
-    def createOutletWidget(self, parent_widget, index, graphview):
+    def createOutletWidget(self, parent_widget, index, graphview=None):
         pass
 
     @abstractmethod
-    def createLinkWidget(self, parent_widget, index, graphview):
+    def createLinkWidget(self, parent_widget, index, graphview=None):
         pass
 
     @abstractmethod
-    def createCellWidget(self, parent_widget, index, graphview):
+    def createCellWidget(self, parent_widget, index, graphview=None):
         pass
 
     @abstractmethod

@@ -1,5 +1,5 @@
 # Managers package - component managers for views
-from .link_manager import LinkManager
+from .linking_manager import LinkingManager
 from .widget_manager_using_tree_data_structure import TreeWidgetManager
 from .widget_manager_using_persistent_index import PersistentWidgetManager
 
@@ -7,6 +7,6 @@ from .widget_manager_using_persistent_index import PersistentWidgetManager
 WidgetManager = TreeWidgetManager
 
 __all__ = [
-    'LinkManager',
+    'LinkingManager',
     'WidgetManager'  # Default (tree-based) 
 ]

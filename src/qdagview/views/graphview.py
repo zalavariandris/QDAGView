@@ -28,14 +28,14 @@ from ..utils import makeLineBetweenShapes, makeLineToShape, makeArrowShape, getS
 from ..utils import bfs
 
 from .managers import WidgetManager
-from .managers.link_manager import LinkManager
+from .managers.linking_manager import LinkingManager
 from .managers.cell_manager import CellManager
 
 from .widgets import (
     NodeWidget, PortWidget, LinkWidget, CellWidget
 )
 from .delegates.graphview_delegate import GraphDelegate
-from .controllers.graph_controller import GraphController
+from ..controllers.qitemmodel_graphcontroller import QItemModelGraphController
 from .factories.widget_factory import WidgetFactory
 
 
@@ -113,7 +113,7 @@ class GraphView(QGraphicsView):
 
         assert isinstance(delegate, GraphDelegate) or delegate is None, "Invalid delegate"
         self._delegate = delegate if delegate else GraphDelegate()
-        self._controller = GraphController()
+        self._controller = QItemModelGraphController()
         self._factory = WidgetFactory()
         self._factory.portPositionChanged.connect(self.handlePortPositionChanged)
 
@@ -128,7 +128,7 @@ class GraphView(QGraphicsView):
         self._cell_manager = CellManager()
 
         # Link management
-        self._link_manager = LinkManager()
+        self._link_manager = LinkingManager()
 
         # setup the view
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
