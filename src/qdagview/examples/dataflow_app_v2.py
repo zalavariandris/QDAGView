@@ -4,7 +4,9 @@ from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 from typing import List
 
-from qdagview.models import FlowGraphModel, ExpressionOperator
+# from qdagview.models import FlowGraphModel, ExpressionOperator
+from qdagview.models .flowgraphmodel2 import FlowGraphModel
+from qdagview.models .flowgraph2 import ExpressionOperator
 from qdagview.views import GraphView
 from qdagview import QItemModelGraphController
 

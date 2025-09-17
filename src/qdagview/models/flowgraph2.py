@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List, DefaultDict, Iterable
+from typing import List, DefaultDict, Iterable, Tuple
 
 from dataclasses import dataclass
 from collections import defaultdict
@@ -15,10 +15,6 @@ class ExpressionOperator:
         self._expression = expression
         self._name = name if name else make_unique_id()
 
-        self._inlets: List[Inlet] = [] 
-        self._update_inlets()
-        self._outlets: List[Outlet] = [Outlet("result", self)]
-
     def expression(self) -> str:
         """Return the expression of the operator."""
         return self._expression
@@ -26,7 +22,7 @@ class ExpressionOperator:
     def setExpression(self, expression:str):
         """Set the expression of the operator."""
         self._expression = expression
-        self._update_inlets()
+        # self._update_inlets()
 
     def name(self) -> str:
         """Return the name of the operator."""
@@ -39,35 +35,16 @@ class ExpressionOperator:
     def __call__(self, *args, **kwds):
         ...
 
-    def inlets(self) -> List[Inlet]:
+    def inlets(self) -> List[str]:
         """Return the list of inlets for this operator."""
-        return self._inlets
-    
-    def _update_inlets(self):
-        """Reset the inlets based on the current expression."""
-          # Validate syntax
         variables = CodeAnalyzer(self._expression).get_unbound_nodes()
+        return [str(var) for var in variables]
 
-        # Add new inlets if needed
-        if len(variables) > len(self._inlets):
-            for var in variables:
-                if var not in [inlet.name for inlet in self._inlets]:
-                    self._inlets.append(Inlet(var, self))
-
-        # Remove any inlets that are no longer needed
-        if len(variables) < len(self._inlets):
-            for inlet in self._inlets[len(variables):]:
-                if inlet.name not in variables:
-                    self._inlets.remove(inlet)
-
-        # update inlet names
-        for var, inlet in zip(variables, self._inlets):
-            inlet.name = var
     
-    def outlets(self) -> List[Outlet]:
+    def outlets(self) -> List[str]:
         """Return the list of outlets for this operator."""
-        return self._outlets
-    
+        return ["result"]
+        
     def __str__(self):
         return f"{self._name}[{self._expression}]"
 
@@ -78,40 +55,10 @@ class ExpressionOperator:
         """Evaluate the operator."""
         return f"Evaluating {self._expression}"
 
-
-@dataclass()
-class Inlet:
-    name: str = "Inlet"
-    operator: ExpressionOperator|None = None
-
-    def __str__(self):
-        return f"{self.name}"
-
-    def __repr__(self):
-        return f"Inlet({self.operator}.{self.name})"
-    
-    def __hash__(self):
-        return hash((self.name, self.operator))
-
-    
-@dataclass()
-class Outlet:
-    name: str = "Outlet"
-    operator: ExpressionOperator|None = None
-
-    def __str__(self):
-        return f"{self.name}"
-    
-    def __repr__(self):
-        return f"Outlet({self.operator}.{self.name})"
-
-    def __hash__(self):
-        return hash((self.name, self.operator))
-
-@dataclass()
+@dataclass(frozen=True)
 class Link:
-    source: Outlet = None
-    target: Inlet = None
+    source: Tuple[ExpressionOperator, str] = None
+    target: Tuple[ExpressionOperator, str] = None
 
     def __str__(self):
         return  f"Link({self.source} -> {self.target})"
@@ -121,14 +68,8 @@ class FlowGraph:
     def __init__(self, name: str = "FlowGraph"):
         self._name = name
         self._operators: List[ExpressionOperator] = []
-        self._in_links: DefaultDict[Inlet, List[Link]] = defaultdict(list)
-        self._out_links: DefaultDict[Outlet, List[Link]] = defaultdict(list)
-
-    def __str__(self):
-        return f"{self.name}"
-    
-    def __repr__(self):
-        return f"FlowGraph({len(self._operators)} operators)"
+        self._in_links:  DefaultDict[Tuple[ExpressionOperator, str], List[Link]] = defaultdict(list)
+        self._out_links: DefaultDict[Tuple[ExpressionOperator, str], List[Link]] = defaultdict(list)
 
     ## CREATE
     def createOperator(self, expression: str, name: str) -> ExpressionOperator:
@@ -142,20 +83,20 @@ class FlowGraph:
         """Return the list of nodes in the graph."""
         return self._operators
     
-    def inlets(self, operator: ExpressionOperator) -> List[Inlet]:
+    def inlets(self, operator: ExpressionOperator) -> List[str]:
         return operator.inlets()
 
-    def outlets(self, op: ExpressionOperator) -> List[Outlet]:
+    def outlets(self, op: ExpressionOperator) -> List[str]:
         """Return the list of outlets for the given operator."""
         return op.outlets()
 
-    def inLinks(self, inlet: Inlet) -> List[Link]:
-        assert isinstance(inlet, Inlet), "Inlet must be an instance of Inlet"
-        return [link for link in self._in_links[inlet]]
+    def inLinks(self, op: ExpressionOperator, inlet: str) -> List[Link]:
+        assert isinstance(inlet, str), "Inlet must be an instance of Inlet"
+        return [link for link in self._in_links[(op, inlet)]]
 
-    def outLinks(self, outlet: Outlet) -> List[Link]:
-        assert isinstance(outlet, Outlet), "Outlet must be an instance of Outlet"
-        return [link for link in self._out_links[outlet]]
+    def outLinks(self, op: ExpressionOperator, outlet: str) -> List[Link]:
+        assert isinstance(outlet, str), "Outlet must be an instance of Outlet"
+        return [link for link in self._out_links[(op, outlet)]]
 
     def links(self):
         for links in self._in_links.values():
@@ -171,10 +112,10 @@ class FlowGraph:
         def inputNodes(node: ExpressionOperator) -> Iterable[ExpressionOperator]:
             """Get all input nodes of the given operator."""
             for inlet in node.inlets():
-                for link in self.inLinks(inlet):
-                    if link.source.operator is not None:
-                        yield link.source.operator
-        
+                for link in self.inLinks(node, inlet):
+                    if link.source[0] is not None:
+                        yield link.source[0]
+
         for n in bfs(node, children=inputNodes):
             yield n
 
@@ -184,9 +125,9 @@ class FlowGraph:
         def outputNodes(node: ExpressionOperator) -> Iterable[ExpressionOperator]:
             """Get all output nodes of the given operator."""
             for outlet in node.outlets():
-                for link in self._out_links[outlet]:
-                    if link.target and link.target.operator is not None:
-                        yield link.target.operator
+                for link in self.outLinks(node, outlet):
+                    if link.target and link.target[0] is not None:
+                        yield link.target[0]
         
         for n in bfs(node, children=outputNodes):
             yield n
