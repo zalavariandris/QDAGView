@@ -13,14 +13,55 @@ from .code_analyzer import CodeAnalyzer
 class ExpressionOperator:
     def __init__(self, expression: str = "Operator", name:str|None = None):
         self._expression = expression
+        self._name = name if name else make_unique_id()
+
         self._inlets: List[Inlet] = [] 
         self._update_inlets()
         self._outlets: List[Outlet] = [Outlet("result", self)]
-        self._name = name if name else make_unique_id()
 
     def expression(self) -> str:
         """Return the expression of the operator."""
         return self._expression
+        
+    def setExpression(self, expression:str):
+        """Set the expression of the operator."""
+        self._expression = expression
+        # self._update_inlets()
+
+    def name(self) -> str:
+        """Return the name of the operator."""
+        return self._name
+    
+    def setName(self, name:str):
+        """Set the name of the operator."""
+        self._name = name
+
+    def __call__(self, *args, **kwds):
+        ...
+
+    def inlets(self) -> List[Inlet]:
+        """Return the list of inlets for this operator."""
+        return self._inlets
+
+        # Validate syntax
+        # variables = CodeAnalyzer(self._expression).get_unbound_nodes()
+        # return [Inlet(var, self) for var in variables]
+
+        # # Add new inlets if needed
+        # if len(variables) > len(self._inlets):
+        #     for var in variables:
+        #         if var not in [inlet.name for inlet in self._inlets]:
+        #             self._inlets.append(Inlet(var, self))
+
+        # # Remove any inlets that are no longer needed
+        # if len(variables) < len(self._inlets):
+        #     for inlet in self._inlets[len(variables):]:
+        #         if inlet.name not in variables:
+        #             self._inlets.remove(inlet)
+
+        # # update inlet names
+        # for var, inlet in zip(variables, self._inlets):
+        #     inlet.name = var
     
     def _update_inlets(self):
         """Reset the inlets based on the current expression."""
@@ -42,31 +83,12 @@ class ExpressionOperator:
         # update inlet names
         for var, inlet in zip(variables, self._inlets):
             inlet.name = var
-        
-    def setExpression(self, expression:str):
-        """Set the expression of the operator."""
-        self._expression = expression
-        self._update_inlets()
-
-    def name(self) -> str:
-        """Return the name of the operator."""
-        return self._name
-    
-    def setName(self, name:str):
-        """Set the name of the operator."""
-        self._name = name
-
-    def __call__(self, *args, **kwds):
-        ...
-
-    def inlets(self) -> List[Inlet]:
-        """Return the list of inlets for this operator."""
-        return self._inlets
     
     def outlets(self) -> List[Outlet]:
         """Return the list of outlets for this operator."""
         return self._outlets
-    
+        # return [Outlet("result", self)]
+        
     def __str__(self):
         return f"{self._name}[{self._expression}]"
 

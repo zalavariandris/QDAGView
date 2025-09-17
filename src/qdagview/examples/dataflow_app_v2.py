@@ -62,7 +62,7 @@ if __name__ == "__main__":
                 current_node = self.selection.currentIndex().internalPointer()
                 if isinstance(current_node, ExpressionOperator):
                     ancestors = self.model._root.ancestors(self.selection.currentIndex().internalPointer())
-                    ancestor_indexes = set([self.model.indexFromItem(op) for op in ancestors])
+                    ancestor_indexes = set([self.model._indexFromItem(op) for op in ancestors])
 
                     if set(indexes).intersection(ancestor_indexes):
                         self.evaluateCurrent()

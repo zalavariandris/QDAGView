@@ -242,7 +242,7 @@ class QItemModelGraphController:
         return False
     
     ## CREATE
-    def addNode(self, subgraph:QModelIndex|QPersistentModelIndex=QModelIndex()):
+    def addNode(self, subgraph:QModelIndex|QPersistentModelIndex=QModelIndex())->QPersistentModelIndex|None:
         position = self._model.rowCount(subgraph)
         if self._model.insertRows(position, 1, subgraph):
             new_index = self._model.index(position, 0, subgraph)
@@ -250,10 +250,10 @@ class QItemModelGraphController:
             # new_node_name = f"{'Node'}#{position + 1}"
             # if not self._model.setData(new_index, new_node_name, Qt.ItemDataRole.DisplayRole):
             #     logger.warning(f"Failed to set data for new node: {new_node_name}")
-            return True
-        return False
+            return QPersistentModelIndex(new_index)
+        return None
 
-    def addInlet(self, node:QModelIndex|QPersistentModelIndex)->bool:
+    def addInlet(self, node:QModelIndex|QPersistentModelIndex)->QPersistentModelIndex|None:
         assert node.isValid(), "Node index must be valid"
         assert self.itemType(node) == GraphItemType.NODE, "Node index must be of type NODE"
         
@@ -270,10 +270,10 @@ class QItemModelGraphController:
             success = self._model.setData(new_index, new_inlet_name, Qt.ItemDataRole.DisplayRole)
             # by default node children are inlets. dont need to set GraphItemType.INLET explicitly
             assert success, "Failed to set data for the new child item"
-            return True
-        return False
+            return QPersistentModelIndex(new_index)
+        return None
 
-    def addOutlet(self, model:QAbstractItemModel, node:QModelIndex|QPersistentModelIndex)->bool:
+    def addOutlet(self, model:QAbstractItemModel, node:QModelIndex|QPersistentModelIndex)->QPersistentModelIndex|None:
         assert node.isValid(), "Node index must be valid"
         assert self.itemType(node) == GraphItemType.NODE, "Node index must be of type NODE"
         
@@ -289,10 +289,10 @@ class QItemModelGraphController:
             success = self._model.setData(new_index, new_outlet_name, Qt.ItemDataRole.DisplayRole)
             success = self._model.setData(new_index, GraphItemType.OUTLET, GraphDataRole.TypeRole)
             assert success, "Failed to set data for the new child item"
-            return True
-        return False
+            return QPersistentModelIndex(new_index)
+        return None
 
-    def addLink(self, outlet:QModelIndex|QPersistentModelIndex, inlet:QModelIndex|QPersistentModelIndex)->bool:
+    def addLink(self, outlet:QModelIndex|QPersistentModelIndex, inlet:QModelIndex|QPersistentModelIndex)->QPersistentModelIndex|None:
         """Add a child item to the currently selected item."""
         assert self._model is not None, "Source model must be set before adding child items"
         assert isinstance(outlet, (QModelIndex, QPersistentModelIndex)), f"outlet must be a QModelIndex got: {outlet}"
@@ -313,13 +313,18 @@ class QItemModelGraphController:
             link_index = self._model.index(position, 0, inlet)
             new_link_name = f"{'Link'}#{position + 1}"
             persistent_outlet = outlet if isinstance(outlet, QPersistentModelIndex) else QPersistentModelIndex(outlet)
-            if self._model.setData(link_index, persistent_outlet, role=GraphDataRole.SourceRole):
-                self._model.setData(link_index, new_link_name, role=Qt.ItemDataRole.DisplayRole)
-                return True
-        return False
+            if not self._model.setData(link_index, persistent_outlet, role=GraphDataRole.SourceRole):
+                logger.warning(f"Failed to set source for new link: {persistent_outlet}")
+
+            if not self._model.setData(link_index, new_link_name, role=Qt.ItemDataRole.DisplayRole):
+                logger.warning(f"Failed to set data for new link: {new_link_name}")
+
+            return QPersistentModelIndex(link_index)
+            
+        return None
 
     ## UPDATE
-    def setLinkSource(self, link:QModelIndex|QPersistentModelIndex, source:QModelIndex|QPersistentModelIndex):
+    def setLinkSource(self, link:QModelIndex|QPersistentModelIndex, source:QModelIndex|QPersistentModelIndex)->bool:
         """
         Set the source of a link.
         This sets the source of the link at the specified index to the given source index.
@@ -328,7 +333,7 @@ class QItemModelGraphController:
         assert link.isValid(), "Link index must be valid"
         assert source.isValid(), "Source index must be valid"
         persistent_source = source if isinstance(source, QPersistentModelIndex) else QPersistentModelIndex(source)
-        self._model.setData(link, persistent_source, role=GraphDataRole.SourceRole)
+        return self._model.setData(link, persistent_source, role=GraphDataRole.SourceRole)
 
     ## DELETE
     def removeNode(self, node:QModelIndex|QPersistentModelIndex)->bool:

@@ -884,7 +884,11 @@ class GraphView(QGraphicsView):
         index = self.indexAt(QPoint(int(event.position().x()), int(event.position().y())))
 
         if not index.isValid():
-            self._controller.addNode(self._model, QModelIndex())
+            idx = self._controller.addNode(QModelIndex())
+            if widget := self._widget_manager.getWidget(idx):
+                center = widget.boundingRect().center()
+                widget.setPos(self.mapToScene(event.position().toPoint())-center)
+
             return
             
         def onEditingFinished(editor:QLineEdit, cell_widget:CellWidget, index:QModelIndex):

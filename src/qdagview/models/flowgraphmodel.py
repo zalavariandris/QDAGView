@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 from ..utils import make_unique_name
 
+
 class FlowGraphModel(QAbstractItemModel):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -24,7 +25,53 @@ class FlowGraphModel(QAbstractItemModel):
     def invisibleRootItem(self) -> FlowGraph:
         """Return the root item of the model."""
         return self._root
+
+    def _indexFromItem(self, item: ExpressionOperator | Inlet | Outlet | Link) -> QModelIndex:
+        """Get the index of an item in the model."""
+        match item:
+            case FlowGraph():
+                return QModelIndex()  # Graph itself has no index, it's the root item
+            
+            case ExpressionOperator():
+                operator = item
+                row = self._root.operators().index(operator)
+                return self.createIndex(row, 0, operator)
+        
+            case Inlet():
+                inlet = item
+                operator = inlet.operator
+                assert isinstance(operator, ExpressionOperator), "Inlet must have a parent operator."
+                row = operator.inlets().index(inlet)
+                return self.createIndex(row, 0, inlet)
+
+            case Outlet():
+                operator = item.operator
+                assert isinstance(operator, ExpressionOperator), "Outlet must have a parent operator."
+                inlets = operator.inlets()
+                outlets = operator.outlets()
+                row = len(inlets) + outlets.index(item)
+                return self.createIndex(row, 0, item)
+                
+            case Link():
+                parent_inlet = item.target
+                assert isinstance(parent_inlet, Inlet), "Link must have a target inlet."
+                parent_node = parent_inlet.operator
+                assert isinstance(parent_node, ExpressionOperator), "Link must have a parent operator."
+                inlets = parent_node.inlets()
+                row = inlets.index(parent_inlet)
+                return self.createIndex(row, 0, item)
+
+            case _:
+                raise ValueError(f"Unsupported item type: {type(item)}")
     
+    def _itemFromIndex(self, index: QModelIndex) -> ExpressionOperator | Inlet | Outlet | Link | None:
+        """Get the item from a QModelIndex."""
+        if not index.isValid():
+            return None
+        item = QModelIndex(index).internalPointer()
+        assert isinstance(item, (ExpressionOperator | Inlet | Outlet | Link))
+        return item
+
     def index(self, row, column, parent=QModelIndex())-> QModelIndex:
         parent = QModelIndex(parent)  # Ensure parent is a valid QModelIndex
         parent_item:FlowGraph | ExpressionOperator | Inlet = self.invisibleRootItem() if not parent.isValid() else parent.internalPointer()
@@ -70,74 +117,28 @@ class FlowGraphModel(QAbstractItemModel):
             case _:
                 return QModelIndex()
 
-    def indexFromItem(self, item: ExpressionOperator | Inlet | Outlet | Link) -> QModelIndex:
-        """Get the index of an item in the model."""
-        match item:
-            case FlowGraph():
-                return QModelIndex()  # Graph itself has no index, it's the root item
-            
-            case ExpressionOperator():
-                operator = item
-                row = self._root.operators().index(operator)
-                return self.createIndex(row, 0, operator)
-        
-            case Inlet():
-                inlet = item
-                operator = inlet.operator
-                assert isinstance(operator, ExpressionOperator), "Inlet must have a parent operator."
-                row = operator.inlets().index(inlet)
-                return self.createIndex(row, 0, inlet)
-
-            case Outlet():
-                operator = item.operator
-                assert isinstance(operator, ExpressionOperator), "Outlet must have a parent operator."
-                inlets = operator.inlets()
-                outlets = operator.outlets()
-                row = len(inlets) + outlets.index(item)
-                return self.createIndex(row, 0, item)
-                
-            case Link():
-                parent_inlet = item.target
-                assert isinstance(parent_inlet, Inlet), "Link must have a target inlet."
-                parent_node = parent_inlet.operator
-                assert isinstance(parent_node, ExpressionOperator), "Link must have a parent operator."
-                inlets = parent_node.inlets()
-                row = inlets.index(parent_inlet)
-                return self.createIndex(row, 0, item)
-
-            case _:
-                raise ValueError(f"Unsupported item type: {type(item)}")
-    
-    def itemFromIndex(self, index: QModelIndex) -> ExpressionOperator | Inlet | Outlet | Link | None:
-        """Get the item from a QModelIndex."""
-        if not index.isValid():
-            return None
-        item = QModelIndex(index).internalPointer()
-        assert isinstance(item, (ExpressionOperator | Inlet | Outlet | Link))
-        return item
-
     def parent(self, index: QModelIndex) -> QModelIndex:
         index = QModelIndex(index)  # Ensure index is a valid QModelIndex
         if not index.isValid():
             return QModelIndex()
         
-        item = index.internalPointer()
-        match item:
+        data = index.internalPointer()
+        match data:
             case ExpressionOperator():
                 # Operator's parent is the root (Graph), so return invalid QModelIndex
                 return QModelIndex()
 
             case Inlet():
-                inlet = item
+                inlet = data
                 assert isinstance(inlet, Inlet), "Inlet must have a parent operator."
-                parent_operator = inlet.operator
-                assert isinstance(parent_operator, ExpressionOperator), "Inlet must have a parent operator."
+                parent_item = inlet.operator
+                assert isinstance(parent_item, ExpressionOperator), "Inlet must have a parent operator."
                 graph = self.invisibleRootItem()
-                row = graph.operators().index(parent_operator)
-                return self.createIndex(row, 0, parent_operator)
+                row = graph.operators().index(parent_item)
+                return self.createIndex(row, 0, parent_item)
 
             case Outlet():
-                outlet = item
+                outlet = data
                 assert isinstance(outlet, Outlet), "Outlet must have a parent operator."
                 parent_operator = outlet.operator
                 assert isinstance(parent_operator, ExpressionOperator), "Outlet must have a parent operator."
@@ -146,7 +147,7 @@ class FlowGraphModel(QAbstractItemModel):
                 return self.createIndex(row, 0, parent_operator)
 
             case Link():
-                link = item
+                link = data
                 parent_operator = link.target.operator if link.target else None
                 if parent_operator is not None and link.target is not None:
                     inlets = list(parent_operator.inlets())
@@ -301,7 +302,7 @@ class FlowGraphModel(QAbstractItemModel):
                         return GraphItemType.LINK
                     
                     case 0, GraphDataRole.SourceRole:
-                        return self.indexFromItem(link.source) if link.source else None
+                        return self._indexFromItem(link.source) if link.source else None
                     
                     case 0, Qt.ItemDataRole.DisplayRole:
                         return f"{link.source} -> {link.target}"
@@ -414,7 +415,7 @@ class FlowGraphModel(QAbstractItemModel):
                     case GraphDataRole.SourceRole:
                         assert isinstance(value, (QModelIndex, QPersistentModelIndex)), "Source must be a valid QModelIndex."
                         assert value.isValid(), "Source index must be valid."
-                        source_item = self.itemFromIndex(value)
+                        source_item = self._itemFromIndex(value)
                         graph = self.invisibleRootItem()
                         graph.setLinkSource(link, source_item)  # Relink the existing link to the new source
                         self.dataChanged.emit(index, index, [GraphDataRole.SourceRole])
@@ -494,7 +495,7 @@ class FlowGraphModel(QAbstractItemModel):
                     
                     for outlet in node.outlets():
                         for link in graph.outLinks(outlet):
-                            link_index = self.indexFromItem(link)
+                            link_index = self._indexFromItem(link)
                             if link_index.isValid():
                                 links_to_remove.append(link_index)
 
@@ -554,7 +555,7 @@ class FlowGraphModel(QAbstractItemModel):
         """create a python script from the selected operator and its ancestors."""
         print(f"Evaluating from index: {index}")
         graph = self.invisibleRootItem()
-        item = self.itemFromIndex(index)  # Ensure the index is valid
+        item = self._itemFromIndex(index)  # Ensure the index is valid
         return graph.buildScript(item)
         # script_text = ""
         # item = self.itemFromIndex(index)  # Ensure the index is valid
@@ -573,4 +574,4 @@ class FlowGraphModel(QAbstractItemModel):
         #     script_text += f"{line}\n"
             
         # return script_text
-        
+    
