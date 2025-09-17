@@ -5,16 +5,16 @@ from qtpy.QtWidgets import *
 from qtpy.QtCore import *
 from qtpy.QtGui import *
 
-from dataclasses import dataclass, field
 from collections import defaultdict
 
 from ..core import GraphDataRole, GraphItemType
-from ..utils import bfs
+
 
 from .flowgraph import FlowGraph, ExpressionOperator, Inlet, Outlet, Link
 import logging
 logger = logging.getLogger(__name__)
 
+from ..utils import make_unique_name
 
 class FlowGraphModel(QAbstractItemModel):
     def __init__(self, parent=None):
@@ -450,7 +450,10 @@ class FlowGraphModel(QAbstractItemModel):
                 success = True
                 self.beginInsertRows(parent, row, row + count - 1)
                 for i in range(count):
-                    if not graph.insertOperator(row + i, ExpressionOperator(f"x+y")):
+                    unique_name = make_unique_name("n1", [op.name() for op in graph.operators()])
+                    op = ExpressionOperator("a+b", unique_name)
+                    print(f"Inserting operator {op} at position {row + i}")
+                    if not graph.insertOperator(row + i, op):
                         raise Exception("Failed to add operator to the graph.")
                         success = False
                 self.endInsertRows()
@@ -549,22 +552,25 @@ class FlowGraphModel(QAbstractItemModel):
 
     def evaluate(self, index: QModelIndex) -> Any:
         """create a python script from the selected operator and its ancestors."""
-
-        script_text = ""
+        print(f"Evaluating from index: {index}")
+        graph = self.invisibleRootItem()
         item = self.itemFromIndex(index)  # Ensure the index is valid
-        ancestors = list(self._root.ancestors(item))
-        for op in reversed(ancestors):
-            params = dict()
-            inlets = op.inlets()  # Ensure inlets are populated
-            for inlet in inlets:
-                links = self._root.inLinks(inlet)
-                outlets = [link.source for link in links if link.source is not None]
-                if len(outlets) > 0:
-                    params[inlet.name] = outlets[0].operator.name()
+        return graph.buildScript(item)
+        # script_text = ""
+        # item = self.itemFromIndex(index)  # Ensure the index is valid
+        # ancestors = list(self._root.ancestors(item))
+        # for op in reversed(ancestors):
+        #     params = dict()
+        #     inlets = op.inlets()  # Ensure inlets are populated
+        #     for inlet in inlets:
+        #         links = self._root.inLinks(inlet)
+        #         outlets = [link.source for link in links if link.source is not None]
+        #         if len(outlets) > 0:
+        #             params[inlet.name] = outlets[0].operator.name()
 
-            line = f"{op.name()} = {op.expression()}({', '.join(f'{k}={v}' for k, v in params.items())})"
+        #     line = f"{op.name()} = {op.expression()}({', '.join(f'{k}={v}' for k, v in params.items())})"
             
-            script_text += f"{line}\n"
+        #     script_text += f"{line}\n"
             
-        return script_text
+        # return script_text
         

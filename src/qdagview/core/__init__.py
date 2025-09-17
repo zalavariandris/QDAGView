@@ -7,6 +7,7 @@ __all__ = [
     'GraphDataRole', 
     'GraphItemType', 
     'GraphMimeType',
+    
     # Utility functions
     'indexToPath', 
     'indexFromPath'

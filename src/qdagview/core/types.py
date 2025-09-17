@@ -5,6 +5,7 @@ from enum import IntEnum, StrEnum
 class GraphDataRole(IntEnum):
     TypeRole= Qt.ItemDataRole.UserRole+1
     SourceRole= Qt.ItemDataRole.UserRole+2
+    TargetRole= Qt.ItemDataRole.UserRole+3
 
 
 class GraphItemType(StrEnum):

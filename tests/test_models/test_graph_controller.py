@@ -34,13 +34,11 @@ def test_add_multiple_nodes():
     
     assert model.rowCount() == num_nodes_to_add, f"{num_nodes_to_add} rows should be added"
 
-
 def test_remove_single_node():
     """Test removing a node."""
     model = FlowGraphModel()
     controller = QItemModelGraphController(model)
 
-    
     # Add a node first
     controller.addNode()
     assert model.rowCount() == 1, "One row should be added"
@@ -79,7 +77,6 @@ def test_remove_multiple_nodes():
     assert first_node_index.isValid(), "First node should still be valid"
     assert not second_node_index.isValid(), "Second node should be removed"
     assert fifth_node_index.isValid(), "Fifth node should still be valid"
-
 
 def test_remove_nonexistent_node():
     """Test removing a node that does not exist."""

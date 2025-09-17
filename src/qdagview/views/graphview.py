@@ -36,7 +36,288 @@ from .widgets import (
 )
 from .delegates.graphview_delegate import GraphDelegate
 from ..controllers.qitemmodel_graphcontroller import QItemModelGraphController
-from .factories.widget_factory import WidgetFactory
+# from .factories.widget_factory import WidgetFactory
+from .factories.widget_factory_using_delegate import WidgetFactoryUsingDelegate
+
+
+class LinkingTool:
+    """A tool to handle linking operations in the graph view."""
+    def __init__(self, view: GraphView):
+        self._view = view
+        self._is_active = False
+        self._draft_link: QGraphicsLineItem | None = None
+        self._linking_payload: QModelIndex = QModelIndex()  # This will hold the index of the item being dragged or linked
+        self._link_end: Literal['head', 'tail'] | None = None  # This will hold the end of the link being dragged
+
+    def isActive(self) -> bool:
+        return self._is_active
+
+    def startLinking(self, index: QModelIndex, scene_pos: QPointF|None) -> bool:
+        """
+        Start linking from the given index.
+        return True if the drag operation was started, False otherwise.
+        """
+
+        if self._is_active:
+            # Already in linking state, cannot start linking
+            return False
+        
+        index_type = self._view._controller.itemType(index)
+        if index_type not in (GraphItemType.INLET, GraphItemType.OUTLET, GraphItemType.LINK):
+            # Only inlets, outlets and links can be dragged
+            return False
+        
+        ##
+        match self._view._controller.itemType(index):
+            case GraphItemType.INLET:
+                # create a draft link line
+                if not self._draft_link:
+                    self._draft_link = LinkWidget()
+                    self._view.scene().addItem(self._draft_link)
+                self._linking_payload = Payload(index, 'inlet')
+                self._is_active = True
+                return True
+
+            case GraphItemType.OUTLET:
+                # create a draft link line
+                if not self._draft_link:
+                    self._draft_link = LinkWidget()
+                    self._view.scene().addItem(self._draft_link)
+                self._linking_payload = Payload(index, 'outlet')
+                self._is_active = True
+                return True
+
+            case GraphItemType.LINK:
+                # If the item is a link, determine which end to drag
+                def getClosestLinkEnd(link_index:QModelIndex, scene_pos:QPointF) -> Literal['head', 'tail']:
+                    source_index = self._view._controller.linkSource(link_index)
+                    target_index = self._view._controller.linkTarget(link_index)
+                    if source_index and source_index.isValid() and target_index and target_index.isValid():
+                        link_widget = cast(LinkWidget, self._view._widget_manager.getWidget(link_index))
+                        local_pos = link_widget.mapFromScene(scene_pos)  # Ensure scene_pos is in the correct coordinate system
+                        tail_distance = (local_pos-link_widget.line().p1()).manhattanLength()
+                        head_distance = (local_pos-link_widget.line().p2()).manhattanLength()
+
+                        if head_distance < tail_distance:
+                            return 'head'  # Drag the head if closer to the mouse position
+                        else:
+                            return 'tail'
+                        
+                    elif source_index and source_index.isValid():
+                        return 'head'
+                    
+                    elif target_index and target_index.isValid():
+                        return 'tail'
+                    
+                    else:
+                        return 'tail'
+                
+                link_end = getClosestLinkEnd(index, scene_pos) if scene_pos else 'tail' # Default to tail if scene_pos is not provided
+
+                self._linking_payload = Payload(index, kind=link_end)
+                self._is_active = True
+                return True
+            case _:
+                return False
+
+    def updateLinking(self, pos:QPoint):
+        """
+        Update the linking position
+        """
+        if not self._is_active:
+            # Not in linking state, cannot update linking
+            return
+        
+        pos = QPoint(int(pos.x()), int(pos.y())) # defense against passing QPointF
+        
+        # Determine the source and target types
+        payload = self._linking_payload
+        target_index = self._view.rowAt(pos)  # Ensure the index is updated
+        drop_target_type = self._view._controller.itemType(target_index)
+        drag_source_type = payload.kind
+
+        # find relevant indexes
+        outlet_index, inlet_index, link_index = None, None, None
+        match drag_source_type, drop_target_type:
+            case 'outlet', GraphItemType.INLET:
+                link_index = None
+                outlet_index = payload.index
+                inlet_index = target_index
+
+            case 'inlet', GraphItemType.OUTLET:
+                # inlet dragged over outlet
+                link_index = None
+                outlet_index = target_index
+                inlet_index = payload.index
+
+            case 'tail', GraphItemType.OUTLET:
+                # link tail dragged over outlet
+                link_index = payload.index
+                outlet_index = target_index
+                inlet_index = self._view._controller.linkTarget(link_index)
+
+            case 'head', GraphItemType.INLET:
+                # link head dragged over inlet
+                link_index = payload.index
+                outlet_index = self._view._controller.linkSource(link_index)
+                inlet_index = target_index
+
+            case 'outlet', _:
+                # outlet dragged over empty space
+                link_index = None
+                outlet_index = payload.index
+                inlet_index = None  
+
+            case 'inlet', _:
+                # inlet dragged over empty space
+                link_index = None
+                outlet_index = None
+                inlet_index = payload.index
+                
+            case 'head', _:
+                # link head dragged over empty space
+                link_index = payload.index
+                outlet_index = self._view._controller.linkSource(link_index)
+                inlet_index = None
+
+            case 'tail', _:
+                # link tail dragged over empty space
+                link_index = payload.index
+                outlet_index = None
+                inlet_index = self._view._controller.linkTarget(link_index)
+
+            case _:
+                # No valid drag source or drop target, do nothing
+                return None
+
+
+        link_widget = self._view._widget_manager.getWidget(link_index) if link_index else self._draft_link
+
+        if outlet_index and inlet_index and self._view._controller.canLink(outlet_index, inlet_index):
+            outlet_widget = self._view._widget_manager.getWidget(outlet_index)
+            inlet_widget = self._view._widget_manager.getWidget(inlet_index)
+            line = makeLineBetweenShapes(outlet_widget, inlet_widget)
+            line = QLineF(link_widget.mapFromScene(line.p1()), link_widget.mapFromScene(line.p2()))
+
+        elif outlet_index:
+            outlet_widget = self._view._widget_manager.getWidget(outlet_index)
+            line = makeLineBetweenShapes(outlet_widget, self._view.mapToScene(pos))
+            line = QLineF(link_widget.mapFromScene(line.p1()), link_widget.mapFromScene(line.p2()))
+
+        elif inlet_index:
+            inlet_widget = self._view._widget_manager.getWidget(inlet_index)
+            line = makeLineBetweenShapes(self._view.mapToScene(pos), inlet_widget)
+            line = QLineF(link_widget.mapFromScene(line.p1()), link_widget.mapFromScene(line.p2()))
+
+        link_widget.setLine(line)
+
+    def finishLinking(self, target_index:QModelIndex)->bool:
+        """
+        Finish linking operation.
+        """
+
+        if not self._is_active:
+            # Not in linking state, cannot finish linking
+            return False
+        
+        # Determine the drop target type
+        drop_target_type = self._view._controller.itemType(target_index)
+
+        # Determine the drag source type based on the mime data
+        payload = self._linking_payload
+        drag_source_type:Literal['inlet', 'outlet', 'head', 'tail'] = payload.kind
+
+        # Perform the linking based on the drag source and drop target types
+        # return True if the linking was successful, False otherwise
+        success = False
+        match drag_source_type, drop_target_type:
+            case "outlet", GraphItemType.INLET:
+                # outlet dropped on inlet
+                outlet_index = payload.index
+                assert outlet_index.isValid(), "Outlet index must be valid"
+                inlet_index = target_index
+                if self._view._controller.addLink(outlet_index, inlet_index):
+                    success = True
+
+            case "inlet", GraphItemType.OUTLET:
+                # inlet dropped on outlet
+                inlet_index = payload.index
+                assert inlet_index.isValid(), "Inlet index must be valid"
+                outlet_index = target_index
+                if self._view._controller.addLink(outlet_index, inlet_index):
+                    success = True
+
+            case "head", GraphItemType.INLET:
+                # link head dropped on inlet
+                link_index = payload.index
+                new_inlet_index = target_index
+                current_outlet_index = self._view._controller.linkSource(link_index)
+                if self._view._controller.removeLink(link_index):
+                    if self._view._controller.addLink(current_outlet_index, new_inlet_index):
+                        success = True
+
+            case "tail", GraphItemType.OUTLET:
+                # link tail dropped on outlet
+                link_index = payload.index
+                new_outlet_index = target_index
+                current_inlet_index = self._view._controller.linkTarget(link_index)
+                if self._view._controller.removeLink(link_index):
+                    if self._view._controller.addLink(new_outlet_index, current_inlet_index):
+                        success = True
+
+            case 'tail', _:
+                # tail dropped on empty space
+                link_index = payload.index
+                assert link_index.isValid(), "Link index must be valid"
+                link_source = self._view._controller.linkSource(link_index)
+                link_target = self._view._controller.linkTarget(link_index)
+                IsLinked = link_source and link_source.isValid() and link_target and link_target.isValid()
+                if IsLinked:
+                    if self._view._controller.removeLink(link_index):
+                        success = True
+
+            case 'head', _:
+                # head dropped on empty space
+                link_index = payload.index
+                assert link_index.isValid(), "Link index must be valid"
+                link_source = self._view._controller.linkSource(link_index)
+                link_target = self._view._controller.linkTarget(link_index)
+                IsLinked = link_source and link_source.isValid() and link_target and link_target.isValid()
+                if IsLinked:
+                    if self._view._controller.removeLink(link_index):
+                        success = True
+
+        # cleanup DraftLink
+        if self._draft_link:
+            self._view.scene().removeItem(self._draft_link)
+            self._draft_link = None
+
+        self._is_active = False
+        return success
+
+    def cancelLinking(self):
+        """
+        Cancel the linking operation.
+        This is used to remove the draft link and reset the state.
+        """
+        if self._is_active:
+
+            if self._view._controller.itemType(self._linking_payload.index) == GraphItemType.LINK:
+                link_widget = cast(LinkWidget, self._view._widget_manager.getWidget(self._linking_payload.index))
+                assert link_widget is not None, "Link widget must not be None"
+                source_widget = self._view._link_manager.getLinkSource(link_widget)
+                target_widget = self._view._link_manager.getLinkTarget(link_widget)
+                self._view._update_link_position(link_widget, source_widget, target_widget)
+
+            else:
+                assert self._draft_link is not None, "Draft link must not be None"
+                if self._draft_link:
+                    self._view.scene().removeItem(self._draft_link)
+                    self._draft_link = None
+
+            # Reset state
+            self._is_active = False
+            self._linking_payload = None
 
 
 @dataclass
@@ -100,10 +381,6 @@ class Payload:
 
 
 class GraphView(QGraphicsView):
-    class State(Enum):
-        IDLE = "IDLE"
-        LINKING = "LINKING"
-
     def __init__(self, delegate:GraphDelegate|None=None, parent: QWidget | None = None):
         super().__init__(parent=parent)
         self._model:QAbstractItemModel | None = None
@@ -114,14 +391,11 @@ class GraphView(QGraphicsView):
         assert isinstance(delegate, GraphDelegate) or delegate is None, "Invalid delegate"
         self._delegate = delegate if delegate else GraphDelegate()
         self._controller = QItemModelGraphController()
-        self._factory = WidgetFactory()
+        self._factory = WidgetFactoryUsingDelegate()
         self._factory.portPositionChanged.connect(self.handlePortPositionChanged)
 
         ## State of the graph view
-        self._state = GraphView.State.IDLE
-        self._draft_link: QGraphicsLineItem | None = None
-        self._linking_payload: QModelIndex = QModelIndex()  # This will hold the index of the item being dragged or linked
-        self._link_end: Literal['head', 'tail'] | None = None  # This will hold the end of the link being dragged
+        self._linking_tool = LinkingTool(self)
 
         # Widget Manager
         self._widget_manager = WidgetManager()
@@ -555,7 +829,6 @@ class GraphView(QGraphicsView):
                 self._selection.setCurrentIndex(QModelIndex(), QItemSelectionModel.SelectionFlag.Current | QItemSelectionModel.SelectionFlag.Rows)
 
     ##
-
     def _set_cell_data(self, index:QModelIndex|QPersistentModelIndex, roles:list=[]):
         """Set the data for a cell widget."""
         assert index.isValid(), "Index must be valid"
@@ -565,231 +838,6 @@ class GraphView(QGraphicsView):
                 text = index.data(Qt.ItemDataRole.DisplayRole)
                 cell_widget.setText(text)
 
-    ## Interactions Controller eg.: linking
-    def startLinking(self, payload:Payload)->bool:
-        """
-        Start linking from the given index.
-        This is used to initiate a drag-and-drop operation for linking.
-        return True if the drag operation was started, False otherwise.
-        """
-
-        if self._state != GraphView.State.IDLE:
-            # Already in linking state, cannot start linking
-            return False
-
-        index_type = self._controller.itemType(payload.index)
-        if index_type not in (GraphItemType.INLET, GraphItemType.OUTLET, GraphItemType.LINK):
-            # Only inlets, outlets and links can be dragged
-            return False
-        
-        if index_type in (GraphItemType.OUTLET, GraphItemType.INLET):
-            # create a draft link line
-            if not self._draft_link:
-                self._draft_link = LinkWidget()
-                self.scene().addItem(self._draft_link)
-
-        self._state = GraphView.State.LINKING
-        self._linking_payload = payload        
-
-        return True
-
-    def updateLinking(self, payload:Payload, pos:QPoint):
-        """
-        Update the linking position
-        """
-        if self._state != GraphView.State.LINKING:
-            # Not in linking state, cannot update linking
-            return
-        
-        pos = QPoint(int(pos.x()), int(pos.y())) # defense against passing QPointF
-        
-        # Determine the source and target types
-        target_index = self.rowAt(pos)  # Ensure the index is updated
-        drop_target_type = self._controller.itemType(target_index)
-        drag_source_type = payload.kind
-
-        # find relevant indexes
-        outlet_index, inlet_index, link_index = None, None, None
-        match drag_source_type, drop_target_type:
-            case 'outlet', GraphItemType.INLET:
-                link_index = None
-                outlet_index = payload.index
-                inlet_index = target_index
-
-            case 'inlet', GraphItemType.OUTLET:
-                # inlet dragged over outlet
-                link_index = None
-                outlet_index = target_index
-                inlet_index = payload.index
-
-            case 'tail', GraphItemType.OUTLET:
-                # link tail dragged over outlet
-                link_index = payload.index
-                outlet_index = target_index
-                inlet_index = self._controller.linkTarget(link_index)
-
-            case 'head', GraphItemType.INLET:
-                # link head dragged over inlet
-                link_index = payload.index
-                outlet_index = self._controller.linkSource(link_index)
-                inlet_index = target_index
-
-            case 'outlet', _:
-                # outlet dragged over empty space
-                link_index = None
-                outlet_index = payload.index
-                inlet_index = None  
-
-            case 'inlet', _:
-                # inlet dragged over empty space
-                link_index = None
-                outlet_index = None
-                inlet_index = payload.index
-                
-            case 'head', _:
-                # link head dragged over empty space
-                link_index = payload.index
-                outlet_index = self._controller.linkSource(link_index)
-                inlet_index = None
-
-            case 'tail', _:
-                # link tail dragged over empty space
-                link_index = payload.index
-                outlet_index = None
-                inlet_index = self._controller.linkTarget(link_index)
-
-            case _:
-                # No valid drag source or drop target, do nothing
-                return None
-
-
-        link_widget = self._widget_manager.getWidget(link_index) if link_index else self._draft_link
-
-        if outlet_index and inlet_index and self._controller.canLink(outlet_index, inlet_index):
-            outlet_widget = self._widget_manager.getWidget(outlet_index)
-            inlet_widget = self._widget_manager.getWidget(inlet_index)
-            line = makeLineBetweenShapes(outlet_widget, inlet_widget)
-            line = QLineF(link_widget.mapFromScene(line.p1()), link_widget.mapFromScene(line.p2()))
-
-        elif outlet_index:
-            outlet_widget = self._widget_manager.getWidget(outlet_index)
-            line = makeLineBetweenShapes(outlet_widget, self.mapToScene(pos))
-            line = QLineF(link_widget.mapFromScene(line.p1()), link_widget.mapFromScene(line.p2()))
-
-        elif inlet_index:
-            inlet_widget = self._widget_manager.getWidget(inlet_index)
-            line = makeLineBetweenShapes(self.mapToScene(pos), inlet_widget)
-            line = QLineF(link_widget.mapFromScene(line.p1()), link_widget.mapFromScene(line.p2()))
-
-        link_widget.setLine(line)
-
-    def finishLinking(self, payload:Payload, target_index:QModelIndex)->bool:
-        """
-        Finish linking operation.
-        """
-
-        if self._state != GraphView.State.LINKING:
-            # Not in linking state, cannot finish linking
-            return False
-        
-        # Determine the drop target type
-        drop_target_type = self._controller.itemType(target_index)
-
-        # Determine the drag source type based on the mime data
-        drag_source_type:Literal['inlet', 'outlet', 'head', 'tail'] = payload.kind
-
-        # Perform the linking based on the drag source and drop target types
-        # return True if the linking was successful, False otherwise
-        success = False
-        match drag_source_type, drop_target_type:
-            case "outlet", GraphItemType.INLET:
-                # outlet dropped on inlet
-                outlet_index = payload.index
-                assert outlet_index.isValid(), "Outlet index must be valid"
-                inlet_index = target_index
-                if self._controller.addLink(outlet_index, inlet_index):
-                    success = True
-
-            case "inlet", GraphItemType.OUTLET:
-                # inlet dropped on outlet
-                inlet_index = payload.index
-                assert inlet_index.isValid(), "Inlet index must be valid"
-                outlet_index = target_index
-                if self._controller.addLink(outlet_index, inlet_index):
-                    success = True
-
-            case "head", GraphItemType.INLET:
-                # link head dropped on inlet
-                link_index = payload.index
-                new_inlet_index = target_index
-                current_outlet_index = self._controller.linkSource(link_index)
-                if self._controller.removeLink(link_index):
-                    if self._controller.addLink(current_outlet_index, new_inlet_index):
-                        success = True
-
-            case "tail", GraphItemType.OUTLET:
-                # link tail dropped on outlet
-                link_index = payload.index
-                new_outlet_index = target_index
-                current_inlet_index = self._controller.linkTarget(link_index)
-                if self._controller.removeLink(link_index):
-                    if self._controller.addLink(new_outlet_index, current_inlet_index):
-                        success = True
-
-            case 'tail', _:
-                # tail dropped on empty space
-                link_index = payload.index
-                assert link_index.isValid(), "Link index must be valid"
-                link_source = self._controller.linkSource(link_index)
-                link_target = self._controller.linkTarget(link_index)
-                IsLinked = link_source and link_source.isValid() and link_target and link_target.isValid()
-                if IsLinked:
-                    if self._controller.removeLink(link_index):
-                        success = True
-
-            case 'head', _:
-                # head dropped on empty space
-                link_index = payload.index
-                assert link_index.isValid(), "Link index must be valid"
-                link_source = self._controller.linkSource(link_index)
-                link_target = self._controller.linkTarget(link_index)
-                IsLinked = link_source and link_source.isValid() and link_target and link_target.isValid()
-                if IsLinked:
-                    if self._controller.removeLink(link_index):
-                        success = True
-
-        # cleanup DraftLink
-        if self._draft_link:
-            self.scene().removeItem(self._draft_link)
-            self._draft_link = None
-
-        self._state = GraphView.State.IDLE
-        return success
-
-    def cancelLinking(self):
-        """
-        Cancel the linking operation.
-        This is used to remove the draft link and reset the state.
-        """
-        if self._state == GraphView.State.LINKING:
-
-            if self._controller.itemType(self._linking_payload.index) == GraphItemType.LINK:
-                link_widget = cast(LinkWidget, self._widget_manager.getWidget(self._linking_payload.index))
-                assert link_widget is not None, "Link widget must not be None"
-                source_widget = self._link_manager.getLinkSource(link_widget)
-                target_widget = self._link_manager.getLinkTarget(link_widget)
-                self._update_link_position(link_widget, source_widget, target_widget)
-
-            else:
-                assert self._draft_link is not None, "Draft link must not be None"
-                if self._draft_link:
-                    self.scene().removeItem(self._draft_link)
-                    self._draft_link = None
-
-            # Reset state
-            self._state = GraphView.State.IDLE
-            self._linking_payload = None
-
     ## Handle mouse events
     def mousePressEvent(self, event):
         """
@@ -797,76 +845,38 @@ class GraphView(QGraphicsView):
         if starting a link is not possible, fallback to the QGraphicsView behavior.
         """
 
-        self.setCursor(Qt.CursorShape.DragLinkCursor)  # Reset cursor to default
-        if self._state == GraphView.State.LINKING:
+        if self._linking_tool.isActive():
             # If we are already linking, cancel the linking operation
-            self.cancelLinking()
+            self._linking_tool.cancelLinking()
             return
-        
-        if self._state == GraphView.State.IDLE:
-            pos = event.position()
-            index = self.rowAt(QPoint(int(pos.x()), int(pos.y())))  # Ensure the index is updated
-            assert index is not None, f"got: {index}"
 
-            match self._controller.itemType(index):
-                case GraphItemType.INLET:
-                    if self.startLinking(Payload(index, 'inlet')):
-                        return
-                case GraphItemType.OUTLET:
-                    if self.startLinking(Payload(index, 'outlet')):
-                        return
+        # get the index at the mouse position
+        pos = event.position()
+        index = self.rowAt(QPoint(int(pos.x()), int(pos.y())))
+        assert index is not None, f"got: {index}"
+        scene_pos = self.mapToScene(event.position().toPoint())
 
-                case GraphItemType.LINK:
-                    # If the item is a link, determine which end to drag
-                    def getClosestLinkEnd(link_index:QModelIndex, scene_pos:QPointF) -> Literal['head', 'tail']:
-                        source_index = self._controller.linkSource(link_index)
-                        target_index = self._controller.linkTarget(link_index)
-                        if source_index and source_index.isValid() and target_index and target_index.isValid():
-                            link_widget = cast(LinkWidget, self._widget_manager.getWidget(link_index))
-                            local_pos = link_widget.mapFromScene(scene_pos)  # Ensure scene_pos is in the correct coordinate system
-                            tail_distance = (local_pos-link_widget.line().p1()).manhattanLength()
-                            head_distance = (local_pos-link_widget.line().p2()).manhattanLength()
-
-                            if head_distance < tail_distance:
-                                return 'head'  # Drag the head if closer to the mouse position
-                            else:
-                                return 'tail'
-                            
-                        elif source_index and source_index.isValid():
-                            return 'head'
-                        
-                        elif target_index and target_index.isValid():
-                            return 'tail'
-                        
-                        else:
-                            return 'tail'
-                    
-                    scene_pos = self.mapToScene(event.position().toPoint())
-                    link_end = getClosestLinkEnd(index, scene_pos)
-    
-                    if self.startLinking(Payload(index, kind=link_end)):
-                        return
-                    
-        super().mousePressEvent(event)
+        # If we can start linking, do so
+        if self._linking_tool.startLinking(index, scene_pos):
+            return
+        else:
+            # Fallback to default behavior
+            super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        if self._state == self.State.LINKING:
+        if self._linking_tool.isActive():
             pos = QPoint(int(event.position().x()), int(event.position().y())) # Ensure pos is in integer coordinates
-            self.updateLinking(self._linking_payload, pos)
+            self._linking_tool.updateLinking(pos)
         else:
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
-        self.unsetCursor()
-        if self._state == self.State.LINKING:
-            
+        if self._linking_tool.isActive():
             pos = QPoint(int(event.position().x()), int(event.position().y())) # Ensure pos is in integer coordinates
             drop_target = self.rowAt(pos)  # Ensure the index is updated
-            if not self.finishLinking(self._linking_payload, drop_target):
+            if not self._linking_tool.finishLinking(drop_target):
                 # Handle failed linking
                 logger.warning("WARNING: Linking failed!")
-                pass
-
         else:
             super().mouseReleaseEvent(event)
 
@@ -905,6 +915,7 @@ class GraphView(QGraphicsView):
         G = nx.MultiDiGraph()
         port_to_node: dict[QGraphicsItem, NodeWidget] = {}
         all_widgets = list(self._widget_manager.widgets())
+
         for widget in all_widgets:
             # collect nodes and ports
             if isinstance(widget, NodeWidget):
@@ -926,8 +937,8 @@ class GraphView(QGraphicsView):
                 
             # collect links
             elif isinstance(widget, LinkWidget):
-                source_outlet = self._link_source[widget]
-                target_inlet = self._link_target[widget]
+                source_outlet = self._link_manager.getLinkSource(widget)
+                target_inlet = self._link_manager.getLinkTarget(widget)
                 assert source_outlet is not None and target_inlet is not None, "Link source and target must be valid"
                 source_node_widget = port_to_node[source_outlet]
                 target_node_widget = port_to_node[target_inlet]

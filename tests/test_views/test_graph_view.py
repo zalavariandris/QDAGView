@@ -211,6 +211,40 @@ def test_link_nodes(qtbot):
     # Process any pending events
     qtbot.wait(100)  # Wait 100ms for any async operations
 
+
+def test_update_expression_to_no_inlets(qtbot):
+    """Test updating an expression from multiple inlets to no inlets."""
+    model = FlowGraphModel()
+    controller = QItemModelGraphController(model)
+    view = GraphView()
+    view.setModel(model)
+    
+    # Add the widget to qtbot for proper Qt handling
+    qtbot.addWidget(view)
+    view.show()
+    with qtbot.waitExposed(view):
+        pass  # Wait for the window to be exposed
+    
+    # Add two nodes first
+    controller.addNode()
+    model.setData(model.index(0, 1, QModelIndex()), "a+b+c")  # Set expression with two inlets
+
+    assert model.rowCount() == 1, "One row should be added"
+    assert len(controller.nodeInlets(model.index(0, 0, QModelIndex()))) == 3, "Node should have three inlets"
+    inlet_widgets = [view._widget_manager.getWidget(idx) for idx in controller.nodeInlets(model.index(0, 0, QModelIndex()))]
+    assert len(inlet_widgets) == 3 and all(inlet_widgets), "All inlet widgets should be created"
+
+    model.setData(model.index(0, 1, QModelIndex()), "5 + 10")  # Update expression to no inlets
+    inlet_widgets = [view._widget_manager.getWidget(idx) for idx in controller.nodeInlets(model.index(0, 0, QModelIndex()))]
+    assert len(inlet_widgets) == 0 and all(inlet_widgets), "All inlet widgets should be created"
+
+    
+    # Process any pending events
+    qtbot.wait(100)  # Wait 100ms for any async operations
+
+
+
+
 if __name__ == "__main__":
     # runs pytest on this file
     # logging.basicConfig(level=logging.CRITICAL)

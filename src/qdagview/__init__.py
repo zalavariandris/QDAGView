@@ -7,7 +7,7 @@ Provides graph models, views, and interaction components for building graph-base
 # Import main public API components
 from .core import GraphDataRole, GraphItemType, GraphMimeType
 from .views import GraphView, GraphDelegate
-from .models import FlowGraphModel, FlowGraph, StandardGraphModel
+from .models import FlowGraphModel, FlowGraph
 from .controllers import QItemModelGraphController
 # Import subpackages for advanced usage
 from . import core
@@ -21,13 +21,17 @@ __all__ = [
     # Main components (most commonly used)
     'GraphView',
     'GraphDelegate',
+
+    # Models and controllers
     'FlowGraphModel',
     'QItemModelGraphController',
     'FlowGraph',
-    'StandardGraphModel',
+
+    # Core components
     'GraphDataRole',
     'GraphItemType',
     'GraphMimeType',
+
     # Subpackages for advanced usage
     'core',
     'models',

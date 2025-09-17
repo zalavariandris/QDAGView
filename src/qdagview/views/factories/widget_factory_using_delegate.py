@@ -15,8 +15,53 @@ from ..widgets import (
 )
 
 import weakref
-from ...views.graphview import GraphView
 
+if TYPE_CHECKING:
+    from ...views.graphview import GraphView
+
+def makeViewOption(option_graphics:QStyleOptionGraphicsItem, index:QModelIndex, widget=None):
+    """
+    Convert a QStyleOptionGraphicsItem + QModelIndex into a QStyleOptionViewItem.
+    """
+    assert isinstance(option_graphics, QStyleOptionGraphicsItem)
+    assert isinstance(index, QModelIndex), f"Expected QModelIndex, got {type(index)}"
+    opt = QStyleOptionViewItem()
+
+    # Geometry
+    opt.rect = option_graphics.rect
+
+    # State flags (hovered, selected, enabled, etc.)
+    opt.state = option_graphics.state
+
+    # Palette
+    if widget is not None:
+        opt.palette = widget.palette()
+        opt.font = widget.font()
+    else:
+        opt.palette = QApplication.palette()
+        opt.font = QApplication.font()
+
+    # Text & icon (from model data)
+    opt.text = str(index.data(Qt.DisplayRole)) if index.isValid() else ""
+    icon_data = index.data(Qt.DecorationRole) if index.isValid() else None
+    opt.icon = icon_data if icon_data is not None else QIcon()
+
+    # Alignment (from model or default)
+    alignment = index.data(Qt.TextAlignmentRole)
+    opt.displayAlignment = alignment if alignment is not None else Qt.AlignLeft | Qt.AlignVCenter
+
+    # Check state (for checkboxes, if provided by model)
+    check_state = index.data(Qt.CheckStateRole)
+    if check_state is not None:
+        opt.checkState = check_state
+    else:
+        opt.checkState = Qt.Unchecked
+
+    # Features (optional: mark if it has checkboxes, etc.)
+    # TODO: Set features based on model data if needed
+    # opt.features = QStyleOptionViewItem.
+
+    return opt
 
 class NodeWidgetWithDelegate(NodeWidget):
     def __init__(self, graphview: GraphView, parent: QGraphicsItem | None = None):
@@ -24,8 +69,12 @@ class NodeWidgetWithDelegate(NodeWidget):
         self._graphview = weakref.ref(graphview)
 
     def paint(self, painter: QPainter, option: QStyleOption, widget=None):
-        if self._graphview and self._graphview() and self._graphview()._delegate:
-            self._graphview()._delegate.paintNode(painter, option, widget)
+        if graphview:=self._graphview():
+            index = graphview._widget_manager.getIndex(self)
+            if index is None:
+                return # If index is None, the widget is being removed - skip painting
+            opt = makeViewOption(option, index, graphview)
+            graphview._delegate.paintNode(painter, opt, index)
         else:
             super().paint(painter, option, widget)
 
@@ -36,8 +85,14 @@ class InletWidgetWithDelegate(PortWidget):
         self._graphview = weakref.ref(graphview)
 
     def paint(self, painter: QPainter, option: QStyleOption, widget=None):
-        if self._graphview and self._graphview() and self._graphview()._delegate:
-            self._graphview()._delegate.paintInlet(painter, option, widget)
+        if graphview:=self._graphview():
+            index = graphview._widget_manager.getIndex(self)
+            if index is None:
+                # TODO: revisit this logic. 
+                # no painting should be invoked after it has been removed from the scene right?
+                return # If index is None, the widget is being removed - skip painting
+            opt = makeViewOption(option, index, graphview)
+            graphview._delegate.paintInlet(painter, opt, index)
         else:
             super().paint(painter, option, widget)
 
@@ -48,8 +103,12 @@ class OutletWidgetWithDelegate(PortWidget):
         self._graphview = weakref.ref(graphview)
 
     def paint(self, painter: QPainter, option: QStyleOption, widget=None):
-        if self._graphview and self._graphview() and self._graphview()._delegate:
-            self._graphview()._delegate.paintOutlet(painter, option, widget)
+        if graphview:=self._graphview():
+            index = graphview._widget_manager.getIndex(self)
+            if index is None:
+                return # If index is None, the widget is being removed - skip painting
+            opt = makeViewOption(option, index, graphview)
+            graphview._delegate.paintInlet(painter, opt, index)
         else:
             super().paint(painter, option, widget)
 
@@ -60,8 +119,28 @@ class LinkWidgetWithDelegate(LinkWidget):
         self._graphview = weakref.ref(graphview)
 
     def paint(self, painter: QPainter, option: QStyleOption, widget=None):
-        if self._graphview and self._graphview() and self._graphview()._delegate:
-            self._graphview()._delegate.paintLink(painter, option, widget)
+        if graphview:=self._graphview():
+            index = graphview._widget_manager.getIndex(self)
+            if index is None:
+                return # If index is None, the widget is being removed - skip painting
+            opt = makeViewOption(option, index, graphview)
+            outlet = graphview._link_manager.getLinkSource(self)
+            inlet = graphview._link_manager.getLinkTarget(self)
+            # Set decoration alignment based on relative positions
+            if outlet and inlet:
+                dx = inlet.scenePos().x() - outlet.scenePos().x()
+                dy = inlet.scenePos().y() - outlet.scenePos().y()
+                if dx >= 0 and dy >= 0:  # Target is bottom-right
+                    opt.decorationAlignment = Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignRight
+                elif dx < 0 and dy >= 0:  # Target is bottom-left  
+                    opt.decorationAlignment = Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignLeft
+                elif dx >= 0 and dy < 0:  # Target is top-right
+                    opt.decorationAlignment = Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight
+                else:  # Target is top-left
+                    opt.decorationAlignment = Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+
+            graphview._delegate.paintLink(painter, opt, index)
+        
         else:
             super().paint(painter, option, widget)
 
@@ -72,13 +151,17 @@ class CellWidgetWithDelegate(CellWidget):
         self._graphview = weakref.ref(graphview)
 
     def paint(self, painter: QPainter, option: QStyleOption, widget=None):
-        if self._graphview and self._graphview() and self._graphview()._delegate:
-            self._graphview()._delegate.paintCell(painter, option, widget)
+        if graphview:=self._graphview():
+            index = graphview._cell_manager.getIndex(self)
+            if index is not None:
+                opt = makeViewOption(option, index, graphview)
+                graphview._delegate.paintCell(painter, opt, index)
+            # If index is None, the widget is being removed - skip painting
         else:
             super().paint(painter, option, widget)
 
 
-class WidgetFactoryWithDelegate(QObject):
+class WidgetFactoryUsingDelegate(QObject):
     portPositionChanged = Signal(QPersistentModelIndex)
 
     ## Widget Factory

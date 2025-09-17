@@ -82,7 +82,9 @@ class PortWidget(QGraphicsObject):
     def hoverEnterEvent(self, event: QGraphicsSceneHoverEvent):
         for cell in self._cells:
             cell.setVisible(True)
+        self.update()
 
     def hoverLeaveEvent(self, event: QGraphicsSceneHoverEvent):
         for cell in self._cells:
             cell.setVisible(False)
+        self.update()

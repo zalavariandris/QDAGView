@@ -6,7 +6,6 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.qdagview.models.flowgraph import (
-    get_unbound_nodes,
     FlowGraph,
     ExpressionOperator,
     Inlet,

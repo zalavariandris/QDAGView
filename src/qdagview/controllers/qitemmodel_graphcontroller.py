@@ -247,9 +247,9 @@ class QItemModelGraphController:
         if self._model.insertRows(position, 1, subgraph):
             new_index = self._model.index(position, 0, subgraph)
             assert new_index.isValid(), "Created index is not valid"
-            new_node_name = f"{'Node'}#{position + 1}"
-            success = self._model.setData(new_index, new_node_name, Qt.ItemDataRole.DisplayRole)
-            assert success, "Failed to set data for the new child item"
+            # new_node_name = f"{'Node'}#{position + 1}"
+            # if not self._model.setData(new_index, new_node_name, Qt.ItemDataRole.DisplayRole):
+            #     logger.warning(f"Failed to set data for new node: {new_node_name}")
             return True
         return False
 

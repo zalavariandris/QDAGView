@@ -5,7 +5,7 @@ from qtpy.QtWidgets import *
 
 from .cell_widget import CellWidget
 from .port_widget import PortWidget
-from ...utils import distribute_items_horizontal
+from ...utils import distribute_items
 
 class NodeWidget(QGraphicsItem):
     def __init__(self, parent: QGraphicsItem | None = None):
@@ -26,7 +26,7 @@ class NodeWidget(QGraphicsItem):
     def _arrangeInlets(self, first=0, last=-1):
         for i, inlet in enumerate(self._inlets):
             inlet.setPos(0, -10)
-        distribute_items_horizontal(self._inlets, self.boundingRect().adjusted(10, 0, -10, 0), equal_spacing=False)
+        distribute_items(self._inlets, self.boundingRect().adjusted(10, 0, -10, 0), equal_spacing=False)
 
     def insertInlet(self, pos: int, inlet: PortWidget):
         self._inlets.insert(pos, inlet)
@@ -35,6 +35,7 @@ class NodeWidget(QGraphicsItem):
 
     def removeInlet(self, inlet:PortWidget):
         self._inlets.remove(inlet)
+        inlet.setParentItem(None)  # Remove from graphics hierarchy
         self._arrangeInlets()
 
     def inlets(self) -> list[PortWidget]:
@@ -44,7 +45,7 @@ class NodeWidget(QGraphicsItem):
     def _arrangeOutlets(self, first=0, last=-1):
         for i, outlet in enumerate(self._outlets):
             outlet.setPos(0, self.boundingRect().height() + 2)
-        distribute_items_horizontal(self._outlets, self.boundingRect().adjusted(10, 0, -10, 0), equal_spacing=False)
+        distribute_items(self._outlets, self.boundingRect().adjusted(10, 0, -10, 0), equal_spacing=False)
 
     def insertOutlet(self, pos: int, outlet: PortWidget):
         self._outlets.insert(pos, outlet)
@@ -53,6 +54,7 @@ class NodeWidget(QGraphicsItem):
 
     def removeOutlet(self, outlet: PortWidget):
         self._outlets.remove(outlet)
+        outlet.setParentItem(None)  # Remove from graphics hierarchy
         self._arrangeOutlets()
 
     def outlets(self) -> list[PortWidget]:
@@ -65,7 +67,7 @@ class NodeWidget(QGraphicsItem):
         
         first_cell = self._cells[0]
         first_cell.setPos(5, -2)  # First cell position
-
+        first_cell.setTextWidth(self.boundingRect().width() - 10)
 
         for i, cell in enumerate(self._cells[1:]):
             cell.setPos(self.boundingRect().width(), -2 + i * 12)
@@ -77,6 +79,7 @@ class NodeWidget(QGraphicsItem):
 
     def removeCell(self, cell: CellWidget):
         self._cells.remove(cell)
+        cell.setParentItem(None)  # Remove from graphics hierarchy
         self._arrangeCells()
 
     def cells(self) -> list[CellWidget]:

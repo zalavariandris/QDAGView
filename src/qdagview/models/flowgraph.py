@@ -7,38 +7,7 @@ from collections import defaultdict
 from ..utils import bfs
 from ..utils.unique import make_unique_id
 
-
-import ast
-def get_unbound_nodes(code: str) -> list[str]:
-    # Parse the code into an AST
-    tree = ast.parse(code)
-
-    # Sets to store variable names
-    assigned: set[str] = set()
-    used: list[str] = []  # Changed to list to preserve order
-    used_set: set[str] = set()  # Keep set for O(1) lookup
-
-    # Recursive AST traversal to maintain order
-    def visit_node(node):
-        if isinstance(node, ast.Name):
-            if isinstance(node.ctx, ast.Load):  # This is a variable being used
-                if node.id not in assigned and node.id not in used_set:
-                    used.append(node.id)
-                    used_set.add(node.id)
-                    
-            elif isinstance(node.ctx, ast.Store):  # This is a variable being assigned
-                assigned.add(node.id)
-        
-        # Visit child nodes in order
-        for child in ast.iter_child_nodes(node):
-            visit_node(child)
-    
-    visit_node(tree)
-
-    # Unbound variables are used variables that are not assigned
-    unbound = [var for var in used if var not in assigned]
-
-    return unbound
+from .code_analyzer import CodeAnalyzer
 
 
 class ExpressionOperator:
@@ -55,7 +24,8 @@ class ExpressionOperator:
     
     def _update_inlets(self):
         """Reset the inlets based on the current expression."""
-        variables = get_unbound_nodes(self._expression)
+          # Validate syntax
+        variables = CodeAnalyzer(self._expression).get_unbound_nodes()
 
         # Add new inlets if needed
         if len(variables) > len(self._inlets):
@@ -106,6 +76,7 @@ class ExpressionOperator:
     def evaluate(self, *args, **kwargs) -> str:
         """Evaluate the operator."""
         return f"Evaluating {self._expression}"
+
 
 @dataclass()
 class Inlet:
@@ -185,7 +156,10 @@ class FlowGraph:
                 yield link
 
     def ancestors(self, node: ExpressionOperator) -> Iterable[ExpressionOperator]:
-        """Get all dependencies of the given operator."""
+        """
+        Get all dependencies of the given operator, in topological order.
+        The current implementation uses breadth-first search, but it is not guaranteed.
+        """
         assert node in self._operators
         def inputNodes(node: ExpressionOperator) -> Iterable[ExpressionOperator]:
             """Get all input nodes of the given operator."""
@@ -213,17 +187,50 @@ class FlowGraph:
     def evaluate(self, node: ExpressionOperator) -> str:
         """Evaluate the graph starting from the given node."""
         assert node in self._operators
+        print(f"Evaluating graph starting from node: {node}")
         result = ""
         ancestors = list(self.ancestors(node))
         print(f"Evaluating item: {node}, ancestors: {ancestors}")
         for op in ancestors:
             result += f"{op.expression()}\n"
         return result
+    
+    def buildScript(self, node: ExpressionOperator) -> str:
+        """Build a script representing the graph starting from the given node."""
+        assert node in self._operators
+        script_text = ""
+        ancestors = self.ancestors(node)
+
+        for op in reversed(list(ancestors)):
+            match op:
+                case ExpressionOperator():
+                    params = dict()
+                    inlets = op.inlets()  # Ensure inlets are populated
+                    for inlet in inlets:
+                        links = self.inLinks(inlet)
+                        outlets = [link.source for link in links if link.source is not None]
+                        if len(outlets) > 0:
+                            params[inlet.name] = outlets[0].operator.name()
+                        else:
+                            params[inlet.name] = f"_{inlet.name}_"  # or some default value
+
+                    expression_with_inputs = CodeAnalyzer(op.expression()).replace_unbound_nodes(params)
+
+                    line = f"{op.name()} = {expression_with_inputs}"
+                    
+                    script_text += f"{line}\n"
+                case "FunctionOperator()":
+                    line = f"{op.name()} = {op.expression()}({', '.join(f'{k}={v}' for k, v in params.items())})"
+                    script_text += f"{line}\n"
+                case _:
+                    continue
+
+        return script_text
 
     ## CREATE
-    def insertOperator(self, index:int, operator: ExpressionOperator) -> bool:
+    def insertOperator(self, pos:int, operator: ExpressionOperator) -> bool:
         """Add an operator to the graph at the specified index."""
-        self._operators.insert(index, operator)
+        self._operators.insert(pos, operator)
         return True
     
     def appendOperator(self, operator: ExpressionOperator) -> bool:

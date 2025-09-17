@@ -90,8 +90,9 @@ class TreeWidgetManager:
         
         yield from _recursive_items(self._root, ())
 
-    def getWidget(self, index: QModelIndex) -> QGraphicsItem | None:
+    def getWidget(self, index: QModelIndex|QPersistentModelIndex) -> QGraphicsItem | None:
         """Get widget for the given model index."""
+        assert isinstance(index, (QModelIndex, QPersistentModelIndex))
         if not index.isValid():
             logger.debug(f"Index is invalid: {index}")
             return None

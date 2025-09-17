@@ -12,12 +12,14 @@ from .geo import (
     makeVerticalRoundedPath,
     makeHorizontalRoundedPath)
 
-from .qt import distribute_items_horizontal
+from .qt import distribute_items
 
 # Import unique utilities
 from .unique import make_unique_name
 
 def bfs(*root, children:Callable, reverse:bool=False) -> List:
+    """Perform a breadth-first search (BFS) traversal
+    starting from the given root nodes."""
     queue:List = [*root]
     result = list()
     visited = set()  # Track visited nodes to prevent cycles
@@ -36,6 +38,30 @@ def bfs(*root, children:Callable, reverse:bool=False) -> List:
             # Only add child to queue if not already visited
             if child not in visited:
                 queue.append(child)
+
+    return reversed(result) if reverse else result
+
+def dfs(*root, children:Callable, reverse:bool=False) -> List:
+    """Perform a depth-first search (DFS) traversal
+    starting from the given root nodes."""
+    stack:List = [*root]
+    result = list()
+    visited = set()  # Track visited nodes to prevent cycles
+    
+    while stack:
+        index = stack.pop()  # Remove from end for proper DFS
+        
+        # Skip if already visited to prevent infinite loops in cyclic graphs
+        if index in visited:
+            continue
+            
+        visited.add(index)
+        result.append(index)
+        
+        for child in children(index):
+            # Only add child to stack if not already visited
+            if child not in visited:
+                stack.append(child)
 
     return reversed(result) if reverse else result
 
@@ -81,5 +107,5 @@ __all__ = [
     # Naming utilities
     'make_unique_name',
     # Qt utilities
-    'distribute_items_horizontal',
+    'distribute_items',
 ]

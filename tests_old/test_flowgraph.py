@@ -5,48 +5,16 @@ import os
 # Add parent directory to path so we can import the module
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from src.qdagview.models.code_analyzer import CodeAnalyzer
+
 from src.qdagview.models.flowgraph import (
-    get_unbound_nodes,
     FlowGraph,
     ExpressionOperator,
-    Inlet,
-    Outlet,
-    Link,
     flowgraph_to_nx
 )
 
+
 class TestExpressionOperator(unittest.TestCase):
-    def test_initial_expression(self):
-        self.assertEqual(get_unbound_nodes("a+b"), ["a", "b"])
-        self.assertEqual(get_unbound_nodes("x*x"), ["x"])
-        self.assertEqual(get_unbound_nodes("a + b"), ["a", "b"])
-        self.assertEqual(get_unbound_nodes("text"), ["text"])
-        self.assertEqual(get_unbound_nodes("x*y+a"), ["x", "y", "a"])
-        self.assertEqual(get_unbound_nodes("a*x+a"), ["a", "x"])
-
-        self.assertEqual([inlet.name for inlet in ExpressionOperator("a+b").inlets()], ["a", "b"])
-        self.assertEqual([inlet.name for inlet in ExpressionOperator("a + b").inlets()], ["a", "b"])
-        self.assertEqual([inlet.name for inlet in ExpressionOperator("x*x").inlets()], ["x"])
-        self.assertEqual([inlet.name for inlet in ExpressionOperator("text").inlets()], ["text"])
-        self.assertEqual([inlet.name for inlet in ExpressionOperator("x*y+a").inlets()], ["x", "y", "a"])
-        self.assertEqual([inlet.name for inlet in ExpressionOperator("a*x+a").inlets()], ["a", "x"])
-
-    def test_inlets_with_multiple_occurrences(self):
-        op = ExpressionOperator("a + a + a + b")
-        inlets = op.inlets()
-        self.assertEqual({inlet.name for inlet in inlets}, {"a", "b"})
-
-    def test_inlets_order(self):
-        op = ExpressionOperator("c + b + a")
-        inlets = op.inlets()
-        self.assertEqual([inlet.name for inlet in inlets], ["c", "b", "a"])
-
-    def test_update_expression(self):
-        op = ExpressionOperator("a + b")
-        op.setExpression("x + y")
-        inlets = op.inlets()
-        self.assertEqual({inlet.name for inlet in inlets}, {"x", "y"})
-
     def test_expression_outlets(self):
         op = ExpressionOperator("a + b")
         outlets = op.outlets()
@@ -58,9 +26,51 @@ class TestExpressionOperator(unittest.TestCase):
         op.setName("NewName")
         self.assertEqual(op.name(), "NewName")
 
+    def test_initial_inlets(self):
+        self.assertEqual([inlet.name for inlet in ExpressionOperator("a+b").inlets()], ["a", "b"])
+        self.assertEqual([inlet.name for inlet in ExpressionOperator("a + b").inlets()], ["a", "b"])
+        self.assertEqual([inlet.name for inlet in ExpressionOperator("x*x").inlets()], ["x"])
+        self.assertEqual([inlet.name for inlet in ExpressionOperator("text").inlets()], ["text"])
+        self.assertEqual([inlet.name for inlet in ExpressionOperator("x*y+a").inlets()], ["x", "y", "a"])
+        self.assertEqual([inlet.name for inlet in ExpressionOperator("a*x+a").inlets()], ["a", "x"])
+
+    def test_expression_with_values(self):
+        self.assertEqual([inlet.name for inlet in ExpressionOperator("None").inlets()], [])
+        self.assertEqual([inlet.name for inlet in ExpressionOperator("5").inlets()], [])
+        self.assertEqual([inlet.name for inlet in ExpressionOperator("x + 5").inlets()], ["x"])
+        self.assertEqual([inlet.name for inlet in ExpressionOperator("5 + y").inlets()], ["y"])
+        self.assertEqual([inlet.name for inlet in ExpressionOperator("5 + 5").inlets()], [])
+
+    def test_expression_with_multiple_occurrences(self):
+        op = ExpressionOperator("a + a + a + b")
+        inlets = op.inlets()
+        self.assertEqual({inlet.name for inlet in inlets}, {"a", "b"})
+
+    def test_inlets_order(self):
+        op = ExpressionOperator("c + b + a")
+        inlets = op.inlets()
+        self.assertEqual([inlet.name for inlet in inlets], ["c", "b", "a"])
+
+    def test_inlets_order_with_repeated_vars(self):
+        op = ExpressionOperator("c + a + b + a + c")
+        inlets = op.inlets()
+        self.assertEqual([inlet.name for inlet in inlets], ["c", "a", "b"])
+
+    def test_update_expression(self):
+        op = ExpressionOperator("a + b")
+        op.setExpression("x + y")
+        inlets = op.inlets()
+        self.assertEqual({inlet.name for inlet in inlets}, {"x", "y"})
+
+    def test_update_expression_to_no_inlets(self):
+        op = ExpressionOperator("a + b")
+        op.setExpression("5 + 10")
+        inlets = op.inlets()
+        self.assertEqual(len(inlets), 0)
+
  
 class TestFlowGraph(unittest.TestCase):
-    def test_operators(self):
+    def test_expression_operators(self):
         graph = FlowGraph()
 
         # create a single operator
@@ -150,7 +160,6 @@ class TestFlowGraph(unittest.TestCase):
         self.assertIn(self.link, self.graph.outLinks(self.op3.outlets()[0]))
         self.assertNotIn(self.link, self.graph.outLinks(self.op1.outlets()[0]))
 
-
     ## Delete
     def test_remove_operator(self):
         graph = FlowGraph()
@@ -170,9 +179,7 @@ class TestFlowGraph(unittest.TestCase):
         self.graph.removeLink(link)
         self.assertNotIn(link, self.graph.inLinks(self.op2.inlets()[0]))
 
-    ## QUERY
 
-    
 class TestFlowGraph(unittest.TestCase):
     def test_simple_graph(self):
         graph = FlowGraph()
