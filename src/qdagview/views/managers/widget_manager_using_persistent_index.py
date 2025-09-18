@@ -26,7 +26,7 @@ class PersistentWidgetManager:
         """Remove a widget from the manager."""
         del self._widgets[QPersistentModelIndex(index)]
 
-    def getWidget(self, index: QModelIndex) -> QGraphicsItem:
+    def getWidget(self, index: QModelIndex) -> QGraphicsItem|None:
         if not index.isValid():
             logger.warning(f"Index is invalid: {index}")
             return None
@@ -35,17 +35,17 @@ class PersistentWidgetManager:
         persistent_idx = QPersistentModelIndex(index)
         return self._widgets.get(persistent_idx, None)   
     
-    def getIndex(self, widget:QGraphicsItem) -> QModelIndex:
+    def getIndex(self, widget:QGraphicsItem) -> QModelIndex|None:
         """
         Get the index of the node widget in the model.
         This is used to identify the node in the model.
         """
-        idx = self._widgets.inverse[widget]
-        return QModelIndex(idx)
+        persistent_idx = self._widgets.inverse.get(widget, None)
+        return QModelIndex(persistent_idx) if persistent_idx else None
 
     def widgets(self) -> List[QGraphicsItem]:
         return list(self._widgets.values())
     
-    def clearWidgets(self):
+    def clear(self):
         self._widgets.clear()
 
