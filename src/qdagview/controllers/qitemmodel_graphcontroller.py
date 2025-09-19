@@ -222,6 +222,22 @@ class QItemModelGraphController:
         assert target_index.isValid(), "Target index must be valid"
         return target_index
 
+    def inletNode(self, inlet:QModelIndex|QPersistentModelIndex) -> QModelIndex|None:
+        assert self.itemType(inlet) == GraphItemType.INLET, "Inlet index must be of type INLET"
+        node_index = inlet.parent()
+        if not node_index.isValid():
+            return None
+        assert self.itemType(node_index) == GraphItemType.NODE, "Parent of inlet must be of type NODE"
+        return node_index
+    
+    def outletNode(self, outlet:QModelIndex|QPersistentModelIndex) -> QModelIndex|None:
+        assert self.itemType(outlet) == GraphItemType.OUTLET, "Outlet index must be of type OUTLET"
+        node_index = outlet.parent()
+        if not node_index.isValid():
+            return None
+        assert self.itemType(node_index) == GraphItemType.NODE, "Parent of outlet must be of type NODE"
+        return node_index
+    
     # behaviour TODO: move to delegate
     def canLink(self, source:QModelIndex, target:QModelIndex)->bool:
         """

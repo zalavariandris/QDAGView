@@ -1,35 +1,35 @@
 from collections import defaultdict
 from typing import Dict, List, Any
 from typing import Protocol
+from typing import TypeVar, Generic
 
-# Dummy types
-class LinkWidget: pass
-class InletWidget: pass
-class OutletWidget: pass
+# Generic types
+LinkType = TypeVar('L')  # LinkType
+InletType = TypeVar('I')  # InletType
+OutletType = TypeVar('O')  # OutletType
 
-
-class LinkingManager:
+class LinkingManager(Generic[LinkType, InletType, OutletType]):
     def __init__(self):
-        self._link_source: Dict[LinkWidget, OutletWidget | None] = {}
-        self._link_target: Dict[LinkWidget, InletWidget | None] = {}
-        self._inlet_links: Dict[InletWidget, List[LinkWidget]] = defaultdict(list)
-        self._outlet_links: Dict[OutletWidget, List[LinkWidget]] = defaultdict(list)
+        self._link_source: Dict[LinkType, OutletType | None] = {}
+        self._link_target: Dict[LinkType, InletType | None] = {}
+        self._inlet_links: Dict[InletType, List[LinkType]] = defaultdict(list)
+        self._outlet_links: Dict[OutletType, List[LinkType]] = defaultdict(list)
 
     ## Querying
-    def getLinkSource(self, link: LinkWidget) -> OutletWidget | None:
+    def getLinkSource(self, link: LinkType) -> OutletType | None:
         return self._link_source.get(link, None)
     
-    def getLinkTarget(self, link: LinkWidget) -> InletWidget | None:
+    def getLinkTarget(self, link: LinkType) -> InletType | None:
         return self._link_target.get(link, None)
     
-    def getOutletLinks(self, outlet: OutletWidget) -> List[LinkWidget]:
+    def getOutletLinks(self, outlet: OutletType) -> List[LinkType]:
         return self._outlet_links.get(outlet, [])
     
-    def getInletLinks(self, inlet: InletWidget) -> List[LinkWidget]:
+    def getInletLinks(self, inlet: InletType) -> List[LinkType]:
         return self._inlet_links.get(inlet, [])
     
     ## Modification
-    def link(self, link_widget: LinkWidget, source_widget: OutletWidget | None, target_widget: InletWidget):
+    def link(self, link_widget: LinkType, source_widget: OutletType | None, target_widget: InletType):
         assert link_widget is not None, "link_widget must not be None"
         assert target_widget is not None, "target_widget must not be None"
 
@@ -42,7 +42,7 @@ class LinkingManager:
         self._link_target[link_widget] = target_widget
         self._inlet_links[target_widget].append(link_widget)
 
-    def unlink(self, link_widget: LinkWidget):
+    def unlink(self, link_widget: LinkType):
         source_widget = self._link_source.get(link_widget, None)
         target_widget = self._link_target.get(link_widget, None)
 

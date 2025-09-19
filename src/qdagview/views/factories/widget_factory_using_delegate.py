@@ -279,7 +279,7 @@ class WidgetFactoryUsingDelegate(QObject):
     @override
     def createCellWidget(self, parent_widget: NodeWidget|PortWidget|LinkWidget, index: QModelIndex, graphview) -> CellWidget:
         if not isinstance(parent_widget, (NodeWidget, PortWidget, LinkWidget)):
-            raise TypeError("Parent widget must be a NodeWidget, PortWidget, or LinkWidget")
+            raise TypeError(f"Parent widget must be a NodeWidget, PortWidget, or LinkWidget, got {parent_widget}")
         if not index.isValid():
             raise ValueError("Index must be valid")
 

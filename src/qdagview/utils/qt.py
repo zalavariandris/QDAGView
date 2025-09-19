@@ -1,5 +1,6 @@
 from qtpy.QtCore import *
 from qtpy.QtWidgets import *
+from contextlib import contextmanager
 
 def distribute_items(items: list[QGraphicsItem], rect: QRectF, equal_spacing=True, orientation=Qt.Orientation.Horizontal):
     num_items = len(items)
@@ -48,3 +49,14 @@ def distribute_items(items: list[QGraphicsItem], rect: QRectF, equal_spacing=Tru
         for i, item in enumerate(items):
             pos = container_start() + i * distance - item_size(item) / 2
             set_item_position(item, pos)
+
+@contextmanager
+def blockingSignals(obj: QObject):
+    """Context manager to block signals temporarily."""
+    # store current state
+    was_blocked = obj.signalsBlocked()
+    obj.blockSignals(True)
+    try:
+        yield
+    finally:
+        obj.blockSignals(was_blocked)
