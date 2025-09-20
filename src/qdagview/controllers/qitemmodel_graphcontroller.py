@@ -5,6 +5,7 @@ from collections import defaultdict
 from itertools import groupby
 from operator import attrgetter
 
+
 logger = logging.getLogger(__name__)
 
 from typing import *
@@ -14,20 +15,106 @@ from qtpy.QtCore import *
 from qtpy.QtWidgets import *
 
 from ..core import GraphDataRole, GraphItemType
-
+from ..views.managers import LinkingManager
 
 class QItemModelGraphController:
     """
-    
+    Controller for a graph backed by a QAbstractItemModel.
+    This class provides methods to interact with a graph structure stored in a QAbstractItemModel.
     """
     def __init__(self, model:QAbstractItemModel|None = None):
         self._model = model
+        self._model_connections: list[tuple[Signal, Slot]] = []
+        self._link_manager = LinkingManager[QPersistentModelIndex, QPersistentModelIndex, QPersistentModelIndex]()
 
     def setModel(self, model:QAbstractItemModel):
         self._model = model
+    
+        if self._model:
+            for signal, slot in self._model_connections:
+                signal.disconnect(slot)
+        
+        if model:
+            assert isinstance(model, QAbstractItemModel), "Model must be a subclass of QAbstractItemModel"
+
+            self._model_connections = [
+                (model.rowsInserted, self.handleRowsInserted),
+                (model.rowsAboutToBeRemoved, self.handleRowsAboutToBeRemoved),
+                (model.dataChanged, self.handleDataChanged)
+            ]
+
+            for signal, slot in self._model_connections:
+                signal.connect(slot)
+
+        self._model = model
+
+        self._link_manager.clear()
 
     def model(self) -> QAbstractItemModel | None:
         return self._model
+
+    ## Transformations
+    def handleRowsInserted(self, parent:QModelIndex, start:int, end:int):
+        assert self._model, "Model must be set before handling rows inserted!"
+
+        match self.itemType(parent):
+            case GraphItemType.SUBGRAPH | None:
+                logger.debug(f"Inserted nodes {start}-{end} into subgraph {parent}")
+                
+            case GraphItemType.NODE:
+                logger.debug(f"Inserted inlets {start}-{end} into node {parent}")
+
+            case GraphItemType.INLET | GraphItemType.OUTLET:
+                logger.debug(f"Inserted links {start}-{end} into inlet/outlet {parent}")
+
+        # # get index trees in BFS order
+        # def get_children(index:QModelIndex) -> Iterable[QModelIndex]:
+        #     if not isinstance(index, QModelIndex):
+        #         raise TypeError(f"Expected QModelIndex, got {type(index)}")
+        #     model = index.model()
+        #     for row in range(model.rowCount(index)):
+        #         child_index = model.index(row, 0, index)
+        #         yield child_index
+        #     return []
+        
+        # sorted_indexes:List[QModelIndex] = list(bfs(
+        #     *[self._model.index(row, 0, parent) for row in range(start, end + 1)], 
+        #     children=get_children, 
+        #     reverse=False
+        # ))
+
+        # ## Add widgets for each index
+        # for row_index in sorted_indexes:
+        #     # Widget Factory
+            
+        #     match self._controller.itemType(row_index):
+        #         case GraphItemType.SUBGRAPH:
+        #             raise NotImplementedError("Subgraphs are not yet supported in the graph view")
+                    
+        #         case GraphItemType.NODE:
+        #             row_widget = self.addNodeWidgetForIndex(row_index)
+
+        #         case GraphItemType.INLET:
+        #             row_widget = self.addInletWidgetForIndex(row_index)
+                    
+        #         case GraphItemType.OUTLET:
+        #             row_widget = self.addOutletWidgetForIndex(row_index)
+
+        #         case GraphItemType.LINK:
+        #             row_widget = self.addLinkWidgetForIndex(row_index)
+        #         case _:
+        #             raise ValueError(f"Unknown item type: {self._controller.itemType(row_widget)}")
+
+        #     # Add cells for each column
+        #     for col in range(self._model.columnCount(row_index.parent())):
+        #         cell_index = self._model.index(row_index.row(), col, row_index.parent())
+        #         self.addCellWidgetForIndex(cell_index)
+
+    def handleRowsAboutToBeRemoved(self, parent:QModelIndex, start:int, end:int):
+        ...
+
+    def handleDataChanged(self, topLeft:QModelIndex, bottomRight:QModelIndex, roles:List[int]=[]):
+        ...
 
     ## QUERY MODEL
     def itemType(self, index:QModelIndex|QPersistentModelIndex)-> GraphItemType | None:

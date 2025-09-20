@@ -90,7 +90,7 @@ class GraphView(QGraphicsView):
         self.setScene(scene)
         
     def setModel(self, model:QAbstractItemModel):
-        if self._model_connections:
+        if self._model:
             for signal, slot in self._model_connections:
                 signal.disconnect(slot)
         
@@ -218,14 +218,37 @@ class GraphView(QGraphicsView):
     ## Manage widgets lifecycle
     def addNodeWidgetForIndex(self, row_index:QModelIndex)->QGraphicsItem:
         assert row_index.column() == 0, "Can only add node widget for column 0"
-        # widget factory
-        row_widget = self._factory.createNodeWidget(self.scene(), row_index, self)
 
         # widget management
+        row_widget = self._factory.createNodeWidget(self.scene(), row_index, self)
         self._widget_manager.insertWidget(row_index, row_widget)
+
+        # inlets and outlets
+        for inlet_index in self._controller.nodeInlets(row_index):
+            self.addInletWidgetForIndex(inlet_index)
+        for outlet_index in self._controller.nodeOutlets(row_index):
+            self.addOutletWidgetForIndex(outlet_index)
+
+        # Add cells for each column
+        for col in range(self._model.columnCount(row_index.parent())):
+            cell_index = self._model.index(row_index.row(), col, row_index.parent())
+            self.addCellWidgetForIndex(cell_index)
+
         return row_widget
 
     def removeNodeWidgetForIndex(self, row_index:QModelIndex):
+        ## Remove cells
+        for col in range(self._model.columnCount(row_index.parent())):
+            cell_index = self._model.index(row_index.row(), col, row_index.parent())
+            self.removeCellWidgetForIndex(cell_index)
+
+        # inlets and outlets
+        for inlet_index in self._controller.nodeInlets(row_index):
+            self.removeInletWidgetForIndex(inlet_index)
+        for outlet_index in self._controller.nodeOutlets(row_index):
+            self.removeOutletWidgetForIndex(outlet_index)
+
+        # widget management
         row_widget = self._widget_manager.getWidget(row_index)
         self._factory.destroyNodeWidget(self.scene(), row_widget)
         self._widget_manager.removeWidget(row_index, row_widget)
@@ -239,9 +262,21 @@ class GraphView(QGraphicsView):
 
         # widget management
         self._widget_manager.insertWidget(row_index, row_widget)
+
+        # Add cells for each column
+        for col in range(self._model.columnCount(row_index.parent())):
+            cell_index = self._model.index(row_index.row(), col, row_index.parent())
+            self.addCellWidgetForIndex(cell_index)
+
         return row_widget
 
     def removeInletWidgetForIndex(self, row_index:QModelIndex):
+        ## Remove cells
+        for col in range(self._model.columnCount(row_index.parent())):
+            cell_index = self._model.index(row_index.row(), col, row_index.parent())
+            self.removeCellWidgetForIndex(cell_index)
+
+        # widget management
         row_widget = self._widget_manager.getWidget(row_index)
         parent_widget = self._widget_manager.getWidget(row_index.parent())
         self._factory.destroyInletWidget(parent_widget, row_widget)
@@ -255,9 +290,21 @@ class GraphView(QGraphicsView):
 
         # widget management
         self._widget_manager.insertWidget(row_index, row_widget)
+
+        # Add cells for each column
+        for col in range(self._model.columnCount(row_index.parent())):
+            cell_index = self._model.index(row_index.row(), col, row_index.parent())
+            self.addCellWidgetForIndex(cell_index)
+
         return row_widget
 
     def removeOutletWidgetForIndex(self, row_index:QModelIndex):
+        ## Remove cells
+        for col in range(self._model.columnCount(row_index.parent())):
+            cell_index = self._model.index(row_index.row(), col, row_index.parent())
+            self.removeCellWidgetForIndex(cell_index)
+
+        # widget management
         row_widget = self._widget_manager.getWidget(row_index)
         parent_widget = self._widget_manager.getWidget(row_index.parent())
         self._factory.destroyOutletWidget(parent_widget, row_widget)
@@ -279,9 +326,21 @@ class GraphView(QGraphicsView):
         target_widget = self._widget_manager.getWidget(target_index) if target_index is not None else None
         self._link_manager.link(row_widget, source_widget, target_widget)
         self._update_link_position(row_widget, source_widget, target_widget)
+
+        # Add cells for each column
+        for col in range(self._model.columnCount(row_index.parent())):
+            cell_index = self._model.index(row_index.row(), col, row_index.parent())
+            self.addCellWidgetForIndex(cell_index)
+
         return row_widget
     
     def removeLinkWidgetForIndex(self, row_index:QModelIndex):
+        ## Remove cells
+        for col in range(self._model.columnCount(row_index.parent())):
+            cell_index = self._model.index(row_index.row(), col, row_index.parent())
+            self.removeCellWidgetForIndex(cell_index)
+
+        # widget management
         row_widget = self._widget_manager.getWidget(row_index)
         parent_widget = self._widget_manager.getWidget(row_index.parent())
         self._factory.destroyLinkWidget(self.scene(), row_widget)
@@ -305,109 +364,71 @@ class GraphView(QGraphicsView):
     def handleRowsInserted(self, parent:QModelIndex, start:int, end:int):
         assert self._model, "Model must be set before handling rows inserted!"
 
-        # get index trees in BFS order
-        def get_children(index:QModelIndex) -> Iterable[QModelIndex]:
-            if not isinstance(index, QModelIndex):
-                raise TypeError(f"Expected QModelIndex, got {type(index)}")
-            model = index.model()
-            for row in range(model.rowCount(index)):
-                child_index = model.index(row, 0, index)
-                yield child_index
-            return []
-        
-        sorted_indexes:List[QModelIndex] = list(bfs(
-            *[self._model.index(row, 0, parent) for row in range(start, end + 1)], 
-            children=get_children, 
-            reverse=False
-        ))
+        match self._controller.itemType(parent):
+            case GraphItemType.SUBGRAPH | None:
+                # Inserting nodes into the root or a subgraph
+                for row in range(start, end + 1):
+                    row_index = self._model.index(row, 0, parent)
+                    self.addNodeWidgetForIndex(row_index)
 
-        ## Add widgets for each index
-        for row_index in sorted_indexes:
-            # Widget Factory
-            
-            match self._controller.itemType(row_index):
-                case GraphItemType.SUBGRAPH:
-                    raise NotImplementedError("Subgraphs are not yet supported in the graph view")
-                    
-                case GraphItemType.NODE:
-                    row_widget = self.addNodeWidgetForIndex(row_index)
+            case GraphItemType.NODE:
+                # Inserting inlets or outlets into a node
+                for child_row in range(start, end + 1):
+                    child_index = self._model.index(child_row, 0, parent)
+                    match child_index.data(GraphDataRole.TypeRole):
+                        case GraphItemType.OUTLET:
+                            self.addOutletWidgetForIndex(child_index)
+                        case _:
+                            self.addInletWidgetForIndex(child_index)
 
-                case GraphItemType.INLET:
-                    row_widget = self.addInletWidgetForIndex(row_index)
-                    
-                case GraphItemType.OUTLET:
-                    row_widget = self.addOutletWidgetForIndex(row_index)
+            case GraphItemType.INLET:
+                # Inserting links into an inlet
+                for row in range(start, end + 1):
+                    row_index = self._model.index(row, 0, parent)
+                    self.addLinkWidgetForIndex(row_index)
 
-                case GraphItemType.LINK:
-                    row_widget = self.addLinkWidgetForIndex(row_index)
-                case _:
-                    raise ValueError(f"Unknown item type: {self._controller.itemType(row_widget)}")
+            case GraphItemType.OUTLET:
+                # outlets have no children
+                pass
 
-            # Add cells for each column
-            for col in range(self._model.columnCount(row_index.parent())):
-                cell_index = self._model.index(row_index.row(), col, row_index.parent())
-                self.addCellWidgetForIndex(cell_index)
+            case GraphItemType.LINK:
+                # links have no children
+                pass
     
-    def handleColumnsInserted(self, parent: QModelIndex, start: int, end: int):
-        # TODO: add cells
-        raise NotImplementedError("Column insertion is not yet implemented in the graph view")
-
-    def handleColumnsAboutToBeRemoved(self, parent: QModelIndex, start: int, end: int):
-        # TODO: remove cells
-        raise NotImplementedError("Column removal is not yet implemented in the graph view")
 
     def handleRowsAboutToBeRemoved(self, parent:QModelIndex, start:int, end:int):
         assert self._model, "Model must be set before handling rows removed!"
 
-        # get index trees in BFS order
-        def get_children(index:QModelIndex) -> Iterable[QModelIndex]:
-            if not index.isValid():
-                return []
-            model = index.model()
-            for row in range(model.rowCount(index)):
-                child_index = model.index(row, 0, index)
-                yield child_index
+        match self._controller.itemType(parent):
+            case GraphItemType.SUBGRAPH | None:
+                # Removing nodes from the root or a subgraph
+                for row in reversed(range(start, end + 1)):
+                    row_index = self._model.index(row, 0, parent)
+                    self.removeNodeWidgetForIndex(row_index)
 
-            return []
-        
-        sorted_indexes:List[QModelIndex] = list(bfs(
-            *[self._model.index(row, 0, parent) for row in range(start, end + 1)], 
-            children=get_children, 
-            reverse=True
-        ))
-        
-        ## Remove widgets for each index
-        scene = self.scene()
-        assert scene is not None
+            case GraphItemType.NODE:
+                # Removing inlets or outlets from a node
+                for child_row in reversed(range(start, end + 1)):
+                    child_index = self._model.index(child_row, 0, parent)
+                    match child_index.data(GraphDataRole.TypeRole):
+                        case GraphItemType.OUTLET:
+                            self.removeOutletWidgetForIndex(child_index)
+                        case _:
+                            self.removeInletWidgetForIndex(child_index)
 
-        with blockingSignals(scene):
-            for row_index in sorted_indexes:
-                row_widget = self._widget_manager.getWidget(row_index)
-                if row_widget is None:
-                    logger.warning(f"Row widget not found for index: {indexToPath(row_index)}")
-                    # Already removed, skip
-                    continue
+            case GraphItemType.INLET:
+                # Removing links from an inlet
+                for row in reversed(range(start, end + 1)):
+                    row_index = self._model.index(row, 0, parent)
+                    self.removeLinkWidgetForIndex(row_index)
 
-                ## Remove all cells associated with this widget
-                for col in range(self._model.columnCount(row_index.parent())):
-                    cell_index = self._model.index(row_index.row(), col, row_index.parent())
-                    self.removeCellWidgetForIndex(cell_index)
-                    
-                ## Remove the widget itself
-                match self._controller.itemType(row_index):
-                    case GraphItemType.SUBGRAPH:
-                        raise NotImplementedError("Subgraphs are not yet supported in the graph view")
-                    case GraphItemType.NODE:
-                        self.removeNodeWidgetForIndex(row_index)
-                    case GraphItemType.INLET:
-                        self.removeInletWidgetForIndex(row_index)
-                    case GraphItemType.OUTLET:
-                        self.removeOutletWidgetForIndex(row_index)
-                    case GraphItemType.LINK:
-                        self.removeLinkWidgetForIndex(row_index)
+            case GraphItemType.OUTLET:
+                # outlets have no children
+                pass
 
-                    case _:
-                        raise ValueError(f"Unknown widget type: {type(row_widget)}")
+            case GraphItemType.LINK:
+                # links have no children
+                pass
 
     def handleRowsRemoved(self, parent:QModelIndex, start:int, end:int):
         ...
@@ -445,6 +466,15 @@ class GraphView(QGraphicsView):
             index = self._model.index(row, top_left.column(), top_left.parent())
             self._set_cell_data(index, roles=[Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
 
+    def handleColumnsInserted(self, parent: QModelIndex, start: int, end: int):
+        # TODO: add cells
+        raise NotImplementedError("Column insertion is not yet implemented in the graph view")
+
+    def handleColumnsAboutToBeRemoved(self, parent: QModelIndex, start: int, end: int):
+        # TODO: remove cells
+        raise NotImplementedError("Column removal is not yet implemented in the graph view")
+
+    ## Selection handling   
     @Slot(QItemSelection, QItemSelection)
     def handleSelectionChanged(self, selected:QItemSelection, deselected:QItemSelection):
         """
