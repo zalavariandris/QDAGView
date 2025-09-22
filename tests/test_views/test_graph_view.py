@@ -11,6 +11,9 @@ from qtpy.QtWidgets import QApplication
 from qdagview import GraphView, FlowGraphModel, QItemModelGraphController
 
 
+
+
+
 @pytest.fixture(scope="session")
 def qapp():
     """Create QApplication instance for Qt tests."""
@@ -23,10 +26,11 @@ def qapp():
 
 
 @pytest.fixture
-def graph_setup(qtbot):
+def graph_view_setup(qtbot)->tuple[FlowGraphModel, QItemModelGraphController, GraphView]:
     """Setup graph components for testing."""
     model = FlowGraphModel()
-    controller = QItemModelGraphController(model)
+    controller = QItemModelGraphController()
+    controller.setModel(model)
     view = GraphView()
     view.setModel(model)
     
@@ -37,28 +41,28 @@ def graph_setup(qtbot):
     
     return model, controller, view
 
-def test_add_empty_node(qtbot, graph_setup):
+def test_add_empty_node(qtbot, graph_view_setup):
     """Test adding an empty node."""
-    model, controller, view = graph_setup
+    model, controller, view = graph_view_setup
     
     result = controller.addNode()
-    assert result is True, "Adding a new node should succeed"
+    assert result is not None, "Adding a new node should succeed"
 
     assert view._widget_manager.getWidget(model.index(0,0, QModelIndex())), "widget should be added for the node index"
     
     # Process any pending events
     qtbot.wait(100)  # Wait 100ms for any async operations
 
-def test_add_multiple_nodes(qtbot, graph_setup):
+def test_add_multiple_nodes(qtbot, graph_view_setup):
     """Test adding an empty node."""
-    model, controller, view = graph_setup
+    model, controller, view = graph_view_setup
     
     num_nodes_to_add = 5
     for _ in range(num_nodes_to_add):
         result = controller.addNode()
         assert result is True, "Adding a new node should succeed"
 
-    assert all(view._widget_manager.getWidget(model.index(i, 0, QModelIndex())) for i in range(num_nodes_to_add)), "widgets should be added for all node indices"
+    assert all(view._widget_manager.getWidget(QPersistentModelIndex(model.index(i, 0, QModelIndex()))) for i in range(num_nodes_to_add)), "widgets should be added for all node indices"
     
     # Process any pending events
     qtbot.wait(100)  # Wait 100ms for any async operations

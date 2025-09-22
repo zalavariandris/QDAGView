@@ -25,7 +25,8 @@ if __name__ == "__main__":
             self.setWindowTitle("DataFlow")
             self.setGeometry(100, 100, 800, 600)
             self.model = FlowGraphModel(self)
-            self.controller = QItemModelGraphController(self.model)
+            self.controller = QItemModelGraphController(parent=self)
+            self.controller.setModel(self.model)
             self.selection = QItemSelectionModel(self.model)
 
             self.toolbar = QMenuBar(self)

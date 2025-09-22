@@ -29,30 +29,30 @@ class LinkingManager(Generic[LinkType, InletType, OutletType]):
         return self._inlet_links.get(inlet, [])
     
     ## Modification
-    def link(self, link_widget: LinkType, source_widget: OutletType | None, target_widget: InletType):
-        assert link_widget is not None, "link_widget must not be None"
-        assert target_widget is not None, "target_widget must not be None"
+    def link(self, link: LinkType, source: OutletType | None, target: InletType):
+        assert link is not None, "link must not be None"
+        assert target is not None, "target must not be None"
 
-        if source_widget:
-            self._link_source[link_widget] = source_widget
-            self._outlet_links[source_widget].append(link_widget)
+        if source:
+            self._link_source[link] = source
+            self._outlet_links[source].append(link)
         else:
-            self._link_source[link_widget] = None
+            self._link_source[link] = None
 
-        self._link_target[link_widget] = target_widget
-        self._inlet_links[target_widget].append(link_widget)
+        self._link_target[link] = target
+        self._inlet_links[target].append(link)
 
-    def unlink(self, link_widget: LinkType):
-        source_widget = self._link_source.get(link_widget, None)
-        target_widget = self._link_target.get(link_widget, None)
+    def unlink(self, link: LinkType):
+        source = self._link_source.get(link, None)
+        target = self._link_target.get(link, None)
 
-        if source_widget:
-            self._outlet_links[source_widget].remove(link_widget)
-        if target_widget:
-            self._inlet_links[target_widget].remove(link_widget)
+        if source:
+            self._outlet_links[source].remove(link)
+        if target:
+            self._inlet_links[target].remove(link)
 
-        self._link_source.pop(link_widget, None)
-        self._link_target.pop(link_widget, None)
+        self._link_source.pop(link, None)
+        self._link_target.pop(link, None)
 
     def clear(self):
         self._link_source.clear()

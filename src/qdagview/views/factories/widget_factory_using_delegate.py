@@ -270,7 +270,7 @@ class WidgetFactoryUsingDelegate(QObject):
         if not isinstance(scene, QGraphicsScene):
             raise TypeError("Scene must be a QGraphicsScene")
         if not isinstance(widget, LinkWidget):
-            raise TypeError("Widget must be a LinkWidget")
+            raise TypeError(f"Widget must be a LinkWidget, got {widget}")
                 
         scene.removeItem(widget)
         # Schedule widget for deletion to prevent memory leaks
