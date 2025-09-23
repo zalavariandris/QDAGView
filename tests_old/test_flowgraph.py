@@ -5,8 +5,8 @@ import os
 # Add parent directory to path so we can import the module
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.qdagview.models.code_analyzer import CodeAnalyzer
-from src.qdagview.models.flowgraph import (
+from qdagview.examples.code_analyzer import CodeAnalyzer
+from qdagview.examples.flowgraph import (
     FlowGraph,
     ExpressionOperator,
     Inlet,

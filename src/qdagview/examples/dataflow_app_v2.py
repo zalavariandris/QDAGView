@@ -5,15 +5,13 @@ from qtpy.QtWidgets import *
 from typing import List
 
 # from qdagview.models import FlowGraphModel, ExpressionOperator
-from qdagview.models .flowgraphmodel import FlowGraphModel
-from qdagview.models .flowgraph import ExpressionOperator
+from qdagview.examples.flowgraphmodel import FlowGraphModel
+from qdagview.examples.flowgraph import ExpressionOperator
 from qdagview.views import GraphView
-from qdagview import QItemModelGraphController
+from qdagview.models import QItemModelGraphModel
 
 import logging
 logger = logging.getLogger(__name__)
-
-from qdagview.utils import group_consecutive_numbers
 
 
 if __name__ == "__main__":
@@ -24,10 +22,10 @@ if __name__ == "__main__":
             super().__init__()
             self.setWindowTitle("DataFlow")
             self.setGeometry(100, 100, 800, 600)
-            self.model = FlowGraphModel(self)
-            self.controller = QItemModelGraphController(parent=self)
-            self.controller.setModel(self.model)
-            self.selection = QItemSelectionModel(self.model)
+            self.tree_model = FlowGraphModel(self) # ground truth QItemModel
+            self.graph_model = QItemModelGraphModel(parent=self) # graph model backed by the QItemModel
+            self.graph_model.setSourceModel(self.tree_model)
+            self.selection = QItemSelectionModel(self.tree_model)
 
             self.toolbar = QMenuBar(self)
             add_action = self.toolbar.addAction("Add Operator")
@@ -39,7 +37,7 @@ if __name__ == "__main__":
             self.toolbar.setNativeMenuBar(False)
 
             self.tree = QTreeView(parent=self)
-            self.tree.setModel(self.model)
+            self.tree.setModel(self.tree_model)
             self.tree.setSelectionModel(self.selection)
             self.tree.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.SelectedClicked)
             self.tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -47,7 +45,7 @@ if __name__ == "__main__":
             # model = GraphItemModel()
             # self.view.setModel(model)
             self.graphview = GraphView(parent=self)
-            self.graphview.setModel(self.model)
+            self.graphview.setModel(self.graph_model)
             self.graphview.setSelectionModel(self.selection)
 
             self.viewer = QLabel("viewer")
@@ -64,33 +62,33 @@ if __name__ == "__main__":
             def onChange(indexes: List[QModelIndex]):
                 current_node = self.selection.currentIndex().internalPointer()
                 if isinstance(current_node, ExpressionOperator):
-                    ancestors = self.model._root.ancestors(self.selection.currentIndex().internalPointer())
-                    ancestor_indexes = set([self.model._indexFromItem(op) for op in ancestors])
+                    ancestors = self.tree_model._root.ancestors(self.selection.currentIndex().internalPointer())
+                    ancestor_indexes = set([self.tree_model._indexFromItem(op) for op in ancestors])
 
                     if set(indexes).intersection(ancestor_indexes):
                         self.evaluateCurrent()
 
             self.selection.currentChanged.connect(lambda current, previous: onChange([current]))
-            self.model.dataChanged.connect(self.graphview.update)
+            self.tree_model.dataChanged.connect(self.graphview.update)
 
         @Slot()
         def appendOperator(self):
             """Add a new operator to the graph."""
-            self.controller.addNode()
+            self.graph_model.addNode()
 
         @Slot()
         def removeSelectedItems(self):
             """Remove the currently selected items from the graph."""
             selected_indexes = self.selection.selectedRows()
             print("Removing indexes:", selected_indexes)
-            self.controller.batchRemove(selected_indexes)
+            self.graph_model.batchRemove(selected_indexes)
 
         @Slot()
         def evaluateCurrent(self):
             index = self.selection.currentIndex()
             if not index.isValid():
                 return
-            result = self.model.evaluate(index)
+            result = self.tree_model.evaluate(index)
             self.viewer.setText(result)
 
     # graph = model.invisibleRootItem()

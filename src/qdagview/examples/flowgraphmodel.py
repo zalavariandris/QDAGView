@@ -417,7 +417,7 @@ class FlowGraphModel(QAbstractItemModel):
                         assert isinstance(value, (QModelIndex, QPersistentModelIndex)), "Source must be a valid QModelIndex."
                         assert value.isValid(), "Source index must be valid."
                         source_item = self._itemFromIndex(value)
-                        graph = self.invisibleRootItem()
+                        graph: FlowGraph = self.invisibleRootItem()
                         graph.setLinkSource(link, source_item)  # Relink the existing link to the new source
                         self.dataChanged.emit(index, index, [GraphDataRole.SourceRole])
                         return True

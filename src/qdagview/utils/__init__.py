@@ -90,13 +90,25 @@ def _group_consecutive_numbers_readable(numbers:list[int])->Iterable[range]:
             first = last = n
     yield range(first, last+1) # Yield the last group
 
+from functools import wraps
+def listify(gen):
+    """Decorator to convert a generator function to a list-returning function."""
+    # TODO: this is redundant with utils.listify
+    @wraps(gen)
+    def wrapper(*args, **kwargs):
+        return list(gen(*args, **kwargs))
+    return wrapper
 
 group_consecutive_numbers = _group_consecutive_numbers_readable
 
 __all__ = [
+    # Utility decorators
+    listify,
+    
     # BFS and graph utilities
     'bfs',
     'group_consecutive_numbers',
+
     # Geometry utilities  
     'makeLineBetweenShapes',
     'makeLineToShape', 
@@ -104,8 +116,10 @@ __all__ = [
     'makeVerticalRoundedPath',
     'makeHorizontalRoundedPath',
     'getShapeCenter',
+
     # Naming utilities
     'make_unique_name',
+
     # Qt utilities
     'distribute_items',
 ]

@@ -1,12 +1,14 @@
 import pytest
 import logging
-from qdagview import GraphView, FlowGraphModel, QItemModelGraphController
+from qdagview.views import GraphView
+from qdagview.models import QItemModelGraphModel
+from qdagview.examples import FlowGraphModel
 
 
 def test_basic_graph_view_operaions(qtbot):
     """Basic test to ensure GraphView can be created and displayed."""
     model = FlowGraphModel()
-    controller = QItemModelGraphController()
+    controller = QItemModelGraphModel()
     controller.setModel(model)
     view = GraphView()
     view.setModel(model)
@@ -36,8 +38,8 @@ def test_basic_graph_view_operaions(qtbot):
 def test_create_a_triangle_with_a_multi_inlet(qtbot):
     """Test creating a triangle graph with a multi-inlet node."""
     model = FlowGraphModel()
-    controller = QItemModelGraphController()
-    controller.setModel(model)
+    controller = QItemModelGraphModel()
+    controller.setSourceModel(model)
     view = GraphView()
     view.setModel(model)
     

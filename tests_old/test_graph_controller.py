@@ -9,9 +9,9 @@ logging.disable(logging.CRITICAL)
 # Add parent directory to path so we can import the module
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.qdagview.models.flowgraph import FlowGraph
-from src.qdagview.models.flowgraphmodel import ExpressionOperator, Inlet, Outlet, Link
-from src.qdagview.models.flowgraphmodel import FlowGraphModel
+from qdagview.examples.flowgraph import FlowGraph
+from qdagview.examples.flowgraphmodel import ExpressionOperator, Inlet, Outlet, Link
+from qdagview.examples.flowgraphmodel import FlowGraphModel
 from src.qdagview.views.controllers.graph_controller import GraphController
 from qtpy.QtCore import QModelIndex, QPersistentModelIndex, Qt
 from qtpy.QtTest import QSignalSpy

@@ -112,7 +112,6 @@ class Outlet:
 class Link:
     source: Outlet
     target: Inlet
-    key: str
 
     def __str__(self):
         return  f"Link({self.source} -> {self.target})"
@@ -247,8 +246,8 @@ class FlowGraph:
 
     def insertLink(self, pos:int, source:Outlet, target:Inlet) -> Link | None:
         """Link an outlet of a source operator to an inlet of a target operator."""
-        assert isinstance(source, Outlet), "Source must be an instance of Outlet"
-        assert isinstance(target, Inlet), "Target must be an instance of Inlet"
+        assert source is None or isinstance(source, Outlet), f"Source must be an instance of Outlet, got {source}"
+        assert isinstance(target, Inlet), f"Target must be an instance of Inlet, got {target}"
 
         link = Link(source, target)
         if source is not None:
@@ -290,6 +289,15 @@ class FlowGraph:
             self._out_links[link.source].remove(link)
         if link.target is not None:
             self._in_links[link.target].remove(link)
+        return True
+    
+    def setLinkSource(self, link: Link, source: Outlet) -> bool:
+        """Set the source of a link."""
+        if link.source is not None:
+            self._out_links[link.source].remove(link)
+        link.source = source
+        if source is not None:
+            self._out_links[source].append(link)
         return True
 
 

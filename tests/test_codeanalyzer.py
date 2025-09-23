@@ -1,5 +1,5 @@
 import pytest
-from qdagview.models.code_analyzer import CodeAnalyzer
+from qdagview.examples.code_analyzer import CodeAnalyzer
 
 def test_initial_expression():
     assert CodeAnalyzer("a+b").get_unbound_nodes()   == ["a", "b"]

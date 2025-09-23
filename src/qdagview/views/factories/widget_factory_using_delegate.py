@@ -124,8 +124,8 @@ class LinkWidgetWithDelegate(LinkWidget):
             if index is None:
                 return # If index is None, the widget is being removed - skip painting
             opt = makeViewOption(option, index, graphview)
-            outlet_index = graphview._controller.linkSource(index)
-            inlet_index = graphview._controller.linkTarget(index)
+            outlet_index = graphview._model.linkSource(index)
+            inlet_index = graphview._model.linkTarget(index)
 
             if not outlet_index or not inlet_index:
                 logger.warning(f"Link index {index} has invalid outlet or inlet index.")
