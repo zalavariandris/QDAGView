@@ -110,8 +110,9 @@ class Outlet:
 
 @dataclass()
 class Link:
-    source: Outlet = None
-    target: Inlet = None
+    source: Outlet
+    target: Inlet
+    key: str
 
     def __str__(self):
         return  f"Link({self.source} -> {self.target})"
@@ -172,7 +173,7 @@ class FlowGraph:
             """Get all input nodes of the given operator."""
             for inlet in node.inlets():
                 for link in self.inLinks(inlet):
-                    if link.source.operator is not None:
+                    if link.source and link.source.operator:
                         yield link.source.operator
         
         for n in bfs(node, children=inputNodes):
@@ -185,7 +186,7 @@ class FlowGraph:
             """Get all output nodes of the given operator."""
             for outlet in node.outlets():
                 for link in self._out_links[outlet]:
-                    if link.target and link.target.operator is not None:
+                    if link.target and link.target.operator:
                         yield link.target.operator
         
         for n in bfs(node, children=outputNodes):
@@ -244,12 +245,16 @@ class FlowGraph:
         pos = len(self._operators)
         self.insertOperator(pos, operator)
 
-    def insertLink(self, index:int, source:Outlet|None, target:Inlet) -> Link | None:
+    def insertLink(self, pos:int, source:Outlet, target:Inlet) -> Link | None:
         """Link an outlet of a source operator to an inlet of a target operator."""
+        assert isinstance(source, Outlet), "Source must be an instance of Outlet"
+        assert isinstance(target, Inlet), "Target must be an instance of Inlet"
+
         link = Link(source, target)
         if source is not None:
             self._out_links[source].append(link)
-        self._in_links[target].insert(index, link)
+        if target is not None:
+            self._in_links[target].insert(pos, link)
         return link
     
     ## DELETE
@@ -261,16 +266,11 @@ class FlowGraph:
             # Remove all links associated with this operator
             # First, collect all links to remove
             links_to_remove = []
-            
-            # Collect links from inlets
             for inlet in operator.inlets():
                 links_to_remove.extend(self._in_links[inlet][:])  # Copy the list
-            
-            # Collect links from outlets
             for outlet in operator.outlets():
                 links_to_remove.extend(self._out_links[outlet][:])  # Copy the list
-            
-            # Remove each link properly
+            # Now remove the links
             for link in links_to_remove:
                 self.removeLink(link)
             
@@ -292,15 +292,6 @@ class FlowGraph:
             self._in_links[link.target].remove(link)
         return True
 
-    ## UPDATE
-    def setLinkSource(self, link: Link, source: Outlet | None) -> bool:
-        """Relink an existing link to a new source outlet."""
-        if link.source is not None:
-            self._out_links[link.source].remove(link)
-        if source is not None:
-            self._out_links[source].append(link)
-        link.source = source
-        return True
 
 import networkx as nx
 def flowgraph_to_nx(graph: FlowGraph) -> nx.MultiDiGraph:

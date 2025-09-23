@@ -466,9 +466,14 @@ class FlowGraphModel(QAbstractItemModel):
                 return False # Cannot insert rows directly under an operator. It is dependent on the Operator expression
             
             case Inlet():
-                # Note: insertRows must support dangling link, 
-                # because it's called by the default graphview delegate to create new links.
                 inlet = parent_item
+                # flowgraph support single link per inlet
+                # if inlet is connected, cannot add another link
+                # if len(self.invisibleRootItem().inLinks(inlet)) > 0:
+                #     logger.warning("Cannot add more links to this inlet: already connected.")
+                #     return False
+
+                assert isinstance(inlet, Inlet), "Parent must be an Inlet."
                 target = inlet.operator
                 graph:FlowGraph = self.invisibleRootItem()
                 success = True

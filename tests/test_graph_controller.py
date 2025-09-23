@@ -26,7 +26,7 @@ def test_add_empty_node(graph_controller_setup: QItemModelGraphController):
     result = controller.addNode()
 
     assert result, "Adding a new node should succeed"
-    assert controller.nodesCount() == 1, "One row should be added"
+    assert controller.nodeCount() == 1, "One row should be added"
 
 def test_add_multiple_nodes(graph_controller_setup:  QItemModelGraphController):
     """Test adding an empty node."""
@@ -36,7 +36,7 @@ def test_add_multiple_nodes(graph_controller_setup:  QItemModelGraphController):
         result = controller.addNode()
         assert result, "Adding a new node should succeed"
 
-    assert controller.nodesCount() == num_nodes_to_add, f"{num_nodes_to_add} rows should be added"
+    assert controller.nodeCount() == num_nodes_to_add, f"{num_nodes_to_add} rows should be added"
 
 def test_link_nodes(graph_controller_setup: QItemModelGraphController):
     """Test adding an empty node."""
@@ -46,7 +46,7 @@ def test_link_nodes(graph_controller_setup: QItemModelGraphController):
     node1 = controller.addNode()
     node2 = controller.addNode()
 
-    assert controller.nodesCount() == 2, "Two rows should be added"
+    assert controller.nodeCount() == 2, "Two rows should be added"
 
     # Link the two nodes
     result = controller.addLink(controller.nodeOutlets(node1)[0], controller.nodeInlets(node2)[0])
@@ -63,7 +63,7 @@ def test_query_nodes_and_links(graph_controller_setup: QItemModelGraphController
     node2 = controller.addNode()
     node3 = controller.addNode()
 
-    assert controller.nodesCount() == 3, "Three rows should be added"
+    assert controller.nodeCount() == 3, "Three rows should be added"
 
     assert len(controller.nodes()) == 3, "There should be three nodes"
     assert all(n in controller.nodes() for n in [node1, node2, node3]), "All nodes should be valid"
@@ -84,7 +84,7 @@ def test_query_nodes_and_links(graph_controller_setup: QItemModelGraphController
 
     assert link1 is not None, "Linking the two nodes should succeed"
     assert link2 is not None, "Linking the two nodes should succeed"
-    assert controller.linksCount() == 2, "Two links should exist"
+    assert controller.linkCount() == 2, "Two links should exist"
 
     # Query links
     links = controller.links()
@@ -104,13 +104,13 @@ def test_remove_single_node(graph_controller_setup: QItemModelGraphController):
 
     # Add a node first
     node1 = controller.addNode()
-    assert controller.nodesCount() == 1, "One row should be added"
+    assert controller.nodeCount() == 1, "One row should be added"
 
     # Now remove the node
     result = controller.removeNode(node1)
     
     assert result, "Removing the node should succeed"
-    assert controller.nodesCount() == 0, "No rows should remain after removal"
+    assert controller.nodeCount() == 0, "No rows should remain after removal"
 
 def test_remove_multiple_nodes(graph_controller_setup: QItemModelGraphController):
     """Test adding an empty node."""
@@ -123,7 +123,7 @@ def test_remove_multiple_nodes(graph_controller_setup: QItemModelGraphController
         node = controller.addNode()
         nodes.append(node)
 
-    assert controller.nodesCount() == num_nodes_to_add, f"{num_nodes_to_add} rows should be added"
+    assert controller.nodeCount() == num_nodes_to_add, f"{num_nodes_to_add} rows should be added"
     
     # Now remove some of the nodes
 
@@ -132,7 +132,7 @@ def test_remove_multiple_nodes(graph_controller_setup: QItemModelGraphController
         result = controller.removeNode(node)
         assert result, "Removing the node should succeed"
     
-    assert controller.nodesCount() == num_nodes_to_add - 2, f"{num_nodes_to_add - 2} rows should remain after removal"
+    assert controller.nodeCount() == num_nodes_to_add - 2, f"{num_nodes_to_add - 2} rows should remain after removal"
     assert nodes[0] in controller.nodes(), "First node should still be valid"
     assert nodes[1] not in controller.nodes(), "Second node should be removed"
     assert nodes[4] in controller.nodes(), "Fifth node should still be valid"
@@ -145,7 +145,7 @@ def test_remove_nonexistent_node(graph_controller_setup: QItemModelGraphControll
     result = controller.removeNode(None)
     
     assert result is False, "Removing a nonexistent node should fail"
-    assert controller.nodesCount() == 0, "No rows should exist in the model"
+    assert controller.nodeCount() == 0, "No rows should exist in the model"
 
 def test_removing_nodes_also_remove_links(graph_controller_setup: QItemModelGraphController):
     """Test adding an empty node."""
@@ -156,7 +156,7 @@ def test_removing_nodes_also_remove_links(graph_controller_setup: QItemModelGrap
     node2 = controller.addNode()
     node3 = controller.addNode()
     
-    assert controller.nodesCount() == 3, "Two rows should be added"
+    assert controller.nodeCount() == 3, "Two rows should be added"
     
     # Link the three nodes in chain
     link1 = controller.addLink(controller.nodeOutlets(node1)[0], controller.nodeInlets(node2)[0])
@@ -164,16 +164,16 @@ def test_removing_nodes_also_remove_links(graph_controller_setup: QItemModelGrap
 
     assert link1 is not None, "Linking the two nodes should succeed"
     assert link2 is not None, "Linking the two nodes should succeed"
-    assert controller.linksCount() == 2, "Two links should exist"
+    assert controller.linkCount() == 2, "Two links should exist"
     
     # Now remove the middle node
     result = controller.removeNode(node2)
     
     assert result is True, "Removing the node should succeed"
-    assert controller.nodesCount() == 2, "One row should remain after removal"
+    assert controller.nodeCount() == 2, "One row should remain after removal"
     
     # Check that the links were also removed
-    assert controller.linksCount() == 0, "All links should be removed when a node is removed"
+    assert controller.linkCount() == 0, "All links should be removed when a node is removed"
 
 
 #####################

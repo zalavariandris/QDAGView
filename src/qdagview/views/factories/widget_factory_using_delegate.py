@@ -124,12 +124,19 @@ class LinkWidgetWithDelegate(LinkWidget):
             if index is None:
                 return # If index is None, the widget is being removed - skip painting
             opt = makeViewOption(option, index, graphview)
-            outlet = graphview._link_manager.getLinkSource(self)
-            inlet = graphview._link_manager.getLinkTarget(self)
+            outlet_index = graphview._controller.linkSource(index)
+            inlet_index = graphview._controller.linkTarget(index)
+
+            if not outlet_index or not inlet_index:
+                logger.warning(f"Link index {index} has invalid outlet or inlet index.")
+                return
+
+            outlet_widget = graphview._widget_manager.getWidget(outlet_index)
+            inlet_widget = graphview._widget_manager.getWidget(inlet_index)
             # Set decoration alignment based on relative positions
-            if outlet and inlet:
-                dx = inlet.scenePos().x() - outlet.scenePos().x()
-                dy = inlet.scenePos().y() - outlet.scenePos().y()
+            if outlet_widget and inlet_widget:
+                dx = inlet_widget.scenePos().x() - outlet_widget.scenePos().x()
+                dy = inlet_widget.scenePos().y() - outlet_widget.scenePos().y()
                 if dx >= 0 and dy >= 0:  # Target is bottom-right
                     opt.decorationAlignment = Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignRight
                 elif dx < 0 and dy >= 0:  # Target is bottom-left  
