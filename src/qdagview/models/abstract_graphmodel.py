@@ -17,7 +17,7 @@ NodeT = TypeVar('NodeT')
 InletT = TypeVar('InletT')
 OutletT = TypeVar('OutletT')
 LinkT = TypeVar('LinkT')
-
+AttributeT = TypeVar('AttributeT')
 
 # Create a compatible metaclass that combines QObject's metaclass with ABCMeta
 class QABCMeta(type(QObject), ABCMeta):
@@ -48,6 +48,8 @@ class AbstractGraphModel(QObject, ABC, Generic[GraphT, NodeT, InletT, OutletT, L
 
     def __init__(self, parent:QObject|None=None):
         super().__init__(parent)
+
+
 
     @abstractmethod
     def data(self, item:NodeT|InletT|OutletT|LinkT, attribute:Hashable, role:int=Qt.ItemDataRole.DisplayRole) -> Any:

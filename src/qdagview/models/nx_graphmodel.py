@@ -24,6 +24,7 @@ NodeType = Tuple[Literal['N'], str] # (type, node_id)
 InletType = Tuple[Literal['I'], NodeType, str]
 OutletType = Tuple[Literal['O'], NodeType, str]
 LinkType = Tuple[Literal['L'], OutletType, InletType]
+AttributeType = Tuple[Literal['A'], NodeType|InletType|OutletType|LinkType, str]
 
 from ..utils import make_unique_name, listify
 
@@ -36,41 +37,57 @@ class NXGraphModel(AbstractGraphModel[None, NodeType, InletType, OutletType, Lin
     """
 
     nodesInserted = Signal(list) # list of NodeType
-    nodesAboutToBeRemoved = Signal(list) # list of QPersistentModelIndex
-    nodesDataChanged = Signal(list, list, list) # list of QPersistentModelIndex, list of columns,  list of roles
+    nodesAboutToBeRemoved = Signal(list) # list of NodeType
+    # nodesDataChanged = Signal(list, list, list) # list of NodeType, list of columns,  list of roles
 
     inletsInserted = Signal(list) # list of QPersistentModelIndex
     inletsAboutToBeRemoved = Signal(list) # list of QPersistentModelIndex
-    inletsDataChanged = Signal(list, list, list) # list of QPersistentModelIndex, list of columns,  list of roles
+    # inletsDataChanged = Signal(list, list, list) # list of QPersistentModelIndex, list of columns,  list of roles
 
     outletsInserted = Signal(list) # list of QPersistentModelIndex
     outletsAboutToBeRemoved = Signal(list) # list of QPersistentModelIndex
-    outletsDataChanged = Signal(list, list, list) # list of QPersistentModelIndex, list of columns,  list of roles
+    # outletsDataChanged = Signal(list, list, list) # list of QPersistentModelIndex, list of columns,  list of roles
 
     linksInserted = Signal(list) # list of QPersistentModelIndex
     linksAboutToBeRemoved = Signal(list) # list of QPersistentModelIndex
-    linksDataChanged = Signal(list, list, list) # list of QPersistentModelIndex, list of columns,  list of roles
+    # linksDataChanged = Signal(list, list, list) # list of QPersistentModelIndex, list of columns,  list of roles
 
-    def data(self, item:NodeType|InletType|OutletType|LinkType, column:int, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
-        """
-        Get data for a given item and role.
-        This retrieves the data associated with the specified item and role from the model.
-        """
-        assert self._model, "Source model must be set before getting data"
-        if not item:
-            return None
-        
-        match self.itemType(item):
-            case GraphItemType.NODE:
-                self.graph.nodes[item].get('expression', '')
-            case GraphItemType.INLET:
+    attributesInserted = Signal(list) # list of AttributeT
+    attributesAboutToBeRemoved = Signal(list) # list of AttributeT
+    attributeDataChanged = Signal(list) # list of AttributeT
+
+    def data(self, attribute:AttributeType, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
+        kind, item, attribute_name = attribute
+        match kind:
+            case 'N':
+                data = self.graph.nodes[item]
+                return data.get(attribute_name, None)
+            case 'I':
+                data = self.graph.nodes[item]
+                data.get('inlet_attributes')
+            case 'O':
                 ...
-            case GraphItemType.OUTLET:
-                ...
-            case GraphItemType.LINK:
-                ...
+            case 'L':
+                data = self.graph.links[item]
+                return data.get(attribute_name, None)
             case _:
-                logger.warning(f"Unknown item type: {item[0]}")
+                return None 
+
+    def setData(self, attribute:AttributeType, value:Any, role:int=Qt.ItemDataRole.DisplayRole):
+        kind, item, attribute_name = attribute
+        match kind:
+            case 'N':
+                data = self.graph.nodes[item]
+                return data.get(attribute_name, None)
+            case 'I':
+                data = self.graph.nodes[item]
+                data.get('inlet_attributes')
+            case 'O':
+                ...
+            case 'L':
+                data = self.graph.links[item]
+                return data.get(attribute_name, None)
+            case _:
                 return None 
 
     def __init__(self, parent: QObject | None=None):

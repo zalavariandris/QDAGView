@@ -63,9 +63,7 @@ class GraphView(QGraphicsView):
 
         assert isinstance(delegate, GraphDelegate) or delegate is None, "Invalid delegate"
         self._delegate = delegate if delegate else GraphDelegate()
-
-
-
+        
         self._factory = WidgetFactoryUsingDelegate()
         self._factory.portPositionChanged.connect(self.handlePortPositionChanged)
 
