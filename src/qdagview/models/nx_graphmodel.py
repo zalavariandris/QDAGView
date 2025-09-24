@@ -19,74 +19,121 @@ from ..views.managers import LinkingManager
 
 import networkx as nx
 
+ # unique name within the parent.
+NameT:TypeAlias = str
 
-NodeType = Tuple[Literal['N'], str] # (type, node_id)
-InletType = Tuple[Literal['I'], NodeType, str]
-OutletType = Tuple[Literal['O'], NodeType, str]
+# unique types within the whole graph.
+NodeType = Tuple[Literal['N'], NameT]
+InletType = Tuple[Literal['I'], NodeType, NameT]
+OutletType = Tuple[Literal['O'], NodeType, NameT]
 LinkType = Tuple[Literal['L'], OutletType, InletType]
-AttributeType = Tuple[Literal['A'], NodeType|InletType|OutletType|LinkType, str]
+# AttributeType = Tuple[Literal['A'], NodeType|InletType|OutletType|LinkType, NameT]
 
 from ..utils import make_unique_name, listify
 
 from .abstract_graphmodel import AbstractGraphModel
 
-class NXGraphModel(AbstractGraphModel[None, NodeType, InletType, OutletType, LinkType]):
-    """
-    Controller for a graph backed by a NetworkX graph.
+class NXGraphModel(AbstractGraphModel[NodeType, InletType, OutletType, LinkType]):
+    """Controller for a graph backed by a NetworkX graph.
+
     This class provides methods to interact with a graph structure stored in a NetworkX graph.
     """
 
-    nodesInserted = Signal(list) # list of NodeType
-    nodesAboutToBeRemoved = Signal(list) # list of NodeType
-    # nodesDataChanged = Signal(list, list, list) # list of NodeType, list of columns,  list of roles
+    def nodeData(self, node: NodeType, attribute: NameT, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        _, node_name = node
+        data = self.graph.nodes[node_name]
+        return data.get(attribute, None)
+    
+    def setNodeData(self, node: NodeType, attribute: NameT, value: Any, role: int = Qt.ItemDataRole.DisplayRole) -> bool:
+        _, node_name = node
+        data = self.graph.nodes[node_name]
+        if attribute not in data:
+            return False
+        data[attribute] = value
+        return True
 
-    inletsInserted = Signal(list) # list of QPersistentModelIndex
-    inletsAboutToBeRemoved = Signal(list) # list of QPersistentModelIndex
-    # inletsDataChanged = Signal(list, list, list) # list of QPersistentModelIndex, list of columns,  list of roles
+    def inletData(self, inlet: InletType, attribute: NameT, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        _, node, inlet_name = inlet
+        _, node_name = node
+        # get inlet data
+        inlets:dict = self.graph.nodes[node_name]["inlets"]
+        inlet_data = inlets[inlet_name]
+        return inlet_data.get(attribute, None)
+    
+    def setInletData(self, inlet: InletType, attribute: NameT, value: Any, role: int = Qt.ItemDataRole.DisplayRole) -> bool:
+        _, node, inlet_name = inlet
+        _, node_name = node
+        # get inlet data
+        inlets:dict = self.graph.nodes[node_name]["inlets"]
+        if inlet_name not in inlets:
+            return False
+        inlet_data = inlets[inlet_name]
+        if attribute not in inlet_data:
+            return False
+        inlet_data[attribute] = value
+        return True
 
-    outletsInserted = Signal(list) # list of QPersistentModelIndex
-    outletsAboutToBeRemoved = Signal(list) # list of QPersistentModelIndex
-    # outletsDataChanged = Signal(list, list, list) # list of QPersistentModelIndex, list of columns,  list of roles
+    def outletData(self, outlet: OutletType, attribute: NameT, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        _, node, outlet_name = outlet
+        _, node_name = node
+        # get outlet data
+        outlets:dict = self.graph.nodes[node_name]["outlets"]
+        outlet_data = outlets[outlet_name]
+        return outlet_data.get(attribute, None)
 
-    linksInserted = Signal(list) # list of QPersistentModelIndex
-    linksAboutToBeRemoved = Signal(list) # list of QPersistentModelIndex
-    # linksDataChanged = Signal(list, list, list) # list of QPersistentModelIndex, list of columns,  list of roles
+    def linkData(self, link: LinkType, attribute: NameT, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        _, outlet, inlet = link
+        ports = (outlet_name, inlet_name)
+        _, source_node, outlet_name = self.outletNode(outlet)
+        _, target_node, inlet_name = self.inletNode(inlet)
+        edge = (source_node, target_node, ports)
+        # get edge data
+        data = self.graph.edges[edge]
+        return data.get(attribute, None)
+    
+    def setLinkData(self, link: LinkType, attribute: NameT, value: Any, role: int = Qt.ItemDataRole.DisplayRole) -> bool:
+        _, outlet, inlet = link
+        ports = (outlet_name, inlet_name)
+        _, source_node, outlet_name = self.outletNode(outlet)
+        _, target_node, inlet_name = self.inletNode(inlet)
+        edge = (source_node, target_node, ports)
+        # get edge data
+        data = self.graph.edges[edge]
+        if attribute not in data:
+            return False
+        data[attribute] = value
+        return True
 
-    attributesInserted = Signal(list) # list of AttributeT
-    attributesAboutToBeRemoved = Signal(list) # list of AttributeT
-    attributeDataChanged = Signal(list) # list of AttributeT
-
-    def data(self, attribute:AttributeType, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
+    def setNodeData(self, node: NodeType, attribute: NameT, value: Any, role: int = Qt.ItemDataRole.DisplayRole) -> bool:
         kind, item, attribute_name = attribute
         match kind:
             case 'N':
-                data = self.graph.nodes[item]
-                return data.get(attribute_name, None)
+                _, node, _ = item
+                data = self.graph.nodes[node]
+                if attribute_name not in data:
+                    return False
+                data[attribute_name] = value
+                return True
+            
             case 'I':
-                data = self.graph.nodes[item]
-                data.get('inlet_attributes')
+                return False
+            
             case 'O':
-                ...
+                return False
+            
             case 'L':
-                data = self.graph.links[item]
-                return data.get(attribute_name, None)
-            case _:
-                return None 
+                _, outlet, inlet = item
+                ports = (outlet_name, inlet_name)
+                _, source_node, outlet_name = self.outletNode(outlet)
+                _, target_node, inlet_name = self.inletNode(inlet)
+                edge = (source_node, target_node, ports)
 
-    def setData(self, attribute:AttributeType, value:Any, role:int=Qt.ItemDataRole.DisplayRole):
-        kind, item, attribute_name = attribute
-        match kind:
-            case 'N':
-                data = self.graph.nodes[item]
-                return data.get(attribute_name, None)
-            case 'I':
-                data = self.graph.nodes[item]
-                data.get('inlet_attributes')
-            case 'O':
-                ...
-            case 'L':
-                data = self.graph.links[item]
-                return data.get(attribute_name, None)
+                # get edge data
+                data = self.graph.edges[edge]
+                if attribute_name not in data:
+                    return False
+                data[attribute_name] = value
+                return True
             case _:
                 return None 
 
@@ -94,6 +141,22 @@ class NXGraphModel(AbstractGraphModel[None, NodeType, InletType, OutletType, Lin
         super().__init__(parent)
         self.graph = nx.MultiDiGraph()
         self._link_manager = LinkingManager[QPersistentModelIndex, QPersistentModelIndex, QPersistentModelIndex]()
+
+    def createIndexForNode(self, name:NameT)->NodeType:
+        node:NodeType = ('N', name)
+        return node
+    
+    def createIndexForInlet(self, name:NameT, node:NodeType)->InletType:
+        inlet:InletType = ('I', node, name)
+        return inlet
+    
+    def createIndexForOutlet(self, name:NameT, node:NodeType)->OutletType:
+        outlet:OutletType = ('O', node, name)
+        return outlet
+    
+    def createIndexForLink(self, outlet:OutletType, inlet:InletType)->LinkType:
+        link:LinkType = ('L', outlet, inlet)
+        return link
 
     # behaviour TODO: move to delegate
     def canLink(self, source:QPersistentModelIndex, target:QPersistentModelIndex)->bool:
@@ -130,9 +193,7 @@ class NXGraphModel(AbstractGraphModel[None, NodeType, InletType, OutletType, Lin
                 logger.warning(f"Unknown item type: {kind}")
                 return None
     
-    def nodeCount(self, subgraph:QModelIndex|None=None) -> int:
-        if subgraph is not None:
-            raise NotImplementedError("Subgraphs are not supported yet.")
+    def nodeCount(self) -> int:
         return len(self.graph.nodes)
 
     def linkCount(self) -> int:
@@ -154,42 +215,38 @@ class NXGraphModel(AbstractGraphModel[None, NodeType, InletType, OutletType, Lin
         return len(outlets)
     
     @listify
-    def nodes(self, subgraph:QModelIndex|None=None) -> Generator[NodeType, None, None]:
-        """Return a list of all node indexes in the model."""
-        if subgraph is not None:
-            raise NotImplementedError("Subgraphs are not supported yet.")
+    def nodes(self) -> Generator[NodeType, None, None]:
+        """Return a list of all node indexes in the model."""        
         for n, data in self.graph.nodes(data=True):
-            yield 'N', n, data.get('expression', '')
+            yield self.createIndexForNode(n)
     
     @listify
     def links(self) -> Generator[LinkType, None, None]:
         """Return a list of all link indexes in the model."""
-        for source_node_name, target_node_name, ports, data in self.graph.edges(keys=True, data=True):
+        for source_node_name, target_node_name, ports in self.graph.edges(keys=True):
             outlet_name, inlet_name = ports
-            source_node:NodeType = ('N', source_node_name)
-            outlet:OutletType = ('O', source_node, outlet_name)
-            target_node:NodeType = ('N', target_node_name)
-            inlet:InletType = ('I', target_node, inlet_name)
+            source_node:NodeType = self.createIndexForNode(source_node_name)
+            outlet:OutletType = self.createIndexForOutlet(outlet_name, source_node)
+            target_node:NodeType = self.createIndexForNode(target_node_name)
+            inlet:InletType = self.createIndexForInlet(inlet_name, target_node)
 
-            link:LinkType = 'L', outlet, inlet
-            yield link
+            yield self.createIndexForLink(outlet, inlet)
 
     @listify
     def nodeInlets(self, node:NodeType) -> Generator[InletType, None, None]:
         for inlet_name in self.graph.nodes[node].get('inlets', []):
-            inlet:InletType = 'I', node, inlet_name
-            yield inlet
+            yield self.createIndexForInlet(inlet_name, node)
 
     @listify
     def nodeOutlets(self, node:NodeType) -> Generator[OutletType, None, None]:
         for outlet_name in self.graph.nodes[node].get('outlets', []):
-            outlet:OutletType = 'O', node, outlet_name
-            yield outlet
+            yield self.createIndexForOutlet(outlet_name, node)
 
     @listify
     def inletLinks(self, inlet:InletType) -> Generator[LinkType, None, None]:
-        _, target_node, inlet_name = inlet
-        for source_node_name, _, port_names in self.graph.in_edges(target_node, keys=True):
+        target_node = self.inletNode(inlet)
+        _, target_node_name = target_node
+        for source_node_name, _, port_names in self.graph.in_edges(target_node_name, keys=True):
             if port_names[1] != inlet_name:
                 continue # skip if link is not for this inlet
 
@@ -198,7 +255,7 @@ class NXGraphModel(AbstractGraphModel[None, NodeType, InletType, OutletType, Lin
             outlet_name = port_names[0]
             outlet:OutletType = ("O", source_node, outlet_name)
 
-            yield "L", outlet, inlet
+            yield self.createIndexForLink(outlet, inlet)
 
     @listify
     def outletLinks(self, outlet:QModelIndex|QPersistentModelIndex) -> Generator[LinkType, None, None]:
@@ -211,7 +268,7 @@ class NXGraphModel(AbstractGraphModel[None, NodeType, InletType, OutletType, Lin
             target_node:NodeType = ("N", target_node_name)
             inlet:InletType = ("I", target_node, port_names[1])
 
-            yield "L", outlet, inlet
+            yield self.createIndexForLink(outlet, inlet)
 
     def inletNode(self, inlet:InletType) -> NodeType:
         _, node, name = inlet
@@ -230,42 +287,56 @@ class NXGraphModel(AbstractGraphModel[None, NodeType, InletType, OutletType, Lin
         return inlet
 
     ## CREATE
-    def addNode(self, subgraph:object|None=None)->NodeType|None:
-        if subgraph is not None:
-            raise NotImplementedError("Subgraphs are not supported yet.")
-        
+    def addNode(self, name:NameT|None=None)->NodeType|None:
         node_name = make_unique_name("node", existing_names=self.graph.nodes)   
         self.graph.add_node(node_name)
-
-        node:NodeType = ('N', node_name, '')
+        self.graph.nodes[node_name]['inlets'] = dict() # TODO? support for reordering inlets?
+        self.graph.nodes[node_name]['outlets'] = dict() # TODO? support for reordering outlets?
+        node = self.createIndexForNode(node_name)
         self.nodesInserted.emit([node])
         return node
 
-    def addInlet(self, node:NodeType)->InletType|None:
-        _, node_id = node
-        if node not in self.graph.nodes:
-            logger.error(f"Node {node} does not exist in the graph.")
+    def addInlet(self, node:NodeType, name:NameT|None=None)->InletType|None:
+        """Add a new inlet to the specified node.
+        
+        node: NodeType
+            The node to which the inlet will be added.
+        name: NameT|None
+            The name of the new inlet.
+            Name must be unique within the node. If None, a unique name will be generated.
+        """
+        _, node_name = node
+        if node_name not in self.graph.nodes:
+            logger.error(f"Node {node_name} does not exist in the graph.")
             return None
 
-        inlets:list[str] = self.graph.nodes[node].setdefault('inlets', [])
-        inlet_name = make_unique_name("in", existing_names=inlets)
-        inlets.append(inlet_name)
-
-        inlet = ('I', node, inlet_name)
+        inlets:list[str] = self.graph.nodes[node_name].setdefault('inlets', [])
+        if not name:
+            name = make_unique_name("in", existing_names=inlets)
+        if name in inlets:
+            logger.error(f"Cannot add inlet '{name}': inlet name already exists in node '{node_name}'. Inlet names must be unique per node.")
+            return None
+        
+        inlets.append(name)
+        inlet = self.createIndexForInlet(name, node)
         self.inletsInserted.emit([inlet])
         return inlet
 
-    def addOutlet(self, node:NodeType)->OutletType|None:
-        _, node_id = node
+    def addOutlet(self, node:NodeType, name:str|None=None)->OutletType|None:
+        _, node_name = node
         if node not in self.graph.nodes:
             logger.error(f"Node {node} does not exist in the graph.")
             return None
 
         outlets:list[str] = self.graph.nodes[node].setdefault('outlets', [])
-        outlet_name = make_unique_name("out", existing_names=outlets)
-        outlets.append(outlet_name)
+        if not name:
+            name = make_unique_name("out", existing_names=outlets)
+        if name in outlets:
+            logger.error(f"Cannot add outlet '{name}': outlet name already exists in node '{node_name}'. Outlet names must be unique per node.")
+            return None
+        outlets.append(name)
 
-        outlet = ('O', node, outlet_name)
+        outlet = self.createIndexForOutlet(name, node)
         self.outletsInserted.emit([outlet])
         return outlet
 
@@ -276,6 +347,7 @@ class NXGraphModel(AbstractGraphModel[None, NodeType, InletType, OutletType, Lin
         if source_node not in self.graph.nodes:
             logger.error(f"Source node {source_node} does not exist in the graph.")
             return None
+        
         if target_node not in self.graph.nodes:
             logger.error(f"Target node {target_node} does not exist in the graph.")
             return None
@@ -283,15 +355,20 @@ class NXGraphModel(AbstractGraphModel[None, NodeType, InletType, OutletType, Lin
         if outlet_name not in self.graph.nodes[source_node].get('outlets', []):
             logger.error(f"Outlet {outlet_name} does not exist in node {source_node}.")
             return None
+        
         if inlet_name not in self.graph.nodes[target_node].get('inlets', []):
             logger.error(f"Inlet {inlet_name} does not exist in node {target_node}.")
             return None
 
         # add edge to graph
         key = (outlet_name, inlet_name)
+        if self.graph.has_edge(source_node, target_node, key=key):
+            logger.error(f"Link from outlet {outlet} to inlet {inlet} already exists.")
+            return None
+        
         self.graph.add_edge(source_node, target_node, key=key)
 
-        link:LinkType = 'L', outlet, inlet
+        link:LinkType = self.createIndexForLink(outlet, inlet)
         self.linksInserted.emit([link])
         return link
 
@@ -300,6 +377,7 @@ class NXGraphModel(AbstractGraphModel[None, NodeType, InletType, OutletType, Lin
         if node not in self.graph.nodes:
             logger.error(f"Node {node} does not exist in the graph.")
             return False
+        
         self.nodesAboutToBeRemoved.emit([node])
         self.graph.remove_node(node)
         return True

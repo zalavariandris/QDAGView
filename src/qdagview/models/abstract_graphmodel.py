@@ -12,7 +12,6 @@ from ..core import GraphItemType
 
 logger = logging.getLogger(__name__)
 
-GraphT = TypeVar('GraphT')
 NodeT = TypeVar('NodeT')
 InletT = TypeVar('InletT')
 OutletT = TypeVar('OutletT')
@@ -24,7 +23,7 @@ class QABCMeta(type(QObject), ABCMeta):
     pass
 
 
-class AbstractGraphModel(QObject, ABC, Generic[GraphT, NodeT, InletT, OutletT, LinkT], metaclass=QABCMeta):
+class AbstractGraphModel(QObject, ABC, Generic[NodeT, InletT, OutletT, LinkT], metaclass=QABCMeta):
     """
     Controller for a graph backed by a QAbstractItemModel.
     This class provides methods to interact with a graph structure stored in a QAbstractItemModel.
@@ -46,10 +45,28 @@ class AbstractGraphModel(QObject, ABC, Generic[GraphT, NodeT, InletT, OutletT, L
     linksAboutToBeRemoved = Signal(list) # list of LinkT
     linksDataChanged = Signal(list, list, list) # list of LinkT, list of attributes,  list of roles
 
+    attributesInserted = Signal(list) # list of AttributeT
+    attributesAboutToBeRemoved = Signal(list) # list of AttributeT
+    attributeDataChanged = Signal(list) # list of AttributeT
+
     def __init__(self, parent:QObject|None=None):
         super().__init__(parent)
 
-
+    @abstractmethod
+    def createIndexForNode(self, name:str)->NodeT:
+        pass
+    
+    @abstractmethod
+    def createIndexForInlet(self, name:str, node:NodeT)->InletT:
+        pass
+    
+    @abstractmethod
+    def createIndexForOutlet(self, name:str, node:NodeT)->OutletT:
+        pass
+    
+    @abstractmethod
+    def createIndexForLink(self, outlet:OutletT, inlet:InletT)->LinkT:
+        pass
 
     @abstractmethod
     def data(self, item:NodeT|InletT|OutletT|LinkT, attribute:Hashable, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
@@ -85,12 +102,12 @@ class AbstractGraphModel(QObject, ABC, Generic[GraphT, NodeT, InletT, OutletT, L
         pass
 
     @abstractmethod
-    def nodeCount(self, subgraph:GraphT|None=None) -> int:
+    def nodeCount(self) -> int:
         """Get the number of nodes in the graph."""
         pass
 
     @abstractmethod
-    def linkCount(self, subgraph:GraphT|None=None) -> int:
+    def linkCount(self) -> int:
         """Get the number of links in the graph."""
         pass
 
@@ -105,13 +122,8 @@ class AbstractGraphModel(QObject, ABC, Generic[GraphT, NodeT, InletT, OutletT, L
         pass
 
     @abstractmethod
-    def nodes(self, subgraph:GraphT|None) -> List[NodeT]:
-        """Get the list of nodes in the specified subgraph."""
-        pass
-
-    @abstractmethod
-    def links(self, subgraph:GraphT|None) -> List[LinkT]:
-        """Get the list of links in the specified subgraph."""
+    def nodes(self) -> List[NodeT]:
+        """Get the list of nodes."""
         pass
 
     @abstractmethod
@@ -157,9 +169,9 @@ class AbstractGraphModel(QObject, ABC, Generic[GraphT, NodeT, InletT, OutletT, L
     ## CREATE
     ## # TODO: IMPLEMENT Adding and REMOVING multiple items at once
 
-    def addNode(self, subgraph:GraphT|None=None)->NodeT|None:
+    def addNode(self)->NodeT|None:
         """
-        Add a new node to the graph or subgraph.
+        Add a new node to the graph.
         Base implementation returns None (read-only mode).
         Override in subclass to enable node creation.
         """
