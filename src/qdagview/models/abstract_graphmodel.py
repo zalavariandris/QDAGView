@@ -31,25 +31,25 @@ class AbstractGraphModel(QObject, ABC, Generic[NodeT, InletT, OutletT, LinkT], m
     This class provides methods to interact with a graph structure stored in a QAbstractItemModel.
     """
 
-    nodesInserted = Signal(list) # list of NodeT
-    nodesAboutToBeRemoved = Signal(list) # list of NodeT
-    nodesDataChanged = Signal(list, list, list) # list of NodeT, list of attributes,  list of roles
+    nodesInserted = Signal(list) # list of NodeRef
+    nodesAboutToBeRemoved = Signal(list) # list of NodeRef
+    nodesDataChanged = Signal(list, list, list) # list of NodeRef, list of attributes,  list of roles
 
-    inletsInserted = Signal(list) # list of InletT
-    inletsAboutToBeRemoved = Signal(list) # list of InletT
-    inletsDataChanged = Signal(list, list, list) # list of InletT, list of attributes,  list of roles
+    inletsInserted = Signal(list) # list of InletRef
+    inletsAboutToBeRemoved = Signal(list) # list of InletRef
+    inletsDataChanged = Signal(list, list, list) # list of InletRef, list of attributes,  list of roles
 
-    outletsInserted = Signal(list) # list of OutletT
-    outletsAboutToBeRemoved = Signal(list) # list of OutletT
-    outletsDataChanged = Signal(list, list, list) # list of OutletT, list of attributes,  list of roles
+    outletsInserted = Signal(list) # list of OutletRef
+    outletsAboutToBeRemoved = Signal(list) # list of OutletRef
+    outletsDataChanged = Signal(list, list, list) # list of OutletRef, list of attributes,  list of roles
 
-    linksInserted = Signal(list) # list of LinkT
-    linksAboutToBeRemoved = Signal(list) # list of LinkT
-    linksDataChanged = Signal(list, list, list) # list of LinkT, list of attributes,  list of roles
+    linksInserted = Signal(list) # list of LinkRef
+    linksAboutToBeRemoved = Signal(list) # list of LinkRef
+    linksDataChanged = Signal(list, list, list) # list of LinkRef, list of attributes,  list of roles
 
-    attributesInserted = Signal(list) # list of AttributeT
-    attributesAboutToBeRemoved = Signal(list) # list of AttributeT
-    attributeDataChanged = Signal(list) # list of AttributeT
+    attributesInserted = Signal(list) # list of AttributeRef
+    attributesAboutToBeRemoved = Signal(list) # list of AttributeRef
+    attributeDataChanged = Signal(list) # list of AttributeRef
 
 
     def __init__(self, parent:QObject|None=None):
