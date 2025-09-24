@@ -14,294 +14,53 @@ from qtpy.QtGui import *
 from qtpy.QtCore import *
 from qtpy.QtWidgets import *
 
-from ..core import GraphDataRole, GraphItemType
-from ..views.managers import LinkingManager
-
 import networkx as nx
 
- # unique name within the parent.
-NameT:TypeAlias = str
-
-# unique types within the whole graph.
-NodeType = Tuple[Literal['N'], NameT]
-InletType = Tuple[Literal['I'], NodeType, NameT]
-OutletType = Tuple[Literal['O'], NodeType, NameT]
-LinkType = Tuple[Literal['L'], OutletType, InletType]
-# AttributeType = Tuple[Literal['A'], NodeType|InletType|OutletType|LinkType, NameT]
-
+from ..core import GraphDataRole, GraphItemType
+from ..views.managers import LinkingManager
 from ..utils import make_unique_name, listify
 
 from .abstract_graphmodel import AbstractGraphModel
 
-class NXGraphModel(AbstractGraphModel[NodeType, InletType, OutletType, LinkType]):
+
+# Local identifiers - string names unique within their scope
+NodeName: TypeAlias = str      # unique within the graph.
+InletName: TypeAlias = str     # unique within a node
+OutletName: TypeAlias = str    # unique within a node
+AttributeName: TypeAlias = str # unique within an item
+
+# Global references - structured identifiers unique within the whole graph
+NodeRef = Tuple[Literal['N'], NodeName] 
+InletRef = Tuple[Literal['I'], NodeRef, InletName]
+OutletRef = Tuple[Literal['O'], NodeRef, OutletName]
+LinkRef = Tuple[Literal['L'], OutletRef, InletRef]
+
+
+class NXGraphModel(AbstractGraphModel[NodeRef, InletRef, OutletRef, LinkRef]):
     """Controller for a graph backed by a NetworkX graph.
 
     This class provides methods to interact with a graph structure stored in a NetworkX graph.
     """
 
-    def nodeData(self, node: NodeType, attribute: NameT, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        _, node_name = node
-        data = self.graph.nodes[node_name]
-        return data.get(attribute, None)
-    
-    def setNodeData(self, node: NodeType, attribute: NameT, value: Any, role: int = Qt.ItemDataRole.DisplayRole) -> bool:
-        _, node_name = node
-        data = self.graph.nodes[node_name]
-        if attribute not in data:
-            return False
-        data[attribute] = value
-        return True
-
-    def inletData(self, inlet: InletType, attribute: NameT, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        _, node, inlet_name = inlet
-        _, node_name = node
-        # get inlet data
-        inlets:dict = self.graph.nodes[node_name]["inlets"]
-        inlet_data = inlets[inlet_name]
-        return inlet_data.get(attribute, None)
-    
-    def setInletData(self, inlet: InletType, attribute: NameT, value: Any, role: int = Qt.ItemDataRole.DisplayRole) -> bool:
-        _, node, inlet_name = inlet
-        _, node_name = node
-        # get inlet data
-        inlets:dict = self.graph.nodes[node_name]["inlets"]
-        if inlet_name not in inlets:
-            return False
-        inlet_data = inlets[inlet_name]
-        if attribute not in inlet_data:
-            return False
-        inlet_data[attribute] = value
-        return True
-
-    def outletData(self, outlet: OutletType, attribute: NameT, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        _, node, outlet_name = outlet
-        _, node_name = node
-        # get outlet data
-        outlets:dict = self.graph.nodes[node_name]["outlets"]
-        outlet_data = outlets[outlet_name]
-        return outlet_data.get(attribute, None)
-
-    def linkData(self, link: LinkType, attribute: NameT, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        _, outlet, inlet = link
-        ports = (outlet_name, inlet_name)
-        _, source_node, outlet_name = self.outletNode(outlet)
-        _, target_node, inlet_name = self.inletNode(inlet)
-        edge = (source_node, target_node, ports)
-        # get edge data
-        data = self.graph.edges[edge]
-        return data.get(attribute, None)
-    
-    def setLinkData(self, link: LinkType, attribute: NameT, value: Any, role: int = Qt.ItemDataRole.DisplayRole) -> bool:
-        _, outlet, inlet = link
-        ports = (outlet_name, inlet_name)
-        _, source_node, outlet_name = self.outletNode(outlet)
-        _, target_node, inlet_name = self.inletNode(inlet)
-        edge = (source_node, target_node, ports)
-        # get edge data
-        data = self.graph.edges[edge]
-        if attribute not in data:
-            return False
-        data[attribute] = value
-        return True
-
-    def setNodeData(self, node: NodeType, attribute: NameT, value: Any, role: int = Qt.ItemDataRole.DisplayRole) -> bool:
-        kind, item, attribute_name = attribute
-        match kind:
-            case 'N':
-                _, node, _ = item
-                data = self.graph.nodes[node]
-                if attribute_name not in data:
-                    return False
-                data[attribute_name] = value
-                return True
-            
-            case 'I':
-                return False
-            
-            case 'O':
-                return False
-            
-            case 'L':
-                _, outlet, inlet = item
-                ports = (outlet_name, inlet_name)
-                _, source_node, outlet_name = self.outletNode(outlet)
-                _, target_node, inlet_name = self.inletNode(inlet)
-                edge = (source_node, target_node, ports)
-
-                # get edge data
-                data = self.graph.edges[edge]
-                if attribute_name not in data:
-                    return False
-                data[attribute_name] = value
-                return True
-            case _:
-                return None 
-
-    def __init__(self, parent: QObject | None=None):
-        super().__init__(parent)
-        self.graph = nx.MultiDiGraph()
-        self._link_manager = LinkingManager[QPersistentModelIndex, QPersistentModelIndex, QPersistentModelIndex]()
-
-    def createIndexForNode(self, name:NameT)->NodeType:
-        node:NodeType = ('N', name)
-        return node
-    
-    def createIndexForInlet(self, name:NameT, node:NodeType)->InletType:
-        inlet:InletType = ('I', node, name)
-        return inlet
-    
-    def createIndexForOutlet(self, name:NameT, node:NodeType)->OutletType:
-        outlet:OutletType = ('O', node, name)
-        return outlet
-    
-    def createIndexForLink(self, outlet:OutletType, inlet:InletType)->LinkType:
-        link:LinkType = ('L', outlet, inlet)
-        return link
-
-    # behaviour TODO: move to delegate
-    def canLink(self, source:QPersistentModelIndex, target:QPersistentModelIndex)->bool:
-        """
-        Check if linking is possible between the source and target indexes.
-        """
-
-        if source.parent() == target.parent():
-            # Cannot link items in the same parent
-            return False
-        
-        source_type = self.itemType(source)
-        target_type = self.itemType(target)
-        if  (source_type, target_type) == (GraphItemType.INLET, GraphItemType.OUTLET) or \
-            (source_type, target_type) == (GraphItemType.OUTLET, GraphItemType.INLET):
-            # Both source and target must be either inlet or outlet
-            return True
-        
-        return False
-    
-    ## QUERY MODEL
-    def itemType(self, item:NodeType|InletType|OutletType|LinkType)-> GraphItemType | None:
-        kind = item[0]
-        match kind:
-            case 'N':
-                return GraphItemType.NODE
-            case 'I':
-                return GraphItemType.INLET
-            case 'O':
-                return GraphItemType.OUTLET
-            case 'L':
-                return GraphItemType.LINK
-            case _:
-                logger.warning(f"Unknown item type: {kind}")
-                return None
-    
-    def nodeCount(self) -> int:
-        return len(self.graph.nodes)
-
-    def linkCount(self) -> int:
-        return len(self.graph.edges)
-
-    def inletCount(self, node:NodeType) -> int:
-        """
-        Get the number of inlets for a given node.
-        Args:
-            node (QModelIndex): The index of the node.
-        Returns:
-            int: The number of inlets for the node.
-        """
-        inlets = self.graph.nodes[node].get('inlets', [])
-        return len(inlets)
-
-    def outletCount(self, node:NodeType) -> int:
-        outlets = self.graph.nodes[node].get('outlets', [])
-        return len(outlets)
-    
-    @listify
-    def nodes(self) -> Generator[NodeType, None, None]:
-        """Return a list of all node indexes in the model."""        
-        for n, data in self.graph.nodes(data=True):
-            yield self.createIndexForNode(n)
-    
-    @listify
-    def links(self) -> Generator[LinkType, None, None]:
-        """Return a list of all link indexes in the model."""
-        for source_node_name, target_node_name, ports in self.graph.edges(keys=True):
-            outlet_name, inlet_name = ports
-            source_node:NodeType = self.createIndexForNode(source_node_name)
-            outlet:OutletType = self.createIndexForOutlet(outlet_name, source_node)
-            target_node:NodeType = self.createIndexForNode(target_node_name)
-            inlet:InletType = self.createIndexForInlet(inlet_name, target_node)
-
-            yield self.createIndexForLink(outlet, inlet)
-
-    @listify
-    def nodeInlets(self, node:NodeType) -> Generator[InletType, None, None]:
-        for inlet_name in self.graph.nodes[node].get('inlets', []):
-            yield self.createIndexForInlet(inlet_name, node)
-
-    @listify
-    def nodeOutlets(self, node:NodeType) -> Generator[OutletType, None, None]:
-        for outlet_name in self.graph.nodes[node].get('outlets', []):
-            yield self.createIndexForOutlet(outlet_name, node)
-
-    @listify
-    def inletLinks(self, inlet:InletType) -> Generator[LinkType, None, None]:
-        target_node = self.inletNode(inlet)
-        _, target_node_name = target_node
-        for source_node_name, _, port_names in self.graph.in_edges(target_node_name, keys=True):
-            if port_names[1] != inlet_name:
-                continue # skip if link is not for this inlet
-
-            # get outlet info
-            source_node:NodeType = ("N", source_node_name)
-            outlet_name = port_names[0]
-            outlet:OutletType = ("O", source_node, outlet_name)
-
-            yield self.createIndexForLink(outlet, inlet)
-
-    @listify
-    def outletLinks(self, outlet:QModelIndex|QPersistentModelIndex) -> Generator[LinkType, None, None]:
-        _, source_node, outlet_name = outlet
-        for _, target_node_name, port_names in self.graph.in_edges(source_node, keys=True):
-            if port_names[0] != outlet_name:
-                continue # skip if link is not for this outlet
-
-            # get outlet info
-            target_node:NodeType = ("N", target_node_name)
-            inlet:InletType = ("I", target_node, port_names[1])
-
-            yield self.createIndexForLink(outlet, inlet)
-
-    def inletNode(self, inlet:InletType) -> NodeType:
-        _, node, name = inlet
-        return node
-    
-    def outletNode(self, outlet:OutletType) -> NodeType:
-        _, node, name = outlet
-        return node
-
-    def linkSource(self, link:LinkType) -> OutletType|None:
-        _, outlet, inlet = link
-        return outlet
-    
-    def linkTarget(self, link:LinkType) -> OutletType|None:
-        _, outlet, inlet = link
-        return inlet
-
     ## CREATE
-    def addNode(self, name:NameT|None=None)->NodeType|None:
+    def addNode(self, name:NodeName|None=None)->NodeRef|None:
         node_name = make_unique_name("node", existing_names=self.graph.nodes)   
         self.graph.add_node(node_name)
-        self.graph.nodes[node_name]['inlets'] = dict() # TODO? support for reordering inlets?
-        self.graph.nodes[node_name]['outlets'] = dict() # TODO? support for reordering outlets?
+        self.graph.nodes[node_name] = {
+            'inlets': defaultdict(dict),  # TODO? support for reordering inlets?
+            'outlets': defaultdict(dict),
+            'attributes': {},
+        }
         node = self.createIndexForNode(node_name)
         self.nodesInserted.emit([node])
         return node
 
-    def addInlet(self, node:NodeType, name:NameT|None=None)->InletType|None:
+    def addInlet(self, node:NodeRef, name:InletName|None=None)->InletRef|None:
         """Add a new inlet to the specified node.
         
-        node: NodeType
+        node: NodeRef
             The node to which the inlet will be added.
-        name: NameT|None
+        name: InletName|None
             The name of the new inlet.
             Name must be unique within the node. If None, a unique name will be generated.
         """
@@ -322,7 +81,7 @@ class NXGraphModel(AbstractGraphModel[NodeType, InletType, OutletType, LinkType]
         self.inletsInserted.emit([inlet])
         return inlet
 
-    def addOutlet(self, node:NodeType, name:str|None=None)->OutletType|None:
+    def addOutlet(self, node:NodeRef, name:str|None=None)->OutletRef|None:
         _, node_name = node
         if node not in self.graph.nodes:
             logger.error(f"Node {node} does not exist in the graph.")
@@ -340,7 +99,21 @@ class NXGraphModel(AbstractGraphModel[NodeType, InletType, OutletType, LinkType]
         self.outletsInserted.emit([outlet])
         return outlet
 
-    def addLink(self, outlet:OutletType, inlet:InletType)->LinkType|None:
+    def addLink(self, outlet:OutletRef, inlet:InletRef)->LinkRef|None:
+        """Add an edge from outlet to inlet.
+
+        Parameters
+        ----------
+        outlet : OutletType
+            The outlet from which the link originates.
+        inlet : InletType
+            The inlet to which the link connects.
+
+        Returns
+        -------
+        The link index if the link was added, None otherwise.
+        """
+
         _, source_node, outlet_name = outlet
         _, target_node, inlet_name = inlet
 
@@ -362,18 +135,247 @@ class NXGraphModel(AbstractGraphModel[NodeType, InletType, OutletType, LinkType]
 
         # add edge to graph
         key = (outlet_name, inlet_name)
-        if self.graph.has_edge(source_node, target_node, key=key):
+        if self.graph.has_edge(source_node, target_node, key):
             logger.error(f"Link from outlet {outlet} to inlet {inlet} already exists.")
             return None
         
-        self.graph.add_edge(source_node, target_node, key=key)
+        self.graph.add_edge(source_node, target_node, key)
 
-        link:LinkType = self.createIndexForLink(outlet, inlet)
+        link:LinkRef = self.createIndexForLink(outlet, inlet)
         self.linksInserted.emit([link])
         return link
 
+    # DATA
+    def setNodeData(self, node: NodeRef, attribute: AttributeName, value: Any, role: int = Qt.ItemDataRole.DisplayRole) -> bool:
+        _, node_name = node
+        try:
+            self.graph.nodes[node_name]["attributes"][attribute] = value
+            return True
+        except KeyError:
+            return False
+        
+    def setInletData(self, inlet: InletRef, attribute: AttributeName, value: Any, role: int = Qt.ItemDataRole.DisplayRole) -> bool:
+        _, node, inlet_name = inlet
+        _, node_name = node
+        # get inlet data
+        try:
+            self.graph.nodes[node_name]["inlets"][inlet_name][attribute] = value
+            return True
+        except KeyError:
+            return False
+        
+    def setOutletData(self, outlet: OutletRef, attribute: AttributeName, value: Any, role: int = Qt.ItemDataRole.DisplayRole) -> bool:
+        _, node, outlet_name = outlet
+        _, node_name = node
+        # get outlet data
+        try:
+            self.graph.nodes[node_name]["outlets"][outlet_name][attribute] = value
+            return True
+        except KeyError:
+            return False
+        
+    def setLinkData(self, link: LinkRef, attribute: AttributeName, value: Any, role: int = Qt.ItemDataRole.DisplayRole) -> bool:
+        _, outlet, inlet = link
+        ports = (outlet_name, inlet_name)
+        _, source_node, outlet_name = self.outletNode(outlet)
+        _, target_node, inlet_name = self.inletNode(inlet)
+        edge = (source_node, target_node, ports)
+        # get edge data
+        data = self.graph.edges[edge]
+        if attribute not in data:
+            return False
+        data[attribute] = value
+        return True
+        
+    def nodeData(self, node: NodeRef, attribute: AttributeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        _, node_name = node
+        try:
+            return self.graph.nodes[node_name]["attributes"][attribute]
+        except KeyError as err:
+            logger.error(f"Error getting node data for {node}, attribute '{attribute}': {err}")
+            return None
+
+    def inletData(self, inlet: InletRef, attribute: AttributeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        _, node, inlet_name = inlet
+        _, node_name = node
+        # get inlet data
+        try:
+            return self.graph.nodes[node_name]["inlets"][inlet_name][attribute]
+        except KeyError as err:
+            logger.error(f"Error getting inlet data for {inlet}, attribute '{attribute}': {err}")
+            return None
+    
+    def outletData(self, outlet: OutletRef, attribute: AttributeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        _, node, outlet_name = outlet
+        _, node_name = node
+        # get outlet data
+        try:
+            return self.graph.nodes[node_name]["outlets"][outlet_name][attribute]
+        except KeyError as err:
+            logger.error(f"Error getting outlet data for {outlet}, attribute '{attribute}': {err}")
+            return None
+
+    def linkData(self, link: LinkRef, attribute: AttributeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        _, outlet, inlet = link
+        ports = (outlet_name, inlet_name)
+        _, source_node, outlet_name = self.outletNode(outlet)
+        _, target_node, inlet_name = self.inletNode(inlet)
+        edge = (source_node, target_node, ports)
+
+        # get edge data
+        try:
+            return self.graph.edges[edge][attribute]
+        except KeyError as err:
+            logger.error(f"Error getting link data for {link}, attribute '{attribute}': {err}")
+            return None
+
+    def __init__(self, parent: QObject | None=None):
+        super().__init__(parent)
+        self.graph = nx.MultiDiGraph()
+        self._link_manager = LinkingManager[QPersistentModelIndex, QPersistentModelIndex, QPersistentModelIndex]()
+
+    # index creation
+    def createIndexForNode(self, name:NodeName)->NodeRef:
+        node:NodeRef = ('N', name)
+        return node
+    
+    def createIndexForInlet(self, name:InletName, node:NodeRef)->InletRef:
+        inlet:InletRef = ('I', node, name)
+        return inlet
+    
+    def createIndexForOutlet(self, name:OutletName, node:NodeRef)->OutletRef:
+        outlet:OutletRef = ('O', node, name)
+        return outlet
+    
+    def createIndexForLink(self, outlet:OutletRef, inlet:InletRef)->LinkRef:
+        link:LinkRef = ('L', outlet, inlet)
+        return link
+
+    def getNodeName(self, node:NodeRef)->NodeName:
+        _, name = node
+        return name
+    
+    def getInletName(self, inlet:InletRef)->InletName:
+        _, _, name = inlet
+        return name
+    
+    def getOutletName(self, outlet:OutletRef)->OutletName:
+        _, _, name = outlet
+        return name
+
+    ## QUERY MODEL
+    def itemType(self, item:NodeRef|InletRef|OutletRef|LinkRef)-> GraphItemType | None:
+        kind = item[0]
+        match kind:
+            case 'N':
+                return GraphItemType.NODE
+            case 'I':
+                return GraphItemType.INLET
+            case 'O':
+                return GraphItemType.OUTLET
+            case 'L':
+                return GraphItemType.LINK
+            case _:
+                logger.warning(f"Unknown item type: {kind}")
+                return None
+    
+    def nodeCount(self) -> int:
+        return len(self.graph.nodes)
+
+    def linkCount(self) -> int:
+        return len(self.graph.edges)
+
+    def inletCount(self, node:NodeRef) -> int:
+        """
+        Get the number of inlets for a given node.
+        Args:
+            node (QModelIndex): The index of the node.
+        Returns:
+            int: The number of inlets for the node.
+        """
+        inlets = self.graph.nodes[node].get('inlets', [])
+        return len(inlets)
+
+    def outletCount(self, node:NodeRef) -> int:
+        outlets = self.graph.nodes[node].get('outlets', [])
+        return len(outlets)
+    
+    @listify
+    def nodes(self) -> Generator[NodeRef, None, None]:
+        """Return a list of all node indexes in the model."""        
+        for n, data in self.graph.nodes(data=True):
+            yield self.createIndexForNode(n)
+    
+    @listify
+    def links(self) -> Generator[LinkRef, None, None]:
+        """Return a list of all link indexes in the model."""
+        for source_node_name, target_node_name, ports in self.graph.edges(keys=True):
+            outlet_name, inlet_name = ports
+            source_node:NodeRef = self.createIndexForNode(source_node_name)
+            outlet:OutletRef = self.createIndexForOutlet(outlet_name, source_node)
+            target_node:NodeRef = self.createIndexForNode(target_node_name)
+            inlet:InletRef = self.createIndexForInlet(inlet_name, target_node)
+
+            yield self.createIndexForLink(outlet, inlet)
+
+    @listify
+    def nodeInlets(self, node:NodeRef) -> Generator[InletRef, None, None]:
+        for inlet_name in self.graph.nodes[node].get('inlets', []):
+            yield self.createIndexForInlet(inlet_name, node)
+
+    @listify
+    def nodeOutlets(self, node:NodeRef) -> Generator[OutletRef, None, None]:
+        for outlet_name in self.graph.nodes[node].get('outlets', []):
+            yield self.createIndexForOutlet(outlet_name, node)
+
+    @listify
+    def inletLinks(self, inlet:InletRef) -> Generator[LinkRef, None, None]:
+        _, target_node, inlet_name = inlet
+        target_node_name = self.getNodeName(target_node)
+        _, target_node_name = target_node
+        for source_node_name, _, port_names in self.graph.in_edges(target_node_name, keys=True):
+            if port_names[1] != inlet_name:
+                continue # skip if link is not for this inlet
+
+            # get outlet info
+            source_node:NodeRef = ("N", source_node_name)
+            outlet_name = port_names[0]
+            outlet:OutletRef = ("O", source_node, outlet_name)
+
+            yield self.createIndexForLink(outlet, inlet)
+
+    @listify
+    def outletLinks(self, outlet:QModelIndex|QPersistentModelIndex) -> Generator[LinkRef, None, None]:
+        _, source_node, outlet_name = outlet
+        source_node_name = self.getNodeName(source_node)
+        for _, target_node_name, port_names in self.graph.out_edges(source_node_name, keys=True):
+            if port_names[0] != outlet_name:
+                continue # skip if link is not for this outlet
+
+            # get outlet info
+            target_node:NodeRef = ("N", target_node_name)
+            inlet:InletRef = ("I", target_node, port_names[1])
+
+            yield self.createIndexForLink(outlet, inlet)
+
+    def inletNode(self, inlet:InletRef) -> NodeRef:
+        _, node, name = inlet
+        return node
+    
+    def outletNode(self, outlet:OutletRef) -> NodeRef:
+        _, node, name = outlet
+        return node
+
+    def linkSource(self, link:LinkRef) -> OutletRef|None:
+        _, outlet, inlet = link
+        return outlet
+    
+    def linkTarget(self, link:LinkRef) -> OutletRef|None:
+        _, outlet, inlet = link
+        return inlet
+
     ## DELETE
-    def removeNode(self, node:NodeType)->bool:
+    def removeNode(self, node:NodeRef)->bool:
         if node not in self.graph.nodes:
             logger.error(f"Node {node} does not exist in the graph.")
             return False
@@ -382,7 +384,7 @@ class NXGraphModel(AbstractGraphModel[NodeType, InletType, OutletType, LinkType]
         self.graph.remove_node(node)
         return True
     
-    def removeInlet(self, inlet:InletType)->bool:
+    def removeInlet(self, inlet:InletRef)->bool:
         _, node, inlet_name = inlet
         if node not in self.graph.nodes:
             logger.error(f"Node {node} does not exist in the graph.")
@@ -403,7 +405,7 @@ class NXGraphModel(AbstractGraphModel[NodeType, InletType, OutletType, LinkType]
 
         return True
     
-    def removeOutlet(self, outlet:OutletType)->bool:
+    def removeOutlet(self, outlet:OutletRef)->bool:
         _, node, outlet_name = outlet
         if node not in self.graph.nodes:
             logger.error(f"Node {node} does not exist in the graph.")
@@ -424,7 +426,7 @@ class NXGraphModel(AbstractGraphModel[NodeType, InletType, OutletType, LinkType]
 
         return True
     
-    def removeLink(self, link:LinkType)->bool:
+    def removeLink(self, link:LinkRef)->bool:
         if link not in self.graph.edges(keys=True):
             logger.error(f"Link {link} does not exist in the graph.")
             return False

@@ -461,20 +461,20 @@ class GraphView(QGraphicsView):
 
         # inlets and outlets
         for node_index in node_indexes:
-            for inlet_index in self._model.nodeInlets(node_index):
+            for inlet_index in self._model.inlets(node_index):
                 if not self._widget_manager.getWidget(inlet_index):
                     self.addInletWidgetForIndex(inlet_index)
-            for outlet_index in self._model.nodeOutlets(node_index):
+            for outlet_index in self._model.outlets(node_index):
                 if not self._widget_manager.getWidget(outlet_index):
                     self.addOutletWidgetForIndex(outlet_index)
 
         # links
         for node_index in node_indexes:
-            for inlet_index in self._model.nodeInlets(node_index):
+            for inlet_index in self._model.inlets(node_index):
                 for link_index in self._model.inletLinks(inlet_index):
                     if not self._widget_manager.getWidget(link_index):
                         self.addLinkWidgetForIndex(link_index)
-            for outlet_index in self._model.nodeOutlets(node_index):
+            for outlet_index in self._model.outlets(node_index):
                 for link_index in self._model.outletLinks(outlet_index):
                     if not self._widget_manager.getWidget(link_index):
                         self.addLinkWidgetForIndex(link_index)
@@ -482,22 +482,22 @@ class GraphView(QGraphicsView):
     def handleNodesRemoved(self, node_indexes:List[QPersistentModelIndex]):
         # links
         for node_index in node_indexes:
-            for inlet_index in self._model.nodeInlets(node_index):
+            for inlet_index in self._model.inlets(node_index):
                 for link_index in self._model.inletLinks(inlet_index):
                     if self._widget_manager.getWidget(link_index):
                         self.removeLinkWidgetForIndex(link_index)
 
-            for outlet_index in self._model.nodeOutlets(node_index):
+            for outlet_index in self._model.outlets(node_index):
                 for link_index in self._model.outletLinks(outlet_index):
                     if self._widget_manager.getWidget(link_index):
                         self.removeLinkWidgetForIndex(link_index)
 
         # inlets and outlets
         for node_index in node_indexes:
-            for inlet_index in self._model.nodeInlets(node_index):
+            for inlet_index in self._model.inlets(node_index):
                 if self._widget_manager.getWidget(inlet_index):
                     self.removeInletWidgetForIndex(inlet_index)
-            for outlet_index in self._model.nodeOutlets(node_index):
+            for outlet_index in self._model.outlets(node_index):
                 if self._widget_manager.getWidget(outlet_index):
                     self.removeOutletWidgetForIndex(outlet_index)
         #nodes

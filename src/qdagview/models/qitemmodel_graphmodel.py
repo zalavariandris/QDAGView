@@ -142,9 +142,9 @@ class QItemModelGraphModel(AbstractGraphModel[QPersistentModelIndex, QPersistent
                 
                 for node in removed_nodes:
                     connected_links = []
-                    for inlet in self.nodeInlets(node):
+                    for inlet in self.inlets(node):
                         connected_links.extend(self._link_manager.getInletLinks(inlet))
-                    for outlet in self.nodeOutlets(node):
+                    for outlet in self.outlets(node):
                         connected_links.extend(self._link_manager.getOutletLinks(outlet))
 
                     if connected_links:
@@ -394,7 +394,7 @@ class QItemModelGraphModel(AbstractGraphModel[QPersistentModelIndex, QPersistent
                 outlet_count += 1
         return outlet_count
     
-    def nodeInlets(self, node:QModelIndex|QPersistentModelIndex) -> List[QPersistentModelIndex]:
+    def inlets(self, node:QModelIndex|QPersistentModelIndex) -> List[QPersistentModelIndex]:
         """
         Get a list of inlet indexes for a given node.
         Args:
@@ -426,7 +426,7 @@ class QItemModelGraphModel(AbstractGraphModel[QPersistentModelIndex, QPersistent
         assert self.itemType(node_index) == GraphItemType.NODE, f"Parent of outlet must be of type NODE, got: {self.itemType(node_index)}"
         return QPersistentModelIndex(node_index)
     
-    def nodeOutlets(self, node:QPersistentModelIndex) -> List[QPersistentModelIndex]:
+    def outlets(self, node:QPersistentModelIndex) -> List[QPersistentModelIndex]:
         """
         Get a list of outlet indexes for a given node.
         Args:
@@ -626,10 +626,10 @@ class QItemModelGraphModel(AbstractGraphModel[QPersistentModelIndex, QPersistent
         # remove links connected to the node
         # collect links
         links_connected = []
-        for inlet in self.nodeInlets(node):
+        for inlet in self.inlets(node):
             for link in self.inletLinks(inlet):
                 links_connected.append(QPersistentModelIndex(link))
-        for outlet in self.nodeOutlets(node):
+        for outlet in self.outlets(node):
             for link in self.outletLinks(outlet):
                 links_connected.append(QPersistentModelIndex(link))
 

@@ -18,6 +18,8 @@ OutletT = TypeVar('OutletT')
 LinkT = TypeVar('LinkT')
 AttributeT = TypeVar('AttributeT')
 
+from typing import Tuple, Literal, TypeAlias
+
 # Create a compatible metaclass that combines QObject's metaclass with ABCMeta
 class QABCMeta(type(QObject), ABCMeta):
     pass
@@ -48,6 +50,7 @@ class AbstractGraphModel(QObject, ABC, Generic[NodeT, InletT, OutletT, LinkT], m
     attributesInserted = Signal(list) # list of AttributeT
     attributesAboutToBeRemoved = Signal(list) # list of AttributeT
     attributeDataChanged = Signal(list) # list of AttributeT
+
 
     def __init__(self, parent:QObject|None=None):
         super().__init__(parent)
