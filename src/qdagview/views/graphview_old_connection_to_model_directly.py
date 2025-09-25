@@ -45,7 +45,7 @@ class OutletWidget(PortWidget):
     pass
 
 from .delegates.graphview_delegate import GraphDelegate
-from ..controllers.qitemmodel_graphcontroller import QItemModelGraphController
+from ..models.qitemmodel_graphcontroller import QItemModelGraphController
 # from .factories.widget_factory import WidgetFactory
 from .factories.widget_factory_using_delegate import WidgetFactoryUsingDelegate
 
@@ -134,7 +134,7 @@ class GraphView(QGraphicsView):
         for item in self.items(point):
             if item in all_widgets:
                 # If the item is a widget, return its index
-                return self._widget_manager.getIndex(item)
+                return self._widget_manager.getKey(item)
         return QModelIndex()
     
     def indexAt(self, point:QPoint) -> QModelIndex:
@@ -553,7 +553,7 @@ class GraphView(QGraphicsView):
             selected_widgets = scene.selectedItems()
 
             # map widgets to QModelIndexes
-            selected_indexes = map(self._widget_manager.getIndex, selected_widgets)
+            selected_indexes = map(self._widget_manager.getKey, selected_widgets)
             selected_indexes = filter(lambda idx: idx is not None and idx.isValid(), selected_indexes)
             
             assert self._model

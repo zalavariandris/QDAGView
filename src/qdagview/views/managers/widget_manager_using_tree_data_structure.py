@@ -9,9 +9,9 @@ logger = logging.getLogger(__name__)
 
 
 from ...core import indexToPath, indexFromPath
+from . import WidgetManagerProtocol
 
-
-class TreeWidgetManager:
+class TreeWidgetManager(WidgetManagerProtocol):
     """Handles widgets mapping to model indexes."""
     def __init__(self):
         # Root container for the tree structure - can have arbitrary depth
@@ -183,7 +183,7 @@ class TreeWidgetManager:
         
         del current_container[final_index]
     
-    def getIndex(self, widget: QGraphicsItem) -> QModelIndex | None:
+    def getKey(self, widget: QGraphicsItem) -> QModelIndex | None:
         """
         Get the index of the widget in the model.
         """

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, ABCMeta, abstractmethod
-from typing import TypeVar, Generic, List, Optional, Any, Hashable
+from typing import Literal, TypeVar, Generic, List, Tuple, Any
 
 from qtpy.QtGui import *
 from qtpy.QtCore import *
@@ -12,11 +12,70 @@ from ..core import GraphItemType
 
 logger = logging.getLogger(__name__)
 
-NodeT = TypeVar('NodeT')
-InletT = TypeVar('InletT')
-OutletT = TypeVar('OutletT')
-LinkT = TypeVar('LinkT')
-AttributeT = TypeVar('AttributeT')
+
+NodeName:      TypeAlias = str # unique within the graph.
+InletName:     TypeAlias = str # unique within a node
+OutletName:    TypeAlias = str # unique within a node
+AttributeName: TypeAlias = str # unique within an item
+
+# NodeRefT =   Tuple[Literal['N'], NodeName] 
+# InletRefT =  Tuple[Literal['I'], NodeRefT, InletName]
+# OutletRefT = Tuple[Literal['O'], NodeRefT, OutletName]
+# LinkRefT =   Tuple[Literal['L'], OutletRefT, InletRefT]
+
+
+class GraphItemRef:
+    __slots__ = ('_name', '_ptr', '_model')
+    def __init__(self, model: AbstractGraphModel, name:str, ptr:Any):
+        object.__setattr__(self, '_name', name)
+        object.__setattr__(self, '_ptr', ptr)
+        object.__setattr__(self, '_model', weakref_ref(model))
+
+    def __setattr__(self, name, value):
+        raise AttributeError("Instances of Ref are immutable")
+
+    def kind(self)->GraphItemType:
+        raise NotImplementedError()
+
+    def name(self)->str:
+        return self._name
+    
+    def ptr(self)->Any:
+        return self._ptr
+    
+    def model(self)->AbstractGraphModel:
+        model = self._model()
+        if model is None:
+            raise ReferenceError("The AbstractGraphModel referenced by this NodeRef has been garbage collected.")
+        return model
+    
+    def isValid(self)->bool:
+        # TODO: check if the referenced item still exists in the model
+        model = self._model()
+        return model is not None
+
+
+class NodeRef(GraphItemRef):
+    def kind(self)->GraphItemType:
+        return GraphItemType.NODE
+    
+class InletRef(GraphItemRef):
+    def kind(self)->GraphItemType:
+        return GraphItemType.INLET
+
+class OutletRef(GraphItemRef):
+    def kind(self)->GraphItemType:
+        return GraphItemType.OUTLET
+
+class LinkRef(GraphItemRef):
+    def kind(self)->GraphItemType:
+        return GraphItemType.LINK
+
+class AttributeRef(GraphItemRef):
+    def kind(self)->GraphItemType:
+        return GraphItemType.ATTRIBUTE
+
+from weakref import ref as weakref_ref
 
 from typing import Tuple, Literal, TypeAlias
 
@@ -25,7 +84,7 @@ class QABCMeta(type(QObject), ABCMeta):
     pass
 
 
-class AbstractGraphModel(QObject, ABC, Generic[NodeT, InletT, OutletT, LinkT], metaclass=QABCMeta):
+class AbstractGraphModel(QObject):
     """
     Controller for a graph backed by a QAbstractItemModel.
     This class provides methods to interact with a graph structure stored in a QAbstractItemModel.
@@ -33,76 +92,155 @@ class AbstractGraphModel(QObject, ABC, Generic[NodeT, InletT, OutletT, LinkT], m
 
     nodesInserted = Signal(list) # list of NodeRef
     nodesAboutToBeRemoved = Signal(list) # list of NodeRef
-    nodesDataChanged = Signal(list, list, list) # list of NodeRef, list of attributes,  list of roles
 
     inletsInserted = Signal(list) # list of InletRef
     inletsAboutToBeRemoved = Signal(list) # list of InletRef
-    inletsDataChanged = Signal(list, list, list) # list of InletRef, list of attributes,  list of roles
-
+    
     outletsInserted = Signal(list) # list of OutletRef
     outletsAboutToBeRemoved = Signal(list) # list of OutletRef
-    outletsDataChanged = Signal(list, list, list) # list of OutletRef, list of attributes,  list of roles
 
     linksInserted = Signal(list) # list of LinkRef
     linksAboutToBeRemoved = Signal(list) # list of LinkRef
-    linksDataChanged = Signal(list, list, list) # list of LinkRef, list of attributes,  list of roles
 
     attributesInserted = Signal(list) # list of AttributeRef
     attributesAboutToBeRemoved = Signal(list) # list of AttributeRef
-    attributeDataChanged = Signal(list) # list of AttributeRef
+    dataChanged = Signal(list, list) # list of AttributeRef, list of roles
 
 
     def __init__(self, parent:QObject|None=None):
         super().__init__(parent)
 
-    @abstractmethod
-    def createIndexForNode(self, name:str)->NodeT:
-        pass
+    ## Reference CREATION
+    def createNodeRef(self, name:NodeName, ptr:Any=None)->NodeRef:
+        return NodeRef(self, name, ptr)
     
-    @abstractmethod
-    def createIndexForInlet(self, name:str, node:NodeT)->InletT:
-        pass
+    def createInletRef(self, name:InletName, ptr:Any)->InletRef:
+        return InletRef(self, name, ptr)
     
-    @abstractmethod
-    def createIndexForOutlet(self, name:str, node:NodeT)->OutletT:
-        pass
+    def createOutletRef(self, name:OutletName, ptr:Any)->OutletRef:
+        return OutletRef(self, name, ptr)
     
-    @abstractmethod
-    def createIndexForLink(self, outlet:OutletT, inlet:InletT)->LinkT:
-        pass
+    def createLinkRef(self, ptr:Any)->LinkRef:
+        return LinkRef(self, "", ptr)
 
-    @abstractmethod
-    def data(self, item:NodeT|InletT|OutletT|LinkT, attribute:Hashable, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
-        """
-        Get data for the specified graph item.
-        This method should be overridden in a subclass to provide access to item attributes.
-        Parameters:
-            item: The graph item (node, inlet, outlet, or link).
-            attribute: The attribute to retrieve.
-            role: The Qt data role (default is DisplayRole).
-        
-        """
-        pass
+    def createAttributeRef(self, name:AttributeName, ptr:Any)->AttributeRef:
+        return AttributeRef(self, name, ptr)
+
+    def nodeRef(self, name:NodeName)->NodeRef:
+        return self.createNodeRef(name, None)
     
-    @abstractmethod
-    def setData(self, item:NodeT|InletT|OutletT|LinkT, value:Any, attribute:Hashable, role:int=Qt.ItemDataRole.EditRole) -> bool:
+    def inletRef(self, name:InletName, node:NodeRef)->InletRef:
+        node_name = node.name()
+        return self.createInletRef(name, node_name)
+    
+    def outletRef(self, name:OutletName, node:NodeRef)->OutletRef:
+        node_name = node.name()
+        return self.createOutletRef(name, node_name)
+    
+    def linkRef(self, outlet:OutletRef, inlet:InletRef)->LinkRef:
+        outlet_name = outlet.name()
+        source_node_name = outlet.ptr()
+        inlet_name = inlet.name()
+        target_node_name = inlet.ptr()
+        ptr = (source_node_name, outlet_name, target_node_name, inlet_name)
+        return self.createLinkRef("link", ptr)
+
+    def attributeRef(self, name:AttributeName, parent:GraphItemRef)->AttributeRef:
+        parent_ptr = parent.ptr() 
+        return self.createAttributeRef(name, parent_ptr)
+    
+    ## CREATE
+    ## # TODO: IMPLEMENT Adding and REMOVING multiple items at once
+    def addNode(self, name:NodeName|None=None)->NodeRef|None:
         """
-        Set data for the specified graph item.
-        This method should be overridden in a subclass to provide access to item attributes.
-        Parameters:
-            item: The graph item (node, inlet, outlet, or link).
-            value: The value to set.
-            attribute: The attribute to set.
-            role: The Qt data role (default is EditRole).
+        Add a new node to the graph.
+        Base implementation returns None (read-only mode).
+        Override in subclass to enable node creation.
+        """
+        return None
+
+    def addInlet(self, node:NodeRef, name:InletName|None=None)->InletRef|None:
+        """
+        Add a new inlet to the specified node.
+        Base implementation returns None (read-only mode).
+        Override in subclass to enable inlet creation.
+        """
+        return None
+
+    def addOutlet(self, node:NodeRef, name:OutletName|None=None)->OutletRef|None:
+        """
+        Add a new outlet to the specified node.
+        Base implementation returns None (read-only mode).
+        Override in subclass to enable outlet creation.
+        """
+        return None
+
+    def addLink(self, outlet:OutletRef, inlet:InletRef)->LinkRef|None:
+        """
+        Add a new link between the specified outlet and inlet.
+        Base implementation returns None (read-only mode).
+        Override in subclass to enable link creation.
+        """
+        return None
+
+    ## DELETE
+    def removeNode(self, node:NodeRef)->bool:
+        """
+        Remove the specified node from the graph.
+        Override this method in a subclass to support node removal.
+        """
+        return False
+
+    def removeInlet(self, inlet:InletRef)->bool:
+        """
+        Remove the specified inlet from the graph.
+        Override this method in a subclass to support inlet removal.
+        """
+        return False
+
+    def removeOutlet(self, outlet:OutletRef)->bool:
+        """
+        Remove the specified outlet from the graph.
+        Override this method in a subclass to support outlet removal.
+        """
+        return False
+
+    def removeLink(self, link:LinkRef)->bool:
+        """
+        Remove the specified link from the graph.
+        Override this method in a subclass to support link removal.
+        """
+        return False
+
+    ## DATA UPDATE
+    def setData(self, attribute: AttributeRef, value: Any, role: int = Qt.ItemDataRole.DisplayRole) -> bool:
+        return False
         
-        """
-        pass
+    ## READ DATA
+    @abstractmethod
+    def data(self, attribute: AttributeRef, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        return None
+
+    ## QUERY DATA
+    def nodeAttributes(self, node:NodeRef) -> List[AttributeName]:
+        """Get the list of attribute names for the specified node."""
+        return []
+
+    def inletAttributes(self, inlet:InletRef) -> List[AttributeName]:
+        """Get the list of attribute names for the specified inlet."""
+        return []
+
+    def outletAttributes(self, outlet:OutletRef) -> List[AttributeName]:
+        """Get the list of attribute names for the specified outlet."""
+        return []
+
+    def linkAttributes(self, link:LinkRef) -> List[AttributeName]:
+        """Get the list of attribute names for the specified link."""
+        return []
 
     ## QUERY MODEL
-    @abstractmethod
-    def itemType(self, item:NodeT|InletT|OutletT|LinkT)-> GraphItemType | None:
-        """Get the type of the specified graph item."""
-        pass
+    def itemType(self, item:GraphItemRef)-> GraphItemType | None:
+        return item.kind()
 
     @abstractmethod
     def nodeCount(self) -> int:
@@ -115,121 +253,62 @@ class AbstractGraphModel(QObject, ABC, Generic[NodeT, InletT, OutletT, LinkT], m
         pass
 
     @abstractmethod
-    def inletCount(self, node:NodeT) -> int:
+    def inletCount(self, node:NodeRef) -> int:
         """Get the number of inlets for the specified node."""
         pass
 
     @abstractmethod
-    def outletCount(self, node:NodeT) -> int:
+    def outletCount(self, node:NodeRef) -> int:
         """Get the number of outlets for the specified node."""
         pass
 
+    ### item relationships
     @abstractmethod
-    def nodes(self) -> List[NodeT]:
+    def nodes(self) -> List[NodeRef]:
         """Get the list of nodes."""
         pass
 
     @abstractmethod
-    def nodeInlets(self, node:NodeT) -> List[InletT]:
+    def inlets(self, node:NodeRef) -> List[InletRef]:
         """Get the list of inlets for the specified node."""
         pass
 
     @abstractmethod
-    def nodeOutlets(self, node:NodeT) -> List[OutletT]:
+    def outlets(self, node:NodeRef) -> List[OutletRef]:
         """Get the list of outlets for the specified node."""
         pass
 
     @abstractmethod
-    def inletLinks(self, inlet:InletT) -> List[LinkT]:
+    def inLinks(self, inlet:InletRef) -> List[LinkRef]:
         """Get the list of links for the specified inlet."""
         pass
 
     @abstractmethod
-    def outletLinks(self, outlet:OutletT) -> List[LinkT]:
+    def outLinks(self, outlet:OutletRef) -> List[LinkRef]:
         """Get the list of links for the specified outlet."""
         pass
 
     @abstractmethod
-    def inletNode(self, inlet:InletT) -> NodeT:
+    def inletNode(self, inlet:InletRef) -> NodeRef:
         """Get the node associated with the specified inlet."""
         pass
 
     @abstractmethod
-    def outletNode(self, outlet:OutletT) -> NodeT:
+    def outletNode(self, outlet:OutletRef) -> NodeRef:
         """Get the node associated with the specified outlet."""
         pass
 
     @abstractmethod
-    def linkSource(self, link:LinkT) -> OutletT:
+    def linkSource(self, link:LinkRef) -> OutletRef:
         """Get the source outlet for the specified link."""
         pass
 
     @abstractmethod
-    def linkTarget(self, link:LinkT) -> InletT:
+    def linkTarget(self, link:LinkRef) -> InletRef:
         """Get the target inlet for the specified link."""
         pass
 
-    ## CREATE
-    ## # TODO: IMPLEMENT Adding and REMOVING multiple items at once
-
-    def addNode(self)->NodeT|None:
-        """
-        Add a new node to the graph.
-        Base implementation returns None (read-only mode).
-        Override in subclass to enable node creation.
-        """
-        return None
-
-    def addInlet(self, node:NodeT)->InletT|None:
-        """
-        Add a new inlet to the specified node.
-        Base implementation returns None (read-only mode).
-        Override in subclass to enable inlet creation.
-        """
-        return None
-
-    def addOutlet(self, node:NodeT)->OutletT|None:
-        """
-        Add a new outlet to the specified node.
-        Base implementation returns None (read-only mode).
-        Override in subclass to enable outlet creation.
-        """
-        return None
-
-    def addLink(self, outlet:OutletT, inlet:InletT)->LinkT|None:
-        """
-        Add a new link between the specified outlet and inlet.
-        Base implementation returns None (read-only mode).
-        Override in subclass to enable link creation.
-        """
-        return None
-
-    ## DELETE
-    def removeNode(self, node:NodeT)->bool:
-        """
-        Remove the specified node from the graph.
-        Override this method in a subclass to support node removal.
-        """
-        return False
-
-    def removeInlet(self, inlet:InletT)->bool:
-        """
-        Remove the specified inlet from the graph.
-        Override this method in a subclass to support inlet removal.
-        """
-        return False
-
-    def removeOutlet(self, outlet:OutletT)->bool:
-        """
-        Remove the specified outlet from the graph.
-        Override this method in a subclass to support outlet removal.
-        """
-        return False
-
-    def removeLink(self, link:LinkT)->bool:
-        """
-        Remove the specified link from the graph.
-        Override this method in a subclass to support link removal.
-        """
-        return False
-
+    @abstractmethod
+    def attributeParent(self, attribute:AttributeRef) -> GraphItemRef:
+        """Get the parent item for the specified attribute."""
+        pass

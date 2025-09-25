@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import weakref
+
+from qdagview.models.abstract_graphmodel import GraphItemRef
 logger = logging.getLogger(__name__)
 
 from typing import *
@@ -19,12 +21,12 @@ import weakref
 if TYPE_CHECKING:
     from ...views.graphview import GraphView
 
-def makeViewOption(option_graphics:QStyleOptionGraphicsItem, index:QModelIndex, widget=None):
+def makeViewOption(option_graphics:QStyleOptionGraphicsItem, ref:GraphItemRef, widget=None):
     """
     Convert a QStyleOptionGraphicsItem + QModelIndex into a QStyleOptionViewItem.
     """
     assert isinstance(option_graphics, QStyleOptionGraphicsItem)
-    assert isinstance(index, QModelIndex), f"Expected QModelIndex, got {type(index)}"
+    assert isinstance(ref, GraphItemRef), f"Expected GraphItemRef, got {ref}"
     opt = QStyleOptionViewItem()
 
     # Geometry
@@ -42,20 +44,23 @@ def makeViewOption(option_graphics:QStyleOptionGraphicsItem, index:QModelIndex, 
         opt.font = QApplication.font()
 
     # Text & icon (from model data)
-    opt.text = str(index.data(Qt.DisplayRole)) if index.isValid() else ""
-    icon_data = index.data(Qt.DecorationRole) if index.isValid() else None
-    opt.icon = icon_data if icon_data is not None else QIcon()
+    model = ref._model()
+    assert model is not None, "Model reference is None"
+
+    # opt.text = str(ref.data(Qt.DisplayRole)) if ref.isValid() else ""
+    # icon_data = ref.data(Qt.DecorationRole) if ref.isValid() else None
+    # opt.icon = icon_data if icon_data is not None else QIcon()
 
     # Alignment (from model or default)
-    alignment = index.data(Qt.TextAlignmentRole)
-    opt.displayAlignment = alignment if alignment is not None else Qt.AlignLeft | Qt.AlignVCenter
+    # alignment = ref.data(Qt.TextAlignmentRole)
+    # opt.displayAlignment = alignment if alignment is not None else Qt.AlignLeft | Qt.AlignVCenter
 
-    # Check state (for checkboxes, if provided by model)
-    check_state = index.data(Qt.CheckStateRole)
-    if check_state is not None:
-        opt.checkState = check_state
-    else:
-        opt.checkState = Qt.Unchecked
+    # # Check state (for checkboxes, if provided by model)
+    # check_state = ref.data(Qt.CheckStateRole)
+    # if check_state is not None:
+    #     opt.checkState = check_state
+    # else:
+    #     opt.checkState = Qt.Unchecked
 
     # Features (optional: mark if it has checkboxes, etc.)
     # TODO: Set features based on model data if needed
@@ -70,7 +75,7 @@ class NodeWidgetWithDelegate(NodeWidget):
 
     def paint(self, painter: QPainter, option: QStyleOption, widget=None):
         if graphview:=self._graphview():
-            index = graphview._widget_manager.getIndex(self)
+            index = graphview._widget_manager.getKey(self)
             if index is None:
                 return # If index is None, the widget is being removed - skip painting
             opt = makeViewOption(option, index, graphview)
@@ -86,7 +91,7 @@ class InletWidgetWithDelegate(PortWidget):
 
     def paint(self, painter: QPainter, option: QStyleOption, widget=None):
         if graphview:=self._graphview():
-            index = graphview._widget_manager.getIndex(self)
+            index = graphview._widget_manager.getKey(self)
             if index is None:
                 # TODO: revisit this logic. 
                 # no painting should be invoked after it has been removed from the scene right?
@@ -104,7 +109,7 @@ class OutletWidgetWithDelegate(PortWidget):
 
     def paint(self, painter: QPainter, option: QStyleOption, widget=None):
         if graphview:=self._graphview():
-            index = graphview._widget_manager.getIndex(self)
+            index = graphview._widget_manager.getKey(self)
             if index is None:
                 return # If index is None, the widget is being removed - skip painting
             opt = makeViewOption(option, index, graphview)
@@ -120,7 +125,7 @@ class LinkWidgetWithDelegate(LinkWidget):
 
     def paint(self, painter: QPainter, option: QStyleOption, widget=None):
         if graphview:=self._graphview():
-            index = graphview._widget_manager.getIndex(self)
+            index = graphview._widget_manager.getKey(self)
             if index is None:
                 return # If index is None, the widget is being removed - skip painting
             opt = makeViewOption(option, index, graphview)

@@ -19,7 +19,7 @@ from ..views.managers import LinkingManager
 
 from .abstract_graphmodel import AbstractGraphModel
 
-class QItemModelGraphModel(AbstractGraphModel[QPersistentModelIndex, QPersistentModelIndex, QPersistentModelIndex, QPersistentModelIndex, QPersistentModelIndex]):
+class QItemModelGraphModel(AbstractGraphModel):
     """
     Controller for a graph backed by a QAbstractItemModel.
     This class provides methods to interact with a graph structure stored in a QAbstractItemModel.
@@ -442,7 +442,7 @@ class QItemModelGraphModel(AbstractGraphModel[QPersistentModelIndex, QPersistent
                 outlets.append(child_index)
         return [QPersistentModelIndex(outlet) for outlet in outlets]
 
-    def inletLinks(self, inlet:QPersistentModelIndex) -> List[QPersistentModelIndex]:
+    def inLinks(self, inlet:QPersistentModelIndex) -> List[QPersistentModelIndex]:
         """
         Get a list of link indexes for a given inlet.
         Args:
@@ -458,7 +458,7 @@ class QItemModelGraphModel(AbstractGraphModel[QPersistentModelIndex, QPersistent
                 links.append(child_index)
         return [QPersistentModelIndex(link) for link in links]
 
-    def outletLinks(self, outlet:QModelIndex|QPersistentModelIndex) -> List[QPersistentModelIndex]:
+    def outLinks(self, outlet:QModelIndex|QPersistentModelIndex) -> List[QPersistentModelIndex]:
         """
         Get a list of link indexes for a given outlet.
         Args:
@@ -627,10 +627,10 @@ class QItemModelGraphModel(AbstractGraphModel[QPersistentModelIndex, QPersistent
         # collect links
         links_connected = []
         for inlet in self.inlets(node):
-            for link in self.inletLinks(inlet):
+            for link in self.inLinks(inlet):
                 links_connected.append(QPersistentModelIndex(link))
         for outlet in self.outlets(node):
-            for link in self.outletLinks(outlet):
+            for link in self.outLinks(outlet):
                 links_connected.append(QPersistentModelIndex(link))
 
         for link in links_connected:
