@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import logging
 import weakref
-
-from qdagview.models.abstract_graphmodel import GraphItemRef
 logger = logging.getLogger(__name__)
 
 from typing import *
@@ -19,14 +17,14 @@ from ..widgets import (
 import weakref
 
 if TYPE_CHECKING:
-    from ..graphview_with_graphmodel import GraphModel_GraphView
+    from ...views.graphview import GraphView
 
-def makeViewOption(option_graphics:QStyleOptionGraphicsItem, ref:GraphItemRef, widget=None):
+def makeViewOption(option_graphics:QStyleOptionGraphicsItem, index:QModelIndex, widget=None):
     """
     Convert a QStyleOptionGraphicsItem + QModelIndex into a QStyleOptionViewItem.
     """
     assert isinstance(option_graphics, QStyleOptionGraphicsItem)
-    assert isinstance(ref, GraphItemRef), f"Expected GraphItemRef, got {ref}"
+    assert isinstance(index, QModelIndex), f"Expected QModelIndex, got {type(index)}"
     opt = QStyleOptionViewItem()
 
     # Geometry
@@ -44,23 +42,20 @@ def makeViewOption(option_graphics:QStyleOptionGraphicsItem, ref:GraphItemRef, w
         opt.font = QApplication.font()
 
     # Text & icon (from model data)
-    model = ref._model()
-    assert model is not None, "Model reference is None"
-
-    # opt.text = str(ref.data(Qt.DisplayRole)) if ref.isValid() else ""
-    # icon_data = ref.data(Qt.DecorationRole) if ref.isValid() else None
-    # opt.icon = icon_data if icon_data is not None else QIcon()
+    opt.text = str(index.data(Qt.DisplayRole)) if index.isValid() else ""
+    icon_data = index.data(Qt.DecorationRole) if index.isValid() else None
+    opt.icon = icon_data if icon_data is not None else QIcon()
 
     # Alignment (from model or default)
-    # alignment = ref.data(Qt.TextAlignmentRole)
-    # opt.displayAlignment = alignment if alignment is not None else Qt.AlignLeft | Qt.AlignVCenter
+    alignment = index.data(Qt.TextAlignmentRole)
+    opt.displayAlignment = alignment if alignment is not None else Qt.AlignLeft | Qt.AlignVCenter
 
-    # # Check state (for checkboxes, if provided by model)
-    # check_state = ref.data(Qt.CheckStateRole)
-    # if check_state is not None:
-    #     opt.checkState = check_state
-    # else:
-    #     opt.checkState = Qt.Unchecked
+    # Check state (for checkboxes, if provided by model)
+    check_state = index.data(Qt.CheckStateRole)
+    if check_state is not None:
+        opt.checkState = check_state
+    else:
+        opt.checkState = Qt.Unchecked
 
     # Features (optional: mark if it has checkboxes, etc.)
     # TODO: Set features based on model data if needed
@@ -69,13 +64,13 @@ def makeViewOption(option_graphics:QStyleOptionGraphicsItem, ref:GraphItemRef, w
     return opt
 
 class NodeWidgetWithDelegate(NodeWidget):
-    def __init__(self, graphview: GraphModel_GraphView, parent: QGraphicsItem | None = None):
+    def __init__(self, graphview: GraphView, parent: QGraphicsItem | None = None):
         super().__init__(parent)
         self._graphview = weakref.ref(graphview)
 
     def paint(self, painter: QPainter, option: QStyleOption, widget=None):
         if graphview:=self._graphview():
-            index = graphview._widget_manager.getKey(self)
+            index = graphview._widget_manager.getIndex(self)
             if index is None:
                 return # If index is None, the widget is being removed - skip painting
             opt = makeViewOption(option, index, graphview)
@@ -85,13 +80,13 @@ class NodeWidgetWithDelegate(NodeWidget):
 
 
 class InletWidgetWithDelegate(PortWidget):
-    def __init__(self, graphview: GraphModel_GraphView, parent: QGraphicsItem | None = None):
+    def __init__(self, graphview: GraphView, parent: QGraphicsItem | None = None):
         super().__init__(parent)
         self._graphview = weakref.ref(graphview)
 
     def paint(self, painter: QPainter, option: QStyleOption, widget=None):
         if graphview:=self._graphview():
-            index = graphview._widget_manager.getKey(self)
+            index = graphview._widget_manager.getIndex(self)
             if index is None:
                 # TODO: revisit this logic. 
                 # no painting should be invoked after it has been removed from the scene right?
@@ -103,13 +98,13 @@ class InletWidgetWithDelegate(PortWidget):
 
 
 class OutletWidgetWithDelegate(PortWidget):
-    def __init__(self, graphview: GraphModel_GraphView, parent: QGraphicsItem | None = None):
+    def __init__(self, graphview: GraphView, parent: QGraphicsItem | None = None):
         super().__init__(parent)
         self._graphview = weakref.ref(graphview)
 
     def paint(self, painter: QPainter, option: QStyleOption, widget=None):
         if graphview:=self._graphview():
-            index = graphview._widget_manager.getKey(self)
+            index = graphview._widget_manager.getIndex(self)
             if index is None:
                 return # If index is None, the widget is being removed - skip painting
             opt = makeViewOption(option, index, graphview)
@@ -119,25 +114,25 @@ class OutletWidgetWithDelegate(PortWidget):
 
 
 class LinkWidgetWithDelegate(LinkWidget):
-    def __init__(self, graphview: GraphModel_GraphView, parent: QGraphicsItem | None = None):
+    def __init__(self, graphview: GraphView, parent: QGraphicsItem | None = None):
         super().__init__(parent)
         self._graphview = weakref.ref(graphview)
 
     def paint(self, painter: QPainter, option: QStyleOption, widget=None):
         if graphview:=self._graphview():
-            index = graphview._widget_manager.getKey(self)
+            index = graphview._widget_manager.getIndex(self)
             if index is None:
                 return # If index is None, the widget is being removed - skip painting
             opt = makeViewOption(option, index, graphview)
-            outlet_index = graphview._model.linkSource(index)
-            inlet_index = graphview._model.linkTarget(index)
-
-            if not outlet_index or not inlet_index:
-                logger.warning(f"Link index {index} has invalid outlet or inlet index.")
+            outlet_index = graphview._controller.linkSource(index)
+            inlet_index = graphview._controller.linkTarget(index)
+            if outlet_index is None or inlet_index is None:
                 return
-
             outlet_widget = graphview._widget_manager.getWidget(outlet_index)
             inlet_widget = graphview._widget_manager.getWidget(inlet_index)
+            if outlet_widget is None or inlet_widget is None:
+                return
+
             # Set decoration alignment based on relative positions
             if outlet_widget and inlet_widget:
                 dx = inlet_widget.scenePos().x() - outlet_widget.scenePos().x()
@@ -158,7 +153,7 @@ class LinkWidgetWithDelegate(LinkWidget):
 
 
 class CellWidgetWithDelegate(CellWidget):
-    def __init__(self, graphview: GraphModel_GraphView, parent: QGraphicsItem | None = None):
+    def __init__(self, graphview: GraphView, parent: QGraphicsItem | None = None):
         super().__init__(parent)
         self._graphview = weakref.ref(graphview)
 

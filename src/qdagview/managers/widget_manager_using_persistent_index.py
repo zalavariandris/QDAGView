@@ -10,11 +10,11 @@ logger = logging.getLogger(__name__)
 
 from bidict import bidict
 
-from ...core import indexToPath, indexFromPath
-from . import WidgetManagerProtocol
+from ..core import indexToPath, indexFromPath
+from . import WidgetIndexManagerProtocol
 
 
-class PersistentWidgetManager(WidgetManagerProtocol):
+class PersistentWidgetIndexManager(WidgetIndexManagerProtocol):
     """Handles widgets mapping to model indexes."""
     def __init__(self):
         self._widgets: bidict[QPersistentModelIndex, QGraphicsItem] = bidict()
@@ -23,7 +23,7 @@ class PersistentWidgetManager(WidgetManagerProtocol):
         """Insert a widget into the manager."""
         self._widgets[QPersistentModelIndex(index)] = widget
 
-    def removeWidget(self, index:QModelIndex|QPersistentModelIndex, widget:QGraphicsItem):
+    def removeWidget(self, index:QModelIndex|QPersistentModelIndex):
         """Remove a widget from the manager."""
         del self._widgets[QPersistentModelIndex(index)]
 
@@ -36,7 +36,7 @@ class PersistentWidgetManager(WidgetManagerProtocol):
         persistent_idx = QPersistentModelIndex(index)
         return self._widgets.get(persistent_idx, None)   
     
-    def getKey(self, widget:QGraphicsItem) -> QModelIndex|None:
+    def getIndex(self, widget:QGraphicsItem) -> QModelIndex|None:
         """
         Get the index of the node widget in the model.
         This is used to identify the node in the model.

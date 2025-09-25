@@ -5,7 +5,7 @@ from qtpy.QtWidgets import *
 
 from .cell_widget import CellWidget
 from .port_widget import PortWidget
-from ...utils import distribute_items
+from ..utils import distribute_items
 
 class NodeWidget(QGraphicsItem):
     def __init__(self, parent: QGraphicsItem | None = None):

@@ -8,10 +8,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from ...core import indexToPath, indexFromPath
-from . import WidgetManagerProtocol
+from ..core import indexToPath, indexFromPath
+from . import WidgetIndexManagerProtocol
 
-class TreeWidgetManager(WidgetManagerProtocol):
+class TreeWidgetIndexManager(WidgetIndexManagerProtocol):
     """Handles widgets mapping to model indexes."""
     def __init__(self):
         # Root container for the tree structure - can have arbitrary depth
@@ -137,7 +137,7 @@ class TreeWidgetManager(WidgetManagerProtocol):
         widget, _, _ = current_container[final_index]
         return widget
 
-    def removeWidget(self, index: QModelIndex | QPersistentModelIndex, widget: QGraphicsItem):
+    def removeWidget(self, index: QModelIndex | QPersistentModelIndex):
         """Remove a widget from the manager, shifting subsequent elements."""
         if not index.isValid():
             logger.warning(f"Cannot remove widget for invalid index: {index}")
@@ -183,7 +183,7 @@ class TreeWidgetManager(WidgetManagerProtocol):
         
         del current_container[final_index]
     
-    def getKey(self, widget: QGraphicsItem) -> QModelIndex | None:
+    def getIndex(self, widget: QGraphicsItem) -> QModelIndex | None:
         """
         Get the index of the widget in the model.
         """

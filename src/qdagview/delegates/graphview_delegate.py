@@ -10,8 +10,8 @@ from qtpy.QtGui import *
 from qtpy.QtCore import *
 from qtpy.QtWidgets import *
 
-from ...core import GraphDataRole, GraphItemType
-from ...utils import makeArrowShape
+from ..core import GraphDataRole, GraphItemType
+from ..utils import makeArrowShape
 
 class GraphDelegate(QStyledItemDelegate):
     ## Painting

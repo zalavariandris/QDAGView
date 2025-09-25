@@ -5,7 +5,7 @@ from qtpy.QtWidgets import *
 
 from .base_widget import BaseWidget
 from .cell_widget import CellWidget
-from ...utils import makeArrowShape
+from ..utils import makeArrowShape
 
 
 class LinkWidget(QGraphicsWidget):

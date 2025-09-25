@@ -7,7 +7,7 @@ from collections import defaultdict
 from ..utils import bfs
 from ..utils.unique import make_unique_id
 
-from .code_analyzer import CodeAnalyzer
+from ..utils.code_analyzer import CodeAnalyzer
 
 
 class ExpressionOperator:

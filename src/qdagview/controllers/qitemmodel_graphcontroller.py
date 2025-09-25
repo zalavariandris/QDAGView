@@ -17,9 +17,7 @@ from qtpy.QtWidgets import *
 from ..core import GraphDataRole, GraphItemType
 from ..managers import LinkingManager
 
-from .abstract_graphmodel import AbstractGraphModel
-
-class QItemModelGraphModel(AbstractGraphModel):
+class QItemModelGraphController(QObject):
     """
     Controller for a graph backed by a QAbstractItemModel.
     This class provides methods to interact with a graph structure stored in a QAbstractItemModel.
@@ -43,14 +41,14 @@ class QItemModelGraphModel(AbstractGraphModel):
 
     def __init__(self, parent: QObject | None=None):
         super().__init__(parent)
-        self._source_model: QAbstractItemModel | None = None
+        self._model: QAbstractItemModel | None = None
         self._model_connections: list[tuple[Signal, Slot]] = []
         self._link_manager = LinkingManager[QPersistentModelIndex, QPersistentModelIndex, QPersistentModelIndex]()
 
-    def setSourceModel(self, model:QAbstractItemModel):
-        self._source_model = model
+    def setModel(self, model:QAbstractItemModel):
+        self._model = model
     
-        if self._source_model:
+        if self._model:
             for signal, slot in self._model_connections:
                 signal.disconnect(slot)
         
@@ -59,7 +57,6 @@ class QItemModelGraphModel(AbstractGraphModel):
 
             self._model_connections = [
                 (model.rowsInserted, self.handleRowsInserted),
-                (model.rowsAboutToBeInserted, self.handleRowsAboutToBeInserted),
                 (model.rowsAboutToBeRemoved, self.handleRowsAboutToBeRemoved),
                 (model.dataChanged, self.handleDataChanged)
             ]
@@ -67,23 +64,20 @@ class QItemModelGraphModel(AbstractGraphModel):
             for signal, slot in self._model_connections:
                 signal.connect(slot)
 
-        self._source_model = model
+        self._model = model
 
         self._link_manager.clear()
 
-    def sourceModel(self) -> QAbstractItemModel | None:
-        return self._source_model
+    def model(self) -> QAbstractItemModel | None:
+        return self._model
 
     ## Transformations
-    def handleRowsAboutToBeInserted(self, parent:QModelIndex, start:int, end:int):
-        pass
-
     def handleRowsInserted(self, parent:QModelIndex, start:int, end:int):
-        assert self._source_model, "Model must be set before handling rows inserted!"
+        assert self._model, "Model must be set before handling rows inserted!"
 
         match self.itemType(parent):
             case GraphItemType.SUBGRAPH | None:
-                node_keys = [QPersistentModelIndex(self._source_model.index(row, 0, parent)) for row in range(start, end + 1)]
+                node_keys = [QPersistentModelIndex(self._model.index(row, 0, parent)) for row in range(start, end + 1)]
                 if node_keys:
                     self.nodesInserted.emit(node_keys)
                 
@@ -91,7 +85,7 @@ class QItemModelGraphModel(AbstractGraphModel):
                 inlet_keys = []
                 outlet_keys = []
                 for row in range(start, end + 1):
-                    inlet_index = self._source_model.index(row, 0, parent)
+                    inlet_index = self._model.index(row, 0, parent)
                     match self.itemType(inlet_index):
                         case GraphItemType.OUTLET:
                             outlet_keys.append(QPersistentModelIndex(inlet_index))
@@ -106,50 +100,40 @@ class QItemModelGraphModel(AbstractGraphModel):
                     self.outletsInserted.emit(outlet_keys)
 
             case GraphItemType.INLET:
-                added_links: list[Tuple[QPersistentModelIndex, QPersistentModelIndex, QPersistentModelIndex]] = []
+                added_links: list[QPersistentModelIndex] = []
 
                 for row in range(start, end + 1):
-                    link_index = self._source_model.index(row, 0, parent)
+                    link_index = self._model.index(row, 0, parent)
                     persistent_link_index = QPersistentModelIndex(link_index)
-                    persistent_source_index = self.linkSource(link_index)
-                    persistent_target_index = self.linkTarget(link_index)
+                    link_source_index = self.linkSource(link_index)
+                    source_key = QPersistentModelIndex(link_source_index) if link_source_index else None
+                    target_key = QPersistentModelIndex(self.linkTarget(link_index)) if self.linkTarget(link_index) else None
 
-                    IsLinkComplete = persistent_source_index is not None and persistent_target_index is not None
-                    if not IsLinkComplete:
-                        # incomplete links will not be added to the graph.
-                        # when they are completed (by setting the source role), they will be added then. #TODO: make a test for this
-                        continue
-
-                    assert isinstance(persistent_source_index, QPersistentModelIndex), f"Link source must be a valid persistent index, got: {persistent_source_index}"
-                    assert isinstance(persistent_target_index, QPersistentModelIndex), f"Link target must be a valid persistent index, got: {persistent_target_index}"
-
-                    added_links.append((persistent_link_index, persistent_source_index, persistent_target_index))
+                    added_links.append((persistent_link_index, source_key, target_key))
                 
                 if added_links:
                     for link_index, source_index, target_index in added_links:
-                        assert isinstance(source_index, QPersistentModelIndex), f"Link source must be a valid persistent index, got: {source_index}"
-                        assert isinstance(target_index, QPersistentModelIndex), f"Link target must be a valid persistent index, got: {target_index}"
-                        assert isinstance(link_index, QPersistentModelIndex), f"Link must be a valid persistent index, got: {link_index}"
                         self._link_manager.link(link_index, source_index, target_index)
                     self.linksInserted.emit([link_index for link_index, _, _ in added_links])
 
     def handleRowsAboutToBeRemoved(self, parent:QModelIndex, start:int, end:int):
-        assert self._source_model, "Model must be set before handling rows removed!"
+        assert self._model, "Model must be set before handling rows removed!"
 
         match self.itemType(parent):
             case GraphItemType.SUBGRAPH | None:
-                removed_nodes = [QPersistentModelIndex(self._source_model.index(row, 0, parent)) for row in range(start, end + 1)]
+                removed_nodes = [QPersistentModelIndex(self._model.index(row, 0, parent)) for row in range(start, end + 1)]
                 
                 for node in removed_nodes:
                     connected_links = []
-                    for inlet in self.inlets(node):
+                    for inlet in self.nodeInlets(node):
                         connected_links.extend(self._link_manager.getInletLinks(inlet))
-                    for outlet in self.outlets(node):
+                    for outlet in self.nodeOutlets(node):
                         connected_links.extend(self._link_manager.getOutletLinks(outlet))
 
                     if connected_links:
-                        for link in sorted(connected_links, key=lambda idx: idx.row(), reverse=True):
-                            self.removeLink(link)
+                        # TODO
+                        raise NotImplementedError("IMPLEMENT REMOVING CONNECTED LINKS, and implement removing multiple links at once. even sending signals by inlinks for each inlet.")
+                        self.removeLinks(connected_links)
 
                 if removed_nodes:
                     self.nodesAboutToBeRemoved.emit(removed_nodes)
@@ -158,7 +142,7 @@ class QItemModelGraphModel(AbstractGraphModel):
                 removed_inlets = []
                 removed_outlets = []
                 for row in range(start, end + 1):
-                    port_index = self._source_model.index(row, 0, parent)
+                    port_index = self._model.index(row, 0, parent)
                     match self.itemType(port_index):
                         case GraphItemType.OUTLET:
                             removed_outlets.append(QPersistentModelIndex(port_index))
@@ -175,7 +159,7 @@ class QItemModelGraphModel(AbstractGraphModel):
             case GraphItemType.INLET:
                 removed_links = []
                 for row in range(start, end + 1):
-                    link_index = self._source_model.index(row, 0, parent)
+                    link_index = self._model.index(row, 0, parent)
                     persistent_link_index = QPersistentModelIndex(link_index)
                     removed_links.append(persistent_link_index)
             
@@ -185,33 +169,25 @@ class QItemModelGraphModel(AbstractGraphModel):
                         self._link_manager.unlink(link)
 
     def handleDataChanged(self, top_left:QModelIndex, bottom_right:QModelIndex, roles:List[int]=[]):
-        assert self._source_model, "Model must be set before handling data changed!"
+        assert self._model, "Model must be set before handling data changed!"
         if GraphDataRole.SourceRole in roles or roles == []:
             # If the source role is changed, we need to update the link widget
             removed_links:List[Tuple[QPersistentModelIndex, QPersistentModelIndex, QPersistentModelIndex]] = []
             added_links:List[Tuple[QPersistentModelIndex, QPersistentModelIndex, QPersistentModelIndex]] = []
             for row in range(top_left.row(), bottom_right.row() + 1):
-                link_index = self._source_model.index(row, top_left.column(), top_left.parent())
-                persistent_link_index = QPersistentModelIndex(link_index)
+                link_index = self._model.index(row, top_left.column(), top_left.parent())
+                link_key = QPersistentModelIndex(link_index)
 
-                old_persistent_source_index = self._link_manager.getLinkSource(persistent_link_index)
-                old_persistent_target_index = self._link_manager.getLinkTarget(persistent_link_index)
-                removed_links.append((persistent_link_index, old_persistent_source_index, old_persistent_target_index))
+                old_source_key = self._link_manager.getLinkSource(link_key)
+                old_target_key = self._link_manager.getLinkTarget(link_key)
+                self._link_manager.unlink(link_key)
+                removed_links.append((link_key, old_source_key, old_target_key))
                 # self.linksRemoved.emit(link_key, old_source_key, old_target_key)
 
-                new_persistent_source_index = QPersistentModelIndex(self._source_model.data(link_index, GraphDataRole.SourceRole))
-                new_persistent_target_index = QPersistentModelIndex(link_index.parent())
-                added_links.append((persistent_link_index, new_persistent_source_index, new_persistent_target_index))
-
-            for link_index, _, _ in removed_links:
-                assert isinstance(link_index, QPersistentModelIndex), "Link must be a valid persistent index"
-                self._link_manager.unlink(link_index)
-
-            for persistent_link_index, persistent_source_index, persistent_target_index in added_links:
-                assert isinstance(persistent_link_index, QPersistentModelIndex), "Link must be a valid persistent index"
-                assert isinstance(persistent_source_index, QPersistentModelIndex), "Link source must be a valid persistent index"
-                assert isinstance(persistent_target_index, QPersistentModelIndex), "Link target must be a valid persistent index"
-                self._link_manager.link(persistent_link_index, persistent_source_index, persistent_target_index)
+                new_source_key = QPersistentModelIndex(self._model.data(link_index, GraphDataRole.SourceRole))
+                new_target_key = QPersistentModelIndex(link_index.parent())
+                self._link_manager.link(new_source_key, new_target_key, link_key)
+                added_links.append((link_key, new_source_key, new_target_key))
             
             self.linksAboutToBeRemoved.emit([link_index for link_index, _, _ in removed_links])
             self.linksInserted.emit([link_index for link_index, _, _ in added_links])
@@ -228,14 +204,14 @@ class QItemModelGraphModel(AbstractGraphModel):
 
         match self.itemType(top_left.parent()):
             case GraphItemType.SUBGRAPH | None:
-                changed_nodes = [QPersistentModelIndex(self._source_model.index(row, 0, top_left.parent())) for row in range(top_left.row(), bottom_right.row() + 1)]
+                changed_nodes = [QPersistentModelIndex(self._model.index(row, 0, top_left.parent())) for row in range(top_left.row(), bottom_right.row() + 1)]
                 self.nodesDataChanged.emit(changed_nodes, changed_columns, roles)
 
             case GraphItemType.NODE:
                 changed_inlets = []
                 changed_outlets = []
                 for row in range(top_left.row(), bottom_right.row() + 1):
-                    index = self._source_model.index(row, 0, top_left.parent())
+                    index = self._model.index(row, 0, top_left.parent())
                     match self.itemType(index):
                         case GraphItemType.OUTLET:
                             changed_outlets.append(QPersistentModelIndex(index))
@@ -247,11 +223,27 @@ class QItemModelGraphModel(AbstractGraphModel):
                     self.inletsDataChanged.emit(changed_inlets, changed_columns, roles)
                 if changed_outlets:
                     self.outletsDataChanged.emit(changed_outlets, changed_columns, roles)
-
             case GraphItemType.INLET:
-                changed_links = [QPersistentModelIndex(self._source_model.index(row, 0, top_left.parent())) for row in range(top_left.row(), bottom_right.row() + 1)]
+                changed_links = [QPersistentModelIndex(self._model.index(row, 0, top_left.parent())) for row in range(top_left.row(), bottom_right.row() + 1)]
                 if changed_links:
                     self.linksDataChanged.emit(changed_links, changed_columns, roles)
+        # for row in range(top_left.row(), bottom_right.row() + 1):
+        #     for col in range(top_left.column(), bottom_right.column() + 1):
+        #         index = self._model.index(row, col, top_left.parent())
+
+        #     match self.itemType(index):
+        #         case GraphItemType.NODE:
+        #             node_key = QPersistentModelIndex(index)
+        #             self.nodesDataChanged.emit(node_key, col, [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
+        #         case GraphItemType.INLET:
+        #             inlet_key = QPersistentModelIndex(index)
+        #             self.inletsDataChanged.emit(inlet_key, col, [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
+        #         case GraphItemType.OUTLET:
+        #             outlet_key = QPersistentModelIndex(index)
+        #             self.outletsDataChanged.emit(outlet_key, col, [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
+        #         case GraphItemType.LINK:
+        #             link_key = QPersistentModelIndex(index)
+        #             self.linksDataChanged.emit(link_key, col, [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
 
     ## QUERY MODEL
     def itemType(self, index:QModelIndex|QPersistentModelIndex)-> GraphItemType | None:
@@ -309,57 +301,39 @@ class QItemModelGraphModel(AbstractGraphModel):
         else:
             return False  # Explicit return for unhandled cases
 
-    def data(self, item:QPersistentModelIndex, attribute:int)-> Any:
-        index = self._source_model.index(item.row(), attribute, item.parent()) # get the index at column
-        return self._source_model.data(index, role=Qt.ItemDataRole.DisplayRole)
-    
-    def setData(self, item:QPersistentModelIndex, value:Any, attribute:int)-> bool:
-        index = self._source_model.index(item.row(), attribute, item.parent()) # get the index at column
-        return self._source_model.setData(index, value, role=Qt.ItemDataRole.EditRole)
-
-    def attributeCount(self, item:QPersistentModelIndex) -> int:
-        return self._source_model.columnCount(item.parent())
-    
-    def attributes(self, item:QPersistentModelIndex) -> List[QPersistentModelIndex]:
-        attrs = []
-        for col in range(self.attributeCount(item)):
-            index = self._source_model.index(item.row(), col, item.parent())
-            attrs.append(QPersistentModelIndex(index))
-        return attrs
-    
     ## nodes
     def nodes(self, subgraph:QModelIndex|None=None) -> List[QModelIndex]:
         """Return a list of all node indexes in the model."""
-        if self._source_model is None:
+        if self._model is None:
             return []
         
         nodes = []
-        for row in range(self._source_model.rowCount()):
-            index = self._source_model.index(row, 0, subgraph if subgraph is not None else QModelIndex())
+        for row in range(self._model.rowCount()):
+            index = self._model.index(row, 0, subgraph if subgraph is not None else QModelIndex())
             if self.itemType(index) == GraphItemType.NODE:
                 nodes.append(index)
         return nodes
     
     def links(self) -> List[QPersistentModelIndex]:
         """Return a list of all link indexes in the model."""
-        if self._source_model is None:
+        if self._model is None:
             return []
         
         links = []
         for node in self.nodes():
-            for row in range(self._source_model.rowCount(node)):
-                inlet_index = self._source_model.index(row, 0, node)
+            for row in range(self._model.rowCount(node)):
+                inlet_index = self._model.index(row, 0, node)
                 if self.itemType(inlet_index) == GraphItemType.INLET:
-                    for link_row in range(self._source_model.rowCount(inlet_index)):
-                        link_index = self._source_model.index(link_row, 0, inlet_index)
+                    for link_row in range(self._model.rowCount(inlet_index)):
+                        link_index = self._model.index(link_row, 0, inlet_index)
                         if self.itemType(link_index) == GraphItemType.LINK:
                             links.append(QPersistentModelIndex(link_index))
         return links
 
-    def nodeCount(self, subgraph:QModelIndex|None=None) -> int:
-        return self._source_model.rowCount(subgraph if subgraph is not None else QModelIndex())
+    def nodesCount(self, subgraph:QModelIndex|None=None) -> int:
+        return self._model.rowCount(subgraph if subgraph is not None else QModelIndex())
 
-    def linkCount(self) -> int:
+    def linksCount(self) -> int:
         return len(self._link_manager._link_source)
 
     def inletCount(self, node:QModelIndex|QPersistentModelIndex) -> int:
@@ -372,8 +346,8 @@ class QItemModelGraphModel(AbstractGraphModel):
         """
         assert self.itemType(node) == GraphItemType.NODE, "Node index must be of type NODE"
         inlet_count = 0
-        for row in range(self._source_model.rowCount(node)):
-            child_index = self._source_model.index(row, 0, node)
+        for row in range(self._model.rowCount(node)):
+            child_index = self._model.index(row, 0, node)
             if self.itemType(child_index) == GraphItemType.INLET:
                 inlet_count += 1
         return inlet_count
@@ -388,13 +362,13 @@ class QItemModelGraphModel(AbstractGraphModel):
         """
         assert self.itemType(node) == GraphItemType.NODE, "Node index must be of type NODE"
         outlet_count = 0
-        for row in range(self._source_model.rowCount(node)):
-            child_index = self._source_model.index(row, 0, node)
+        for row in range(self._model.rowCount(node)):
+            child_index = self._model.index(row, 0, node)
             if self.itemType(child_index) == GraphItemType.OUTLET:
                 outlet_count += 1
         return outlet_count
     
-    def inlets(self, node:QModelIndex|QPersistentModelIndex) -> List[QPersistentModelIndex]:
+    def nodeInlets(self, node:QModelIndex|QPersistentModelIndex) -> List[QPersistentModelIndex]:
         """
         Get a list of inlet indexes for a given node.
         Args:
@@ -404,8 +378,8 @@ class QItemModelGraphModel(AbstractGraphModel):
         """
         assert self.itemType(node) == GraphItemType.NODE, "Node index must be of type NODE"
         inlets = []
-        for row in range(self._source_model.rowCount(node)):
-            child_index = self._source_model.index(row, 0, node)
+        for row in range(self._model.rowCount(node)):
+            child_index = self._model.index(row, 0, node)
             if self.itemType(child_index) == GraphItemType.INLET:
                 inlets.append(child_index)
         return [QPersistentModelIndex(inlet) for inlet in inlets]
@@ -419,14 +393,14 @@ class QItemModelGraphModel(AbstractGraphModel):
         return QPersistentModelIndex(node_index)
     
     def outletNode(self, outlet:QModelIndex|QPersistentModelIndex) -> QPersistentModelIndex|None:
-        assert self.itemType(outlet) == GraphItemType.OUTLET, f"Outlet index must be of type OUTLET, got: {self.itemType(outlet)}"
+        assert self.itemType(outlet) == GraphItemType.OUTLET, "Outlet index must be of type OUTLET"
         node_index = outlet.parent()
         if not node_index.isValid():
             return None
-        assert self.itemType(node_index) == GraphItemType.NODE, f"Parent of outlet must be of type NODE, got: {self.itemType(node_index)}"
+        assert self.itemType(node_index) == GraphItemType.NODE, "Parent of outlet must be of type NODE"
         return QPersistentModelIndex(node_index)
     
-    def outlets(self, node:QPersistentModelIndex) -> List[QPersistentModelIndex]:
+    def nodeOutlets(self, node:QPersistentModelIndex) -> List[QPersistentModelIndex]:
         """
         Get a list of outlet indexes for a given node.
         Args:
@@ -436,13 +410,13 @@ class QItemModelGraphModel(AbstractGraphModel):
         """
         assert self.itemType(node) == GraphItemType.NODE, "Node index must be of type NODE"
         outlets = []
-        for row in range(self._source_model.rowCount(node)):
-            child_index = self._source_model.index(row, 0, node)
+        for row in range(self._model.rowCount(node)):
+            child_index = self._model.index(row, 0, node)
             if self.itemType(child_index) == GraphItemType.OUTLET:
                 outlets.append(child_index)
         return [QPersistentModelIndex(outlet) for outlet in outlets]
 
-    def inLinks(self, inlet:QPersistentModelIndex) -> List[QPersistentModelIndex]:
+    def inletLinks(self, inlet:QPersistentModelIndex) -> List[QPersistentModelIndex]:
         """
         Get a list of link indexes for a given inlet.
         Args:
@@ -452,13 +426,13 @@ class QItemModelGraphModel(AbstractGraphModel):
         """
         assert self.itemType(inlet) == GraphItemType.INLET, "Inlet index must be of type INLET"
         links = []
-        for row in range(self._source_model.rowCount(inlet)):
-            child_index = self._source_model.index(row, 0, inlet)
+        for row in range(self._model.rowCount(inlet)):
+            child_index = self._model.index(row, 0, inlet)
             if self.itemType(child_index) == GraphItemType.LINK:
                 links.append(child_index)
         return [QPersistentModelIndex(link) for link in links]
 
-    def outLinks(self, outlet:QModelIndex|QPersistentModelIndex) -> List[QPersistentModelIndex]:
+    def outletLinks(self, outlet:QModelIndex|QPersistentModelIndex) -> List[QPersistentModelIndex]:
         """
         Get a list of link indexes for a given outlet.
         Args:
@@ -468,9 +442,12 @@ class QItemModelGraphModel(AbstractGraphModel):
             List[QModelIndex]: A list of link indexes for the outlet.
         """
         assert self.itemType(outlet) == GraphItemType.OUTLET, "Outlet index must be of type OUTLET"
-        link_indexes = self._link_manager.getOutletLinks(QPersistentModelIndex(outlet))
-
-        return [QPersistentModelIndex(link) for link in link_indexes]
+        links = []
+        for row in range(self._model.rowCount(outlet)):
+            child_index = self._model.index(row, 0, outlet)
+            if self.itemType(child_index) == GraphItemType.LINK:
+                links.append(child_index)
+        return [QPersistentModelIndex(link) for link in links]
 
     def linkSource(self, link_index:QPersistentModelIndex) -> QPersistentModelIndex|None:
         """Return the (non-persistent) QModelIndex of the link source if present.
@@ -521,9 +498,9 @@ class QItemModelGraphModel(AbstractGraphModel):
     
     ## CREATE
     def addNode(self, subgraph:QModelIndex|QPersistentModelIndex=QModelIndex())->QPersistentModelIndex|None:
-        position = self._source_model.rowCount(subgraph)
-        if self._source_model.insertRows(position, 1, subgraph):
-            new_index = self._source_model.index(position, 0, subgraph)
+        position = self._model.rowCount(subgraph)
+        if self._model.insertRows(position, 1, subgraph):
+            new_index = self._model.index(position, 0, subgraph)
             assert new_index.isValid(), "Created index is not valid"
             # new_node_name = f"{'Node'}#{position + 1}"
             # if not self._model.setData(new_index, new_node_name, Qt.ItemDataRole.DisplayRole):
@@ -536,16 +513,16 @@ class QItemModelGraphModel(AbstractGraphModel):
         assert self.itemType(node) == GraphItemType.NODE, "Node index must be of type NODE"
         
         # Make sure the parent has at least one column for children, otherwise the treeview won't show them
-        if self._source_model.columnCount(node) == 0:
-            self._source_model.insertColumns(0, 1, node)
+        if self._model.columnCount(node) == 0:
+            self._model.insertColumns(0, 1, node)
 
         # Append child to the selected item using generic methods
-        position = self._source_model.rowCount(node)
-        if self._source_model.insertRows(position, 1, node):
-            new_index = self._source_model.index(position, 0, node)
+        position = self._model.rowCount(node)
+        if self._model.insertRows(position, 1, node):
+            new_index = self._model.index(position, 0, node)
             assert new_index.isValid(), "Created index is not valid"
             new_inlet_name = f"{'in'}#{position + 1}"
-            success = self._source_model.setData(new_index, new_inlet_name, Qt.ItemDataRole.DisplayRole)
+            success = self._model.setData(new_index, new_inlet_name, Qt.ItemDataRole.DisplayRole)
             # by default node children are inlets. dont need to set GraphItemType.INLET explicitly
             assert success, "Failed to set data for the new child item"
             return QPersistentModelIndex(new_index)
@@ -555,24 +532,24 @@ class QItemModelGraphModel(AbstractGraphModel):
         assert node.isValid(), "Node index must be valid"
         assert self.itemType(node) == GraphItemType.NODE, "Node index must be of type NODE"
         
-        if self._source_model.columnCount(node) == 0:
+        if self._model.columnCount(node) == 0:
             # Make sure the parent has at least one column for children, otherwise the treeview won't show them
-            self._source_model.insertColumns(0, 1, node)
+            self._model.insertColumns(0, 1, node)
 
-        position = self._source_model.rowCount(node)
-        if self._source_model.insertRows(position, 1, node):
-            new_index = self._source_model.index(position, 0, node)
+        position = self._model.rowCount(node)
+        if self._model.insertRows(position, 1, node):
+            new_index = self._model.index(position, 0, node)
             assert new_index.isValid(), "Created index is not valid"
             new_outlet_name = f"{'out'}#{position + 1}"
-            success = self._source_model.setData(new_index, new_outlet_name, Qt.ItemDataRole.DisplayRole)
-            success = self._source_model.setData(new_index, GraphItemType.OUTLET, GraphDataRole.TypeRole)
+            success = self._model.setData(new_index, new_outlet_name, Qt.ItemDataRole.DisplayRole)
+            success = self._model.setData(new_index, GraphItemType.OUTLET, GraphDataRole.TypeRole)
             assert success, "Failed to set data for the new child item"
             return QPersistentModelIndex(new_index)
         return None
 
     def addLink(self, outlet:QModelIndex|QPersistentModelIndex, inlet:QModelIndex|QPersistentModelIndex)->QPersistentModelIndex|None:
         """Add a child item to the currently selected item."""
-        assert self._source_model is not None, "Source model must be set before adding child items"
+        assert self._model is not None, "Source model must be set before adding child items"
         assert isinstance(outlet, (QModelIndex, QPersistentModelIndex)), f"outlet must be a QModelIndex got: {outlet}"
         assert outlet.isValid(), "Outlet must be a valid"
         assert self.itemType(outlet) == GraphItemType.OUTLET, "Outlet index must be of type OUTLET"
@@ -581,21 +558,21 @@ class QItemModelGraphModel(AbstractGraphModel):
         assert self.itemType(inlet) == GraphItemType.INLET, "Inlet index must be of type INLET"
 
         # Add child to the selected item using generic methods
-        position = self._source_model.rowCount(inlet)
+        position = self._model.rowCount(inlet)
 
         # Make sure the parent has at least one column for children, otherwise the treeview won't show them
-        if self._source_model.columnCount(inlet) == 0:
-            self._source_model.insertColumns(0, 1, inlet)
+        if self._model.columnCount(inlet) == 0:
+            self._model.insertColumns(0, 1, inlet)
         
-        if self._source_model.insertRows(position, 1, inlet):
-            link_index = self._source_model.index(position, 0, inlet)
+        if self._model.insertRows(position, 1, inlet):
+            link_index = self._model.index(position, 0, inlet)
             new_link_name = f"{'Link'}#{position + 1}"
             persistent_outlet = outlet if isinstance(outlet, QPersistentModelIndex) else QPersistentModelIndex(outlet)
-            if not self._source_model.setData(link_index, persistent_outlet, role=GraphDataRole.SourceRole):
+            if not self._model.setData(link_index, persistent_outlet, role=GraphDataRole.SourceRole):
                 logger.warning(f"Failed to set source for new link: {persistent_outlet}")
 
-            if not self._source_model.setData(link_index, new_link_name, role=Qt.ItemDataRole.DisplayRole):
-                logger.warning(f"Failed to set 'name' data for new link: {new_link_name}")
+            if not self._model.setData(link_index, new_link_name, role=Qt.ItemDataRole.DisplayRole):
+                logger.warning(f"Failed to set data for new link: {new_link_name}")
 
             return QPersistentModelIndex(link_index)
             
@@ -607,11 +584,11 @@ class QItemModelGraphModel(AbstractGraphModel):
         Set the source of a link.
         This sets the source of the link at the specified index to the given source index.
         """
-        assert self._source_model, "Source model must be set before setting a link source"
+        assert self._model, "Source model must be set before setting a link source"
         assert link.isValid(), "Link index must be valid"
         assert source.isValid(), "Source index must be valid"
         persistent_source = source if isinstance(source, QPersistentModelIndex) else QPersistentModelIndex(source)
-        return self._source_model.setData(link, persistent_source, role=GraphDataRole.SourceRole)
+        return self._model.setData(link, persistent_source, role=GraphDataRole.SourceRole)
 
     ## DELETE
     def removeNode(self, node:QModelIndex|QPersistentModelIndex)->bool:
@@ -619,33 +596,33 @@ class QItemModelGraphModel(AbstractGraphModel):
         Remove a node from the graph.
         This removes the node at the specified index from the model.
         """
-        assert self._source_model, "Source model must be set before removing a node"
+        assert self._model, "Source model must be set before removing a node"
         if not isinstance(node, (QModelIndex, QPersistentModelIndex)):
             logger.error(f"Node must be a QModelIndex or QPersistentModelIndex, got: {type(node)}")
             return False
         # remove links connected to the node
         # collect links
         links_connected = []
-        for inlet in self.inlets(node):
-            for link in self.inLinks(inlet):
+        for inlet in self.nodeInlets(node):
+            for link in self.inletLinks(inlet):
                 links_connected.append(QPersistentModelIndex(link))
-        for outlet in self.outlets(node):
-            for link in self.outLinks(outlet):
+        for outlet in self.nodeOutlets(node):
+            for link in self.outletLinks(outlet):
                 links_connected.append(QPersistentModelIndex(link))
 
         for link in links_connected:
             self.removeLink(link)
 
-        return self._source_model.removeRows(node.row(), 1, node.parent())
+        return self._model.removeRows(node.row(), 1, node.parent())
     
     def removeLink(self, link:QModelIndex|QPersistentModelIndex)->bool:
         """
         Remove a link from the graph.
         This removes the link at the specified index from the model.
         """
-        assert self._source_model, "Source model must be set before removing a link"
+        assert self._model, "Source model must be set before removing a link"
         assert link.isValid(), "Link index must be valid"
-        if self._source_model.removeRows(link.row(), 1, link.parent()):
+        if self._model.removeRows(link.row(), 1, link.parent()):
             self._link_manager.unlink(QPersistentModelIndex(link))
             return True
         return False
@@ -665,7 +642,7 @@ class QItemModelGraphModel(AbstractGraphModel):
         Returns:
             bool: True if all removals succeeded, False if any failed
         """
-        assert self._source_model, "Source model must be set before removing an item"
+        assert self._model, "Source model must be set before removing an item"
 
         if not indexes:
             return True  # Nothing to remove, trivially succeed
@@ -742,7 +719,7 @@ class QItemModelGraphModel(AbstractGraphModel):
             ranges.sort(key=lambda r: r[0], reverse=True)
             
             for start_row, count in ranges:
-                if not self._source_model.removeRows(start_row, count, parent):
+                if not self._model.removeRows(start_row, count, parent):
                     success = False
                     logger.warning(f"Failed to remove rows {start_row}-{start_row + count - 1} from parent {parent}")
         

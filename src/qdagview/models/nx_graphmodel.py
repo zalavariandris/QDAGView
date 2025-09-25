@@ -17,12 +17,10 @@ from qtpy.QtWidgets import *
 import networkx as nx
 
 from ..core import GraphDataRole, GraphItemType
-from ..views.managers import LinkingManager
+from ..managers import LinkingManager
 from ..utils import make_unique_name, listify
 
 from .abstract_graphmodel import AbstractGraphModel, GraphItemRef, NodeRef, InletRef, OutletRef, LinkRef, AttributeRef
-
-
 
 
 class NXGraphModel(AbstractGraphModel):

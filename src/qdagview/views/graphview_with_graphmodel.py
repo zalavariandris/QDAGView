@@ -29,17 +29,15 @@ from ..utils import group_consecutive_numbers
 from ..utils import makeLineBetweenShapes, makeLineToShape, makeArrowShape, getShapeCenter
 from ..utils import bfs
 
-from .tools.linking_tool import LinkingTool
+from ..tools.linking_tool import LinkingTool
 
-from .managers import PersistentWidgetManager
-from .managers.linking_manager import LinkingManager
-from .managers.cell_manager import CellManager
+from ..managers import PersistentWidgetIndexManager
+from ..managers.linking_manager import LinkingManager
+from ..managers.cell_manager import CellManager
 
-from .widgets import (
+from ..widgets import (
     NodeWidget, PortWidget, LinkWidget, CellWidget
 )
-
-
 
 class InletWidget(PortWidget):
     pass
@@ -47,17 +45,16 @@ class InletWidget(PortWidget):
 class OutletWidget(PortWidget):
     pass
 
-
 from ..models import AbstractGraphModel
-from .delegates.graphview_delegate import GraphDelegate
+from ..delegates.graphview_delegate import GraphDelegate
 # from .factories.widget_factory import WidgetFactory
-from .factories.widget_factory_using_delegate import WidgetFactoryUsingDelegate
+from ..factories.widgetfactory_using_delegate import WidgetFactoryUsingDelegate
 
 class GraphModel_GraphView(QGraphicsView):
     def __init__(self, delegate:GraphDelegate|None=None, parent: QWidget | None = None):
         super().__init__(parent=parent)
         self._model: AbstractGraphModel | None = None
-        self._controller_connections: list[tuple[Signal, Slot]] = []
+        self._model_connections: list[tuple[Signal, Slot]] = []
         self._selection:QItemSelectionModel | None = None
         self._selection_connections: list[tuple[Signal, Slot]] = []
 
@@ -68,10 +65,10 @@ class GraphModel_GraphView(QGraphicsView):
         self._factory.portPositionChanged.connect(self.handlePortPositionChanged)
 
         ## State of the graph view
-        self._linking_tool = LinkingTool(self)
+        self._linking_tool = LinkingTool(self, self._model)
 
         # Widget Manager
-        self._widget_manager = PersistentWidgetManager()
+        self._widget_manager = PersistentWidgetIndexManager()
         self._cell_manager = CellManager()
 
         # Link management
@@ -94,13 +91,13 @@ class GraphModel_GraphView(QGraphicsView):
     def setModel(self, model:AbstractGraphModel|None):
         if self._model:
             # disconnect previous controller
-            for signal, slot in self._controller_connections:
+            for signal, slot in self._model_connections:
                 signal.disconnect(slot)
-            self._controller_connections.clear()
+            self._model_connections.clear()
             self._model = None
 
         if model:
-            self._controller_connections = [
+            self._model_connections = [
                 (model.nodesInserted, self.handleNodesInserted),
                 (model.nodesAboutToBeRemoved, self.handleNodesRemoved),
                 (model.nodesDataChanged, self.handleNodeDataChanged),
@@ -115,7 +112,7 @@ class GraphModel_GraphView(QGraphicsView):
                 (model.linksDataChanged, self.handleLinkDataChanged)
             ]
 
-            for signal, slot in self._controller_connections:
+            for signal, slot in self._model_connections:
                 signal.connect(slot)
 
         self._model = model

@@ -4,7 +4,7 @@ from qtpy.QtWidgets import *
 from typing import Literal
 from dataclasses import dataclass
 
-from ...core import GraphMimeType, indexFromPath, indexToPath
+from ..core import GraphMimeType, indexFromPath, indexToPath
 from typing import Self
 
 @dataclass

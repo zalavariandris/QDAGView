@@ -8,7 +8,7 @@ from typing import List
 from qdagview.examples.flowgraphmodel import FlowGraphModel
 from qdagview.examples.flowgraph import ExpressionOperator
 from qdagview.views.graphview_with_QItemModel import QItemModel_GraphView
-from qdagview.models import QItemModelGraphModel
+from qdagview.controllers.qitemmodel_graphcontroller import QItemModelGraphController
 
 import logging
 logger = logging.getLogger(__name__)
@@ -19,8 +19,8 @@ class MainWindow(QWidget):
         self.setWindowTitle("DataFlow")
         self.setGeometry(100, 100, 800, 600)
         self.tree_model = FlowGraphModel(self) # ground truth QItemModel
-        self.graph_model = QItemModelGraphModel(parent=self) # graph model backed by the QItemModel
-        self.graph_model.setSourceModel(self.tree_model)
+        self.graph_controller = QItemModelGraphController()
+        self.graph_controller.setModel(self.tree_model)
         self.selection = QItemSelectionModel(self.tree_model)
 
         self.toolbar = QMenuBar(self)
@@ -41,7 +41,7 @@ class MainWindow(QWidget):
         # model = GraphItemModel()
         # self.view.setModel(model)
         self.graphview = QItemModel_GraphView(parent=self)
-        self.graphview.setModel(self.graph_model)
+        self.graphview.setModel(self.tree_model)
         self.graphview.setSelectionModel(self.selection)
 
         self.viewer = QLabel("viewer")
@@ -70,14 +70,14 @@ class MainWindow(QWidget):
     @Slot()
     def appendOperator(self):
         """Add a new operator to the graph."""
-        self.graph_model.addNode()
+        self.graph_controller.addNode()
 
     @Slot()
     def removeSelectedItems(self):
         """Remove the currently selected items from the graph."""
         selected_indexes = self.selection.selectedRows()
         print("Removing indexes:", selected_indexes)
-        self.graph_model.batchRemove(selected_indexes)
+        self.graph_controller.batchRemove(selected_indexes)
 
     @Slot()
     def evaluateCurrent(self):
@@ -91,14 +91,6 @@ if __name__ == "__main__":
     import sys
     logging.basicConfig(level=logging.DEBUG)
     
-
-    # graph = model.invisibleRootItem()
-    # operator = Operator("TestOperator")
-    # graph.addOperator(operator)
-    
-    # index = model.index(0, 0, QModelIndex())
-    # print(model.data(index, Qt.ItemDataRole.DisplayRole))  # Should print "TestOperator"
-
     import sys
     app = QApplication(sys.argv)
 

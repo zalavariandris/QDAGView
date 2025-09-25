@@ -6,7 +6,7 @@ from typing import List
 
 # from qdagview.models import FlowGraphModel, ExpressionOperator
 from qdagview.models import NXGraphModel
-from qdagview.views import GraphView2
+from qdagview.views import GraphModel_GraphView
 
 import logging
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ class MainWindow(QWidget):
         remove_action.triggered.connect(self.removeSelectedItems)
         self.toolbar.setNativeMenuBar(False)
 
-        self.graphview = GraphView2(parent=self)
+        self.graphview = GraphModel_GraphView(parent=self)
         self.graphview.setModel(self.graph_model)
 
         layout = QVBoxLayout(self)
