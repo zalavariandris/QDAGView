@@ -17,12 +17,12 @@ from ...utils import makeLineBetweenShapes
 from ...core import GraphItemType
 
 if TYPE_CHECKING:
-    from ..graphview import GraphView
+    from ..graphview_with_graphmodel import GraphModel_GraphView
 
 
 class LinkingTool:
     """A tool to handle linking operations in the graph view."""
-    def __init__(self, view: GraphView):
+    def __init__(self, view: GraphModel_GraphView):
         self._view = view
         self._is_active = False
         self._draft_link: QGraphicsLineItem | None = None

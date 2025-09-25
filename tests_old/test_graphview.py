@@ -34,7 +34,7 @@ from qdagview.examples.flowgraphmodel import FlowGraphModel
 from qdagview.models.graphhelper import ItemGraphHelper
 
 # view
-from src.qdagview.views.graphview import GraphView
+from qdagview.views.graphview_with_graphmodel import GraphModel_GraphView
 app = QApplication(sys.argv)  # Only one QApplication per app
 
 
@@ -42,7 +42,7 @@ class TestGraphView(unittest.TestCase):
     def test_operators(self):
         model = FlowGraphModel()
         helper = ItemGraphHelper(model)
-        view = GraphView()
+        view = GraphModel_GraphView()
         view.setModel(model)
 
         # create a single operator

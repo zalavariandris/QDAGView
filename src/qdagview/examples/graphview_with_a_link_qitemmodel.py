@@ -7,7 +7,7 @@ from typing import List
 # from qdagview.models import FlowGraphModel, ExpressionOperator
 from qdagview.examples.flowgraphmodel import FlowGraphModel
 from qdagview.examples.flowgraph import ExpressionOperator
-from qdagview.views.graphview_with_QItemModel import QItemModel_GraphView
+from qdagview.views import GraphModel_GraphView
 from qdagview.models import QItemModelGraphModel
 
 import logging
@@ -32,15 +32,15 @@ class MainWindow(QWidget):
         evaluate_action.triggered.connect(self.evaluateCurrent)
         self.toolbar.setNativeMenuBar(False)
 
-        self.tree_view = QTreeView(parent=self)
-        self.tree_view.setModel(self.tree_model)
-        self.tree_view.setSelectionModel(self.selection)
-        self.tree_view.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.SelectedClicked)
-        self.tree_view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.tree_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.tree = QTreeView(parent=self)
+        self.tree.setModel(self.tree_model)
+        self.tree.setSelectionModel(self.selection)
+        self.tree.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.SelectedClicked)
+        self.tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         # model = GraphItemModel()
         # self.view.setModel(model)
-        self.graphview = QItemModel_GraphView(parent=self)
+        self.graphview = GraphModel_GraphView(parent=self)
         self.graphview.setModel(self.graph_model)
         self.graphview.setSelectionModel(self.selection)
 
@@ -48,7 +48,7 @@ class MainWindow(QWidget):
 
         layout = QHBoxLayout(self)
         splitter = QSplitter(Qt.Orientation.Horizontal, self)
-        splitter.addWidget(self.tree_view)
+        splitter.addWidget(self.tree)
         splitter.addWidget(self.graphview)
         splitter.addWidget(self.viewer)
         layout.setMenuBar(self.toolbar)
@@ -79,13 +79,6 @@ class MainWindow(QWidget):
         print("Removing indexes:", selected_indexes)
         self.graph_model.batchRemove(selected_indexes)
 
-    @Slot()
-    def evaluateCurrent(self):
-        index = self.selection.currentIndex()
-        if not index.isValid():
-            return
-        result = self.tree_model.evaluate(index)
-        self.viewer.setText(result)
 
 if __name__ == "__main__":
     import sys

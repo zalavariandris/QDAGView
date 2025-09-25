@@ -19,7 +19,7 @@ from ..widgets import (
 import weakref
 
 if TYPE_CHECKING:
-    from ...views.graphview import GraphView
+    from ..graphview_with_graphmodel import GraphModel_GraphView
 
 def makeViewOption(option_graphics:QStyleOptionGraphicsItem, ref:GraphItemRef, widget=None):
     """
@@ -69,7 +69,7 @@ def makeViewOption(option_graphics:QStyleOptionGraphicsItem, ref:GraphItemRef, w
     return opt
 
 class NodeWidgetWithDelegate(NodeWidget):
-    def __init__(self, graphview: GraphView, parent: QGraphicsItem | None = None):
+    def __init__(self, graphview: GraphModel_GraphView, parent: QGraphicsItem | None = None):
         super().__init__(parent)
         self._graphview = weakref.ref(graphview)
 
@@ -85,7 +85,7 @@ class NodeWidgetWithDelegate(NodeWidget):
 
 
 class InletWidgetWithDelegate(PortWidget):
-    def __init__(self, graphview: GraphView, parent: QGraphicsItem | None = None):
+    def __init__(self, graphview: GraphModel_GraphView, parent: QGraphicsItem | None = None):
         super().__init__(parent)
         self._graphview = weakref.ref(graphview)
 
@@ -103,7 +103,7 @@ class InletWidgetWithDelegate(PortWidget):
 
 
 class OutletWidgetWithDelegate(PortWidget):
-    def __init__(self, graphview: GraphView, parent: QGraphicsItem | None = None):
+    def __init__(self, graphview: GraphModel_GraphView, parent: QGraphicsItem | None = None):
         super().__init__(parent)
         self._graphview = weakref.ref(graphview)
 
@@ -119,7 +119,7 @@ class OutletWidgetWithDelegate(PortWidget):
 
 
 class LinkWidgetWithDelegate(LinkWidget):
-    def __init__(self, graphview: GraphView, parent: QGraphicsItem | None = None):
+    def __init__(self, graphview: GraphModel_GraphView, parent: QGraphicsItem | None = None):
         super().__init__(parent)
         self._graphview = weakref.ref(graphview)
 
@@ -158,7 +158,7 @@ class LinkWidgetWithDelegate(LinkWidget):
 
 
 class CellWidgetWithDelegate(CellWidget):
-    def __init__(self, graphview: GraphView, parent: QGraphicsItem | None = None):
+    def __init__(self, graphview: GraphModel_GraphView, parent: QGraphicsItem | None = None):
         super().__init__(parent)
         self._graphview = weakref.ref(graphview)
 

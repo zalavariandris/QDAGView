@@ -49,14 +49,13 @@ class OutletWidget(PortWidget):
 
 
 from ..models import AbstractGraphModel
-from ..models.abstract_graphmodel import NodeRefT, InletRefT, OutletRefT, LinkRefT
 from .delegates.graphview_delegate import GraphDelegate
 # from .factories.widget_factory import WidgetFactory
 from .factories.widget_factory_using_delegate import WidgetFactoryUsingDelegate
 
 
 
-class GraphView(QGraphicsView):
+class QItemModel_GraphView(QGraphicsView):
     def __init__(self, delegate:GraphDelegate|None=None, parent: QWidget | None = None):
         super().__init__(parent=parent)
         self._model: AbstractGraphModel | None = None

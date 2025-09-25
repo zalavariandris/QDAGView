@@ -7,10 +7,10 @@ from qtpy.QtCore import *
 from qtpy.QtWidgets import *
 
 if TYPE_CHECKING:
-    from ..graphview import GraphView
+    from ..graphview_with_graphmodel import GraphModel_GraphView
 
 class GraphSelectionManager:
-    def __init__(self, graphview: GraphView):
+    def __init__(self, graphview: GraphModel_GraphView):
         self._graphview = graphview
 
     ## Selection

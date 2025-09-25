@@ -4,7 +4,7 @@ from qtpy.QtGui import *
 from collections import defaultdict
 
 
-from qdagview.views import GraphView
+from qdagview.views import GraphModel_GraphView
 from qdagview.core import GraphDataRole, GraphItemType
 
 
@@ -33,7 +33,7 @@ class GraphWithQStandardItemModel(QWidget):
         self._treeview.customContextMenuRequested.connect(self.showContextMenu)
 
         ## graphview
-        self._graphview = GraphView()
+        self._graphview = GraphModel_GraphView()
 
         # layout widgets
         splitter = QSplitter(Qt.Orientation.Horizontal)
