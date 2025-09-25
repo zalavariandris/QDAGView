@@ -363,8 +363,8 @@ class NXGraphModel(AbstractGraphModel):
         return inlet
 
     def attributeParent(self, attribute:AttributeRef) -> GraphItemRef:
-        attribute.ptr()
-        return parent
+        attribute.
+        return self.createAttributeRef
 
     ## DELETE
     def removeNode(self, node:NodeRef)->bool:

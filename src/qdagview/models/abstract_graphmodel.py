@@ -126,17 +126,21 @@ class AbstractGraphModel(QObject):
     def createAttributeRef(self, name:AttributeName, ptr:Any)->AttributeRef:
         return AttributeRef(self, name, ptr)
 
+    @abstractmethod
     def nodeRef(self, name:NodeName)->NodeRef:
         return self.createNodeRef(name, None)
     
+    @abstractmethod
     def inletRef(self, name:InletName, node:NodeRef)->InletRef:
         node_name = node.name()
         return self.createInletRef(name, node_name)
     
+    @abstractmethod
     def outletRef(self, name:OutletName, node:NodeRef)->OutletRef:
         node_name = node.name()
         return self.createOutletRef(name, node_name)
     
+    @abstractmethod
     def linkRef(self, outlet:OutletRef, inlet:InletRef)->LinkRef:
         outlet_name = outlet.name()
         source_node_name = outlet.ptr()
@@ -145,6 +149,7 @@ class AbstractGraphModel(QObject):
         ptr = (source_node_name, outlet_name, target_node_name, inlet_name)
         return self.createLinkRef("link", ptr)
 
+    @abstractmethod
     def attributeRef(self, name:AttributeName, parent:GraphItemRef)->AttributeRef:
         parent_ptr = parent.ptr() 
         return self.createAttributeRef(name, parent_ptr)
