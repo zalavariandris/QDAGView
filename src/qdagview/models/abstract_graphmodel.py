@@ -54,7 +54,6 @@ class GraphItemRef:
         model = self._model()
         return model is not None
 
-
 class NodeRef(GraphItemRef):
     def kind(self)->GraphItemType:
         return GraphItemType.NODE
