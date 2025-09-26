@@ -252,8 +252,11 @@ class AbstractGraphModel(QObject):
         pass
 
     @abstractmethod
-    def linkCount(self) -> int:
-        """Get the number of links in the graph."""
+    def linkCount(self, item:InletRef|OutletRef|None) -> int:
+        """Get the number of links.
+        If item is None, return the total number of links in the graph.
+        If item is an InletRef or OutletRef, return the number of links connected to that port.
+        """
         pass
 
     @abstractmethod
@@ -283,16 +286,6 @@ class AbstractGraphModel(QObject):
         pass
 
     @abstractmethod
-    def inLinks(self, inlet:InletRef) -> List[LinkRef]:
-        """Get the list of links for the specified inlet."""
-        pass
-
-    @abstractmethod
-    def outLinks(self, outlet:OutletRef) -> List[LinkRef]:
-        """Get the list of links for the specified outlet."""
-        pass
-
-    @abstractmethod
     def inletNode(self, inlet:InletRef) -> NodeRef:
         """Get the node associated with the specified inlet."""
         pass
@@ -313,6 +306,6 @@ class AbstractGraphModel(QObject):
         pass
 
     @abstractmethod
-    def attributeParent(self, attribute:AttributeRef) -> GraphItemRef:
+    def attributeOwner(self, attribute:AttributeRef) -> GraphItemRef:
         """Get the parent item for the specified attribute."""
         pass

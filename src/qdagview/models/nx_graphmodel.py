@@ -144,7 +144,7 @@ class NXGraphModel(AbstractGraphModel):
     # DATA
     def setData(self, attribute_ref:AttributeRef, value:Any, role:int=Qt.ItemDataRole.DisplayRole) -> bool:
         attr_name = attribute_ref.name()
-        parent_ref = self.attributeParent(attribute_ref)
+        parent_ref = self.attributeOwner(attribute_ref)
         match parent_ref.kind():
             case GraphItemType.NODE:
                 node_name = parent_ref.name()
@@ -195,7 +195,7 @@ class NXGraphModel(AbstractGraphModel):
             
     def data(self, attribute_ref:AttributeRef, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
         attr_name = attribute_ref.name()
-        parent_ref = self.attributeParent(attribute_ref)
+        parent_ref = self.attributeOwner(attribute_ref)
         match parent_ref.kind():
             case GraphItemType.NODE:
                 node_name = parent_ref.name()
@@ -360,7 +360,7 @@ class NXGraphModel(AbstractGraphModel):
         _, outlet, inlet = link
         return inlet
 
-    def attributeParent(self, attribute:AttributeRef) -> GraphItemRef:
+    def attributeOwner(self, attribute:AttributeRef) -> GraphItemRef:
         raise NotImplementedError
 
     ## DELETE

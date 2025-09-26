@@ -62,18 +62,17 @@ class QItemModel_GraphView(QGraphicsView):
         self._controller = QItemModelGraphController(parent=self)
         self._controller_connections: list[tuple[Signal, Slot]] = []
         self._controller_connections = [
-            (self._controller.nodesInserted, self.handleNodesInserted),
-            (self._controller.nodesAboutToBeRemoved, self.handleNodesRemoved),
-            (self._controller.nodesDataChanged, self.handleNodeDataChanged),
-            (self._controller.inletsInserted, self.handleInletsInserted),
-            (self._controller.inletsAboutToBeRemoved, self.handleInletsRemoved),
-            (self._controller.inletsDataChanged, self.handleInletsDataChanged),
-            (self._controller.outletsInserted, self.handleOutletsInserted),
+            (self._controller.nodesInserted,           self.handleNodesInserted),
+            (self._controller.inletsInserted,          self.handleInletsInserted),
+            (self._controller.outletsInserted,         self.handleOutletsInserted),
+            (self._controller.linksInserted,           self.handleLinksInserted),
+
+            (self._controller.nodesAboutToBeRemoved,   self.handleNodesRemoved),
+            (self._controller.inletsAboutToBeRemoved,  self.handleInletsRemoved),
             (self._controller.outletsAboutToBeRemoved, self.handleOutletsRemoved),
-            (self._controller.outletsDataChanged, self.handleOutletsDataChanged),
-            (self._controller.linksInserted, self.handleLinksInserted),
-            (self._controller.linksAboutToBeRemoved, self.handleLinksRemoved),
-            (self._controller.linksDataChanged, self.handleLinkDataChanged)
+            (self._controller.linksAboutToBeRemoved,   self.handleLinksRemoved),
+
+            (self._controller.attributeDataChanged,        self.handleAttributeDataChanged),
         ]
         for signal, slot in self._controller_connections:
             signal.connect(slot)
@@ -138,20 +137,31 @@ class QItemModel_GraphView(QGraphicsView):
         return self._model
     
     ## Index lookup
-    def rowAt(self, point:QPoint) -> QModelIndex:
-        """
-        Find the index at the given position.
-        point is in untransformed viewport coordinates, just like QMouseEvent::pos().
-        """
-
+    def rowAt(self, point:QPoint, filter_type:GraphItemType|None=None) -> Tuple[QModelIndex, GraphItemType]|None:
         all_widgets = set(self._widget_manager.widgets())
         for item in self.items(point):
             if item in all_widgets:
-                # If the item is a widget, return its index
-                return self._widget_manager.getIndex(item)
-        return QModelIndex()
+                index = self._widget_manager.getIndex(item)
+                if filter_type is None:
+                    return index, self._controller.itemType(index)
+                else:
+                    if self._controller.itemType(index) == filter_type:
+                        return index, self._controller.itemType(index)
+        return None
+
+    def nodeAt(self, point:QPoint) -> QModelIndex|None:
+        return self.rowAt(point, GraphItemType.NODE)
     
-    def indexAt(self, point:QPoint) -> QModelIndex:
+    def inletAt(self, point:QPoint) -> QModelIndex:
+        return self.rowAt(point, GraphItemType.INLET)
+    
+    def outletAt(self, point:QPoint) -> QModelIndex:
+        return self.rowAt(point, GraphItemType.OUTLET)
+    
+    def linkAt(self, point:QPoint) -> QModelIndex:
+        return self.rowAt(point, GraphItemType.LINK)
+    
+    def attributeAt(self, point:QPoint) -> QModelIndex:
         """
         Find the index at the given position.
         point is in untransformed viewport coordinates, just like QMouseEvent::pos().
@@ -159,23 +169,15 @@ class QItemModel_GraphView(QGraphicsView):
         all_cells = set(self._cell_manager.widgets())
         for item in self.items(point):
             if item in all_cells:
-                # If the item is a cell, return its index
                 return self._cell_manager.getIndex(item)
-            
-        # fallback to rowAt if no cell is found
-        return self.rowAt(point)
+        return QModelIndex()
 
     def handlePortPositionChanged(self, port_index:QPersistentModelIndex):
         """Reposition all links connected to the moved port widget."""
         
-        match self._controller.itemType(port_index):
-            case GraphItemType.INLET:
-                link_indexes = self._controller.inletLinks(port_index)
-            case GraphItemType.OUTLET:
-                link_indexes = self._controller.outletLinks(port_index)
-            case _:
-                logger.warning(f"Port position changed for non-port item: {indexToPath(port_index)}")
-                return
+
+        link_indexes = self._controller.links(port_index)
+
 
         for link_index in link_indexes:
             if link_widget := self._widget_manager.getWidget(link_index):
@@ -223,28 +225,26 @@ class QItemModel_GraphView(QGraphicsView):
         self._widget_manager.insertWidget(row_index, row_widget)
 
         # inlets and outlets
-        for inlet_index in self._controller.nodeInlets(row_index):
+        for inlet_index in self._controller.inlets(row_index):
             self.addInletWidgetForIndex(inlet_index)
-        for outlet_index in self._controller.nodeOutlets(row_index):
+        for outlet_index in self._controller.outlets(row_index):
             self.addOutletWidgetForIndex(outlet_index)
 
         # Add cells for each column
-        for col in range(self._model.columnCount(row_index.parent())):
-            cell_index = self._model.index(row_index.row(), col, row_index.parent())
-            self.addCellWidgetForIndex(cell_index)
+        for attribute_index in self._controller.attributes(row_index):
+            self.addCellWidgetForIndex(attribute_index)
 
         return row_widget
 
     def removeNodeWidgetForIndex(self, row_index:QPersistentModelIndex):
         ## Remove cells
-        for col in range(self._model.columnCount(row_index.parent())):
-            cell_index = self._model.index(row_index.row(), col, row_index.parent())
-            self.removeCellWidgetForIndex(cell_index)
+        for attribute_index in reversed(self._controller.attributes(row_index)):
+            self.removeCellWidgetForIndex(attribute_index)
 
         # inlets and outlets
-        for inlet_index in self._controller.nodeInlets(row_index):
+        for inlet_index in self._controller.inlets(row_index):
             self.removeInletWidgetForIndex(inlet_index)
-        for outlet_index in self._controller.nodeOutlets(row_index):
+        for outlet_index in self._controller.outlets(row_index):
             self.removeOutletWidgetForIndex(outlet_index)
 
         # widget management
@@ -263,9 +263,8 @@ class QItemModel_GraphView(QGraphicsView):
         self._widget_manager.insertWidget(row_index, row_widget)
 
         # Add cells for each column
-        for col in range(self._model.columnCount(row_index.parent())):
-            cell_index = self._model.index(row_index.row(), col, row_index.parent())
-            self.addCellWidgetForIndex(cell_index)
+        for attribute_index in self._controller.attributes(row_index):
+            self.addCellWidgetForIndex(attribute_index)
 
         return row_widget
 
@@ -291,17 +290,15 @@ class QItemModel_GraphView(QGraphicsView):
         self._widget_manager.insertWidget(row_index, row_widget)
 
         # Add cells for each column
-        for col in range(self._model.columnCount(row_index.parent())):
-            cell_index = self._model.index(row_index.row(), col, row_index.parent())
-            self.addCellWidgetForIndex(cell_index)
+        for attribute_index in self._controller.attributes(row_index):
+            self.addCellWidgetForIndex(attribute_index)
 
         return row_widget
 
     def removeOutletWidgetForIndex(self, row_index:QPersistentModelIndex):
         ## Remove cells
-        for col in range(self._model.columnCount(row_index.parent())):
-            cell_index = self._model.index(row_index.row(), col, row_index.parent())
-            self.removeCellWidgetForIndex(cell_index)
+        for attribute_index in reversed(self._controller.attributes(row_index)):
+            self.removeCellWidgetForIndex(attribute_index)
 
         # widget management
         row_widget = self._widget_manager.getWidget(row_index)
@@ -328,17 +325,15 @@ class QItemModel_GraphView(QGraphicsView):
         self._update_link_position(link_widget, source_widget, target_widget)
 
         # Add cells for each column
-        for col in range(self._model.columnCount(link.parent())):
-            cell_index = self._model.index(link.row(), col, link.parent())
-            self.addCellWidgetForIndex(cell_index)
+        for attribute_index in self._controller.attributes(link):
+            self.addCellWidgetForIndex(attribute_index)
 
         return link_widget
     
     def removeLinkWidgetForIndex(self, link_index:QModelIndex):
         ## Remove cells
-        for col in range(self._model.columnCount(link_index.parent())):
-            cell_index = self._model.index(link_index.row(), col, link_index.parent())
-            self.removeCellWidgetForIndex(cell_index)
+        for attribute_index in reversed(self._controller.attributes(link_index)):
+            self.removeCellWidgetForIndex(attribute_index)
 
         # widget management
         link_widget = self._widget_manager.getWidget(link_index)
@@ -348,7 +343,8 @@ class QItemModel_GraphView(QGraphicsView):
         self._widget_manager.removeWidget(link_index)
 
     def addCellWidgetForIndex(self, cell_index:QModelIndex)->QGraphicsItem:
-        row_widget = self._widget_manager.getWidget(cell_index.siblingAtColumn(0))
+        row_index = self._controller.attributeOwner(cell_index)
+        row_widget = self._widget_manager.getWidget(row_index)
         cell_widget = self._factory.createCellWidget(row_widget, cell_index, self)
         self._cell_manager.insertWidget(cell_index, cell_widget)
         self._set_cell_data(cell_index, roles=[Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
@@ -356,7 +352,8 @@ class QItemModel_GraphView(QGraphicsView):
     
     def removeCellWidgetForIndex(self, cell_index:QModelIndex):
         if cell_widget := self._cell_manager.getWidget(cell_index):
-            row_widget = self._widget_manager.getWidget(cell_index.siblingAtColumn(0))
+            row_index = self._controller.attributeOwner(cell_index)
+            row_widget = self._widget_manager.getWidget(row_index)
             self._factory.destroyCellWidget(row_widget, cell_widget)
             self._cell_manager.removeWidget(cell_index)
 
@@ -393,29 +390,9 @@ class QItemModel_GraphView(QGraphicsView):
         for link_index in link_indexes:
             self.removeLinkWidgetForIndex(link_index)
 
-    def handleNodeDataChanged(self, nodes:List[QPersistentModelIndex], columns:List[int], roles:List[int]):
-        for node in nodes:
-            for col in columns:
-                index = node.sibling(node.row(), col)
-                self._set_cell_data(index, roles)
-
-    def handleInletsDataChanged(self, inlets:List[QPersistentModelIndex], columns:List[int], roles:List[int]):
-        for inlet in inlets:
-            for col in columns:
-                index = inlet.sibling(inlet.row(), col)
-                self._set_cell_data(index, roles)
-
-    def handleOutletsDataChanged(self, outlets:List[QPersistentModelIndex], columns:List[int], roles:List[int]):
-        for outlet in outlets:
-            for col in columns:
-                index = outlet.sibling(outlet.row(), col)
-                self._set_cell_data(index, roles)
-
-    def handleLinkDataChanged(self, links:List[QPersistentModelIndex], columns:List[int], roles:List[int]):
-        for link in links:
-            for col in columns:
-                index = link.sibling(link.row(), col)
-                self._set_cell_data(index, roles)
+    def handleAttributeDataChanged(self, attributes:List[QPersistentModelIndex], roles:List[int]):
+        for attribute in attributes:
+            self._set_cell_data(attribute, roles)
 
     ## Selection handling   
     @Slot(QItemSelection, QItemSelection)
@@ -577,7 +554,7 @@ class QItemModel_GraphView(QGraphicsView):
             super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event:QMouseEvent):
-        index = self.indexAt(QPoint(int(event.position().x()), int(event.position().y())))
+        index = self.attributeAt(QPoint(int(event.position().x()), int(event.position().y())))
 
         if not index.isValid():
             idx = self._controller.addNode(QModelIndex())

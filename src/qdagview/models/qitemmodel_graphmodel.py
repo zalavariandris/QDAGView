@@ -309,6 +309,45 @@ class QItemModelGraphModel(AbstractGraphModel):
         else:
             return False  # Explicit return for unhandled cases
 
+    def nodeCount(self, subgraph:QModelIndex|None=None) -> int:
+        return self._source_model.rowCount(subgraph if subgraph is not None else QModelIndex())
+
+    def linkCount(self) -> int:
+        return len(self._link_manager._link_source)
+
+    def inletCount(self, node:QModelIndex|QPersistentModelIndex) -> int:
+        """
+        Get the number of inlets for a given node.
+        Args:
+            node (QModelIndex): The index of the node.
+        Returns:
+            int: The number of inlets for the node.
+        """
+        assert self.itemType(node) == GraphItemType.NODE, "Node index must be of type NODE"
+        inlet_count = 0
+        for row in range(self._source_model.rowCount(node)):
+            child_index = self._source_model.index(row, 0, node)
+            if self.itemType(child_index) == GraphItemType.INLET:
+                inlet_count += 1
+        return inlet_count
+
+    def outletCount(self, node:QModelIndex|QPersistentModelIndex) -> int:
+        """
+        Get the number of outlets for a given node.
+        Args:
+            node (QModelIndex): The index of the node.
+        Returns:
+            int: The number of outlets for the node.
+        """
+        assert self.itemType(node) == GraphItemType.NODE, "Node index must be of type NODE"
+        outlet_count = 0
+        for row in range(self._source_model.rowCount(node)):
+            child_index = self._source_model.index(row, 0, node)
+            if self.itemType(child_index) == GraphItemType.OUTLET:
+                outlet_count += 1
+        return outlet_count
+    
+    ## Data
     def data(self, item:QPersistentModelIndex, attribute:int)-> Any:
         index = self._source_model.index(item.row(), attribute, item.parent()) # get the index at column
         return self._source_model.data(index, role=Qt.ItemDataRole.DisplayRole)
@@ -356,44 +395,6 @@ class QItemModelGraphModel(AbstractGraphModel):
                             links.append(QPersistentModelIndex(link_index))
         return links
 
-    def nodeCount(self, subgraph:QModelIndex|None=None) -> int:
-        return self._source_model.rowCount(subgraph if subgraph is not None else QModelIndex())
-
-    def linkCount(self) -> int:
-        return len(self._link_manager._link_source)
-
-    def inletCount(self, node:QModelIndex|QPersistentModelIndex) -> int:
-        """
-        Get the number of inlets for a given node.
-        Args:
-            node (QModelIndex): The index of the node.
-        Returns:
-            int: The number of inlets for the node.
-        """
-        assert self.itemType(node) == GraphItemType.NODE, "Node index must be of type NODE"
-        inlet_count = 0
-        for row in range(self._source_model.rowCount(node)):
-            child_index = self._source_model.index(row, 0, node)
-            if self.itemType(child_index) == GraphItemType.INLET:
-                inlet_count += 1
-        return inlet_count
-
-    def outletCount(self, node:QModelIndex|QPersistentModelIndex) -> int:
-        """
-        Get the number of outlets for a given node.
-        Args:
-            node (QModelIndex): The index of the node.
-        Returns:
-            int: The number of outlets for the node.
-        """
-        assert self.itemType(node) == GraphItemType.NODE, "Node index must be of type NODE"
-        outlet_count = 0
-        for row in range(self._source_model.rowCount(node)):
-            child_index = self._source_model.index(row, 0, node)
-            if self.itemType(child_index) == GraphItemType.OUTLET:
-                outlet_count += 1
-        return outlet_count
-    
     def inlets(self, node:QModelIndex|QPersistentModelIndex) -> List[QPersistentModelIndex]:
         """
         Get a list of inlet indexes for a given node.
