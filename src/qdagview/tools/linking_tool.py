@@ -128,7 +128,10 @@ class LinkingTool:
         # Determine the source and target types
         payload = self._linking_payload
         target_index = self._view.rowAt(pos)  # Ensure the index is updated
-        drop_target_type = self._controller.itemType(target_index)
+        if target_index:
+            drop_target_type = self._controller.itemType(target_index)
+        else:
+            drop_target_type = None
         drag_source_type = payload.kind
 
         # find relevant indexes

@@ -72,7 +72,7 @@ class QItemModel_GraphView(QGraphicsView):
             (self._controller.outletsAboutToBeRemoved, self.handleOutletsRemoved),
             (self._controller.linksAboutToBeRemoved,   self.handleLinksRemoved),
 
-            (self._controller.attributeDataChanged,        self.handleAttributeDataChanged),
+            (self._controller.attributesDataChanged,        self.handleAttributeDataChanged),
         ]
         for signal, slot in self._controller_connections:
             signal.connect(slot)
@@ -143,10 +143,10 @@ class QItemModel_GraphView(QGraphicsView):
             if item in all_widgets:
                 index = self._widget_manager.getIndex(item)
                 if filter_type is None:
-                    return index, self._controller.itemType(index)
+                    return index
                 else:
                     if self._controller.itemType(index) == filter_type:
-                        return index, self._controller.itemType(index)
+                        return index
         return None
 
     def nodeAt(self, point:QPoint) -> QModelIndex|None:
@@ -526,11 +526,10 @@ class QItemModel_GraphView(QGraphicsView):
         # get the index at the mouse position
         pos = event.position()
         index = self.rowAt(QPoint(int(pos.x()), int(pos.y())))
-        assert index is not None, f"got: {index}"
         scene_pos = self.mapToScene(event.position().toPoint())
 
         # If we can start linking, do so
-        if self._linking_tool.startLinking(index, scene_pos):
+        if index is not None and self._linking_tool.startLinking(index, scene_pos):
             return
         else:
             # Fallback to default behavior

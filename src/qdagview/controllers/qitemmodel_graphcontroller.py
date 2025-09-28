@@ -175,81 +175,84 @@ class QItemModelGraphController(QObject):
         """
         assert self._model, "Model must be set before handling data changed!"
 
-        if GraphDataRole.SourceRole in roles or roles == []:
-            # If the source role is changed, we need to update the link widget
-            removed_links:List[Tuple[QPersistentModelIndex, QPersistentModelIndex, QPersistentModelIndex]] = []
-            added_links:List[Tuple[QPersistentModelIndex, QPersistentModelIndex, QPersistentModelIndex]] = []
-            for row in range(top_left.row(), bottom_right.row() + 1):
-                link_index = self._model.index(row, top_left.column(), top_left.parent())
-                link_key = QPersistentModelIndex(link_index)
-
-                old_source_key = self._link_manager.getLinkSource(link_key)
-                old_target_key = self._link_manager.getLinkTarget(link_key)
-                self._link_manager.unlink(link_key)
-                removed_links.append((link_key, old_source_key, old_target_key))
-                # self.linksRemoved.emit(link_key, old_source_key, old_target_key)
-
-                new_source_key = QPersistentModelIndex(self._model.data(link_index, GraphDataRole.SourceRole))
-                new_target_key = QPersistentModelIndex(link_index.parent())
-                self._link_manager.link(new_source_key, new_target_key, link_key)
-                added_links.append((link_key, new_source_key, new_target_key))
-            
-            self.linksAboutToBeRemoved.emit([link_index for link_index, _, _ in removed_links])
-            self.linksInserted.emit([link_index for link_index, _, _ in added_links])
-
         if GraphDataRole.TypeRole in roles or roles == []:
             # if an inlet or outlet type is changed, we need to update the widget
             raise NotImplementedError("Changing item type is not supported yet.")
 
-
         # collect attribute columns
-        changed_columns = list(range(top_left.column(), bottom_right.column() + 1))
-
-        match self.itemType(top_left.parent()):
+        parent_index = top_left.parent().siblingAtColumn(0)
+        parent_type = self.itemType(parent_index)
+        match parent_type:
             case GraphItemType.SUBGRAPH | None:
                 # node attributes changed
-                for row in range(top_left.row(), bottom_right.row() + 1):
+                for node_row in range(top_left.row(), bottom_right.row() + 1):
                     changed_node_attributes = []
                     for column in range(top_left.column(), bottom_right.column() + 1):
-                        attribute_index = self._model.index(row, column, top_left.parent())
+                        attribute_index = self._model.index(node_row, column, top_left.parent())
                         changed_node_attributes.append(attribute_index)
 
                     if changed_node_attributes:
                         self.attributesDataChanged.emit([QPersistentModelIndex(attr) for attr in changed_node_attributes], roles)
 
             case GraphItemType.NODE:
-                for row in range(top_left.row(), bottom_right.row() + 1):
-                    port_index = self._model.index(row, 0, top_left.parent())
+                # port attributes changed
+                for port_row in range(top_left.row(), bottom_right.row() + 1):
+                    port_index = self._model.index(port_row, 0, top_left.parent())
 
                     match self.itemType(port_index):
                         case GraphItemType.OUTLET:
-                            changed_attributes = []
-                            for column in range(top_left.column(), bottom_right.column() + 1):
-                                attribute_index = self._model.index(row, column, top_left.parent())
-                                changed_attributes.append(QPersistentModelIndex(attribute_index))
-                            if changed_attributes:
-                                self.attributesDataChanged.emit(changed_attributes, roles)
+                            for outlet_row in range(top_left.row(), bottom_right.row() + 1):
+                                changed_attributes = []
+                                for column in range(top_left.column(), bottom_right.column() + 1):
+                                    attribute_index = self._model.index(outlet_row, column, top_left.parent())
+                                    changed_attributes.append(QPersistentModelIndex(attribute_index))
+                                if changed_attributes:
+                                    self.attributesDataChanged.emit(changed_attributes, roles)
 
                         case GraphItemType.INLET | None:
-                            changed_attributes = []
-                            for column in range(top_left.column(), bottom_right.column() + 1):
-                                attribute_index = self._model.index(row, column, top_left.parent())
-                                changed_attributes.append(QPersistentModelIndex(attribute_index))
-                            if changed_attributes:
-                                self.attributesDataChanged.emit(changed_attributes, roles)
+                            for inlet_row in range(top_left.row(), bottom_right.row() + 1):
+                                changed_attributes = []
+                                for column in range(top_left.column(), bottom_right.column() + 1):
+                                    attribute_index = self._model.index(inlet_row, column, top_left.parent())
+                                    changed_attributes.append(QPersistentModelIndex(attribute_index))
+                                if changed_attributes:
+                                    self.attributesDataChanged.emit(changed_attributes, roles)
 
                         case _:
                             raise ValueError(f"Invalid item type for child of NODE: {self.itemType(port_index)}") 
-                if changed_attributes:
-                    self.inletsDataChanged.emit(changed_attributes, changed_columns, roles)
-                if changed_attributes:
-                    self.outletsDataChanged.emit(changed_attributes, changed_columns, roles)
 
             case GraphItemType.INLET:
-                changed_links = [QPersistentModelIndex(self._model.index(row, 0, top_left.parent())) for row in range(top_left.row(), bottom_right.row() + 1)]
-                if changed_links:
-                    self.linksDataChanged.emit(changed_links, changed_columns, roles)
+                # link attributes changed
+                if GraphDataRole.SourceRole in roles or roles == []:
+                    # If the source role is changed, we need to update the link widget
+                    removed_links:List[Tuple[QPersistentModelIndex, QPersistentModelIndex, QPersistentModelIndex]] = []
+                    added_links:List[Tuple[QPersistentModelIndex, QPersistentModelIndex, QPersistentModelIndex]] = []
+                    for node_row in range(top_left.row(), bottom_right.row() + 1):
+                        link_index = self._model.index(node_row, top_left.column(), top_left.parent())
+                        link_key = QPersistentModelIndex(link_index)
 
+                        old_source_key = self._link_manager.getLinkSource(link_key)
+                        old_target_key = self._link_manager.getLinkTarget(link_key)
+                        self._link_manager.unlink(link_key)
+                        removed_links.append((link_key, old_source_key, old_target_key))
+                        # self.linksRemoved.emit(link_key, old_source_key, old_target_key)
+
+                        new_source_key = QPersistentModelIndex(self._model.data(link_index, GraphDataRole.SourceRole))
+                        new_target_key = QPersistentModelIndex(link_index.parent())
+                        self._link_manager.link(new_source_key, new_target_key, link_key)
+                        added_links.append((link_key, new_source_key, new_target_key))
+                    
+                    self.linksAboutToBeRemoved.emit([link_index for link_index, _, _ in removed_links])
+                    self.linksInserted.emit([link_index for link_index, _, _ in added_links])
+                else:
+                    for link_row in range(top_left.row(), bottom_right.row() + 1):
+                        changed_link_attributes = []
+                        for column in range(top_left.column(), bottom_right.column() + 1):
+                            attribute_index = self._model.index(link_row, column, top_left.parent())
+                            changed_link_attributes.append(attribute_index)
+
+                        if changed_link_attributes:
+                            self.attributesDataChanged.emit([QPersistentModelIndex(attr) for attr in changed_link_attributes], roles)
 
     ## QUERY MODEL
     def itemType(self, index:QModelIndex|QPersistentModelIndex)-> GraphItemType | None:
