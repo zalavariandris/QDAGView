@@ -372,6 +372,15 @@ class QItemModelGraphController(QObject):
 
         return [QPersistentModelIndex(attr) for attr in attribute_indexes]
 
+    ## Data
+    def attributeData(self, attribute:QModelIndex|QPersistentModelIndex, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
+        assert attribute.isValid(), "Attribute index must be valid"
+        return attribute.data(role)
+    
+    def setAttributeData(self, attribute:QModelIndex|QPersistentModelIndex, value:Any, role:int=Qt.ItemDataRole.EditRole) -> bool:
+        assert attribute.isValid(), "Attribute index must be valid"
+        return self._model.setData(attribute, value, role)
+
     ### item relationships
     def nodes(self, subgraph:QModelIndex|None=None) -> List[QModelIndex]:
         """Return a list of all node indexes in the model."""

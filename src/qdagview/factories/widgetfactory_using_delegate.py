@@ -17,7 +17,7 @@ from ..widgets import (
 import weakref
 
 if TYPE_CHECKING:
-    from ...views.graphview import GraphView
+    from ..views.graphview_with_QItemModel import QItemModel_GraphView
 
 def makeViewOption(option_graphics:QStyleOptionGraphicsItem, index:QModelIndex, widget=None):
     """
@@ -64,7 +64,7 @@ def makeViewOption(option_graphics:QStyleOptionGraphicsItem, index:QModelIndex, 
     return opt
 
 class NodeWidgetWithDelegate(NodeWidget):
-    def __init__(self, graphview: GraphView, parent: QGraphicsItem | None = None):
+    def __init__(self, graphview: QItemModel_GraphView, parent: QGraphicsItem | None = None):
         super().__init__(parent)
         self._graphview = weakref.ref(graphview)
 
@@ -80,7 +80,7 @@ class NodeWidgetWithDelegate(NodeWidget):
 
 
 class InletWidgetWithDelegate(PortWidget):
-    def __init__(self, graphview: GraphView, parent: QGraphicsItem | None = None):
+    def __init__(self, graphview: QItemModel_GraphView, parent: QGraphicsItem | None = None):
         super().__init__(parent)
         self._graphview = weakref.ref(graphview)
 
@@ -98,7 +98,7 @@ class InletWidgetWithDelegate(PortWidget):
 
 
 class OutletWidgetWithDelegate(PortWidget):
-    def __init__(self, graphview: GraphView, parent: QGraphicsItem | None = None):
+    def __init__(self, graphview: QItemModel_GraphView, parent: QGraphicsItem | None = None):
         super().__init__(parent)
         self._graphview = weakref.ref(graphview)
 
@@ -114,7 +114,7 @@ class OutletWidgetWithDelegate(PortWidget):
 
 
 class LinkWidgetWithDelegate(LinkWidget):
-    def __init__(self, graphview: GraphView, parent: QGraphicsItem | None = None):
+    def __init__(self, graphview: QItemModel_GraphView, parent: QGraphicsItem | None = None):
         super().__init__(parent)
         self._graphview = weakref.ref(graphview)
 
@@ -153,7 +153,7 @@ class LinkWidgetWithDelegate(LinkWidget):
 
 
 class CellWidgetWithDelegate(CellWidget):
-    def __init__(self, graphview: GraphView, parent: QGraphicsItem | None = None):
+    def __init__(self, graphview: QItemModel_GraphView, parent: QGraphicsItem | None = None):
         super().__init__(parent)
         self._graphview = weakref.ref(graphview)
 
@@ -162,7 +162,7 @@ class CellWidgetWithDelegate(CellWidget):
             index = graphview._cell_manager.getIndex(self)
             if index is not None:
                 opt = makeViewOption(option, index, graphview)
-                graphview._delegate.paintCell(painter, opt, index)
+                graphview._delegate.paintCell(painter, opt, graphview._controller, index)
             # If index is None, the widget is being removed - skip painting
         else:
             super().paint(painter, option, widget)

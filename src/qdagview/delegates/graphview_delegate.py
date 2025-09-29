@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from ctypes import alignment
 import logging
+
+from qdagview.controllers.qitemmodel_graphcontroller import QItemModelGraphController
 logger = logging.getLogger(__name__)
 
 from typing import *
@@ -13,7 +15,7 @@ from qtpy.QtWidgets import *
 from ..core import GraphDataRole, GraphItemType
 from ..utils import makeArrowShape
 
-class GraphDelegate(QStyledItemDelegate):
+class GraphDelegate(QObject):
     ## Painting
     def paintNode(self, painter:QPainter, option:QStyleOptionViewItem, index: QModelIndex|QPersistentModelIndex):
         # Access palette from the option (preferred)
@@ -98,14 +100,14 @@ class GraphDelegate(QStyledItemDelegate):
         
         painter.restore()
 
-    def paintCell(self, painter:QPainter, option:QStyleOptionViewItem, index: QModelIndex|QPersistentModelIndex):
+    def paintCell(self, painter:QPainter, option:QStyleOptionViewItem, controller:QItemModelGraphController, index: QModelIndex|QPersistentModelIndex):
         # Paint background
         painter.save()
-        painter.drawText(option.rect, Qt.AlignmentFlag.AlignCenter, index.data(Qt.ItemDataRole.DisplayRole))
+        painter.drawText(option.rect, Qt.AlignmentFlag.AlignCenter, controller.attributeData(index, Qt.ItemDataRole.DisplayRole))
         painter.restore()
 
     ## Editors
-    def createEditor(self, parent:QWidget, option:QStyleOptionViewItem, index:QModelIndex|QPersistentModelIndex) -> QWidget:
+    def createEditor(self, parent:QWidget, option:QStyleOptionViewItem, controller:QItemModelGraphController, index:QModelIndex|QPersistentModelIndex) -> QWidget:
         editor = QLineEdit(parent=parent)
         editor.setParent(parent)
         return editor
@@ -114,15 +116,15 @@ class GraphDelegate(QStyledItemDelegate):
         print("updateEditorGeometry", option.rect)
         editor.setGeometry(option.rect)
         
-    def setEditorData(self, editor:QWidget, index:QModelIndex|QPersistentModelIndex):
+    def setEditorData(self, editor:QWidget, controller:QItemModelGraphController , index:QModelIndex|QPersistentModelIndex):
         if isinstance(editor, QLineEdit):
-            text = index.data(Qt.ItemDataRole.DisplayRole)
+            text = controller.attributeData(index, Qt.ItemDataRole.DisplayRole)
             editor.setText(text)
     
-    def setModelData(self, editor:QWidget, model:QAbstractItemModel, index:QModelIndex|QPersistentModelIndex):
+    def setModelData(self, editor:QWidget, controller:QItemModelGraphController, index:QModelIndex|QPersistentModelIndex):
         if isinstance(editor, QLineEdit):
             text = editor.text()
-            model.setData(index, text, Qt.ItemDataRole.EditRole)
+            controller.setAttributeData(index, text, Qt.ItemDataRole.EditRole)
         else:
             raise TypeError(f"Editor must be a QLineEdit, got {type(editor)} instead.")
 

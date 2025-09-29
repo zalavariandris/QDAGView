@@ -53,7 +53,6 @@ class QItemModel_GraphView(QGraphicsView):
     def __init__(self, delegate:GraphDelegate|None=None, parent: QWidget | None = None):
         super().__init__(parent=parent)
         self._model:QAbstractItemModel | None = None
-        self._model_connections: list[tuple[Signal, Slot]] = []
         self._selection:QItemSelectionModel | None = None
         self._selection_connections: list[tuple[Signal, Slot]] = []
 
@@ -112,7 +111,6 @@ class QItemModel_GraphView(QGraphicsView):
         scene.clear()
         self._widget_manager.clear()
         self._cell_manager.clear()
-
 
     def model(self) -> QAbstractItemModel | None:
         return self._model
@@ -185,8 +183,8 @@ class QItemModel_GraphView(QGraphicsView):
 
         link_widget.update()
 
-    ## Manage widgets lifecycle
-    def addNodeWidgetForIndex(self, row_index:QPersistentModelIndex)->QGraphicsItem:
+    ## Manage widgets
+    def _addNodeWidgetForIndex(self, row_index:QPersistentModelIndex)->QGraphicsItem:
         assert row_index.column() == 0, "Can only add node widget for column 0"
 
         # widget management
@@ -195,9 +193,10 @@ class QItemModel_GraphView(QGraphicsView):
 
         return row_widget
     
-    def addOutletWidgetForIndex(self, row_index:QPersistentModelIndex)->QGraphicsItem:
+    def _addOutletWidgetForIndex(self, row_index:QPersistentModelIndex)->QGraphicsItem:
+        assert row_index.column() == 0, "Can only add inlet widget for column 0"
         parent_node_widget = self._widget_manager.getWidget(row_index.parent())
-        assert isinstance(parent_node_widget, NodeWidget)
+
         # widget factory
         row_widget = self._factory.createOutletWidget(parent_node_widget, row_index, self)
 
@@ -206,7 +205,7 @@ class QItemModel_GraphView(QGraphicsView):
 
         return row_widget
 
-    def addInletWidgetForIndex(self, row_index:QPersistentModelIndex)->QGraphicsItem:
+    def _addInletWidgetForIndex(self, row_index:QPersistentModelIndex)->QGraphicsItem:
         assert row_index.column() == 0, "Can only add inlet widget for column 0"
         parent_node_widget = self._widget_manager.getWidget(row_index.parent())
 
@@ -218,7 +217,7 @@ class QItemModel_GraphView(QGraphicsView):
 
         return row_widget
 
-    def addLinkWidgetForIndex(self, link:QPersistentModelIndex)->QGraphicsItem:
+    def _addLinkWidgetForIndex(self, link:QPersistentModelIndex)->QGraphicsItem:
         inlet_index = self._controller.linkTarget(link)  # ensure target is valid
         parent_inlet_widget = self._widget_manager.getWidget(inlet_index)
         assert isinstance(parent_inlet_widget, PortWidget)
@@ -236,13 +235,9 @@ class QItemModel_GraphView(QGraphicsView):
         # self._link_manager.link(link_widget, source_widget, target_widget)
         self._update_link_position(link_widget, source_widget, target_widget)
 
-        # Add cells for each column
-        for attribute_index in self._controller.attributes(link):
-            self.addCellWidgetForIndex(attribute_index)
-
         return link_widget
-    
-    def addCellWidgetForIndex(self, cell_index:QModelIndex)->QGraphicsItem:
+
+    def _addCellWidgetForIndex(self, cell_index:QModelIndex)->QGraphicsItem:
         row_index = self._controller.attributeOwner(cell_index)
         row_widget = self._widget_manager.getWidget(row_index)
         cell_widget = self._factory.createCellWidget(row_widget, cell_index, self)
@@ -250,91 +245,92 @@ class QItemModel_GraphView(QGraphicsView):
         self._set_cell_data(cell_index, roles=[Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
         return cell_widget
 
-    def removeNodeWidgetForIndex(self, row_index:QPersistentModelIndex):
+    def _removeNodeWidgetForIndex(self, row_index:QPersistentModelIndex):
         # widget management
         if row_widget := self._widget_manager.getWidget(row_index):
             self._factory.destroyNodeWidget(self.scene(), row_widget)
             self._widget_manager.removeWidget(row_index)
 
-    def removeInletWidgetForIndex(self, row_index:QPersistentModelIndex):    
+    def _removeInletWidgetForIndex(self, row_index:QPersistentModelIndex):    
         # widget management
         if row_widget := self._widget_manager.getWidget(row_index):
             parent_widget = self._widget_manager.getWidget(row_index.parent())
             self._factory.destroyInletWidget(parent_widget, row_widget)
             self._widget_manager.removeWidget(row_index)
 
-    def removeOutletWidgetForIndex(self, row_index:QPersistentModelIndex):
+    def _removeOutletWidgetForIndex(self, row_index:QPersistentModelIndex):
         # widget management
         if row_widget := self._widget_manager.getWidget(row_index):
             parent_widget = self._widget_manager.getWidget(row_index.parent())
             self._factory.destroyOutletWidget(parent_widget, row_widget)
             self._widget_manager.removeWidget(row_index)
     
-    def removeLinkWidgetForIndex(self, link_index:QModelIndex):
+    def _removeLinkWidgetForIndex(self, link_index:QModelIndex):
         # widget management
         if link_widget := self._widget_manager.getWidget(link_index):
             parent_widget = self._widget_manager.getWidget(link_index.parent())
             self._factory.destroyLinkWidget(self.scene(), link_widget)
             self._widget_manager.removeWidget(link_index)
     
-    def removeCellWidgetForIndex(self, cell_index:QModelIndex):
+    def _removeCellWidgetForIndex(self, cell_index:QModelIndex):
         if cell_widget := self._cell_manager.getWidget(cell_index):
             row_index = self._controller.attributeOwner(cell_index)
             row_widget = self._widget_manager.getWidget(row_index)
             self._factory.destroyCellWidget(row_widget, cell_widget)
             self._cell_manager.removeWidget(cell_index)
 
-    ## Handle model changes
+    ## Handle model changes / Manage widget lifecycle
     def handleNodesInserted(self, node_indexes:List[QPersistentModelIndex]):
         for node_index in node_indexes:
-            self.addNodeWidgetForIndex(node_index)
+            self._addNodeWidgetForIndex(node_index)
             self.handleInletsInserted(self._controller.inlets(node_index))
             self.handleOutletsInserted(self._controller.outlets(node_index))
             self.handleAttributesInserted(self._controller.attributes(node_index))
 
     def handleOutletsInserted(self, outlet_indexes:List[QPersistentModelIndex]):
         for outlet_index in outlet_indexes:
-            self.addOutletWidgetForIndex(outlet_index)
+            self._addOutletWidgetForIndex(outlet_index)
             self.handleAttributesInserted(self._controller.attributes(outlet_index))
 
     def handleInletsInserted(self, inlet_indexes:List[QPersistentModelIndex]):
         for inlet_index in inlet_indexes:
-            self.addInletWidgetForIndex(inlet_index)
+            self._addInletWidgetForIndex(inlet_index)
             self.handleAttributesInserted(self._controller.attributes(inlet_index))
 
     def handleLinksInserted(self, link_indexes:List[QPersistentModelIndex]):
         for link_index in link_indexes:
-            self.addLinkWidgetForIndex(link_index)
+            self._addLinkWidgetForIndex(link_index)
             self.handleAttributesInserted(self._controller.attributes(link_index))
 
     def handleAttributesInserted(self, attributes:List[QPersistentModelIndex]):
         for attribute in attributes:
-            self.addCellWidgetForIndex(attribute)
+            self._addCellWidgetForIndex(attribute)
 
     def handleNodesRemoved(self, node_indexes:List[QPersistentModelIndex]):
         for node_index in node_indexes:
             self.handleAttributesRemoved(self._controller.attributes(node_index))
             self.handleInletsRemoved(self._controller.inlets(node_index))
             self.handleOutletsRemoved(self._controller.outlets(node_index))
-            self.removeNodeWidgetForIndex(node_index)
+            self._removeNodeWidgetForIndex(node_index)
 
     def handleInletsRemoved(self, inlet_indexes:List[QPersistentModelIndex]):
         for inlet_index in inlet_indexes:
-            self.removeInletWidgetForIndex(inlet_index)
+            self._removeInletWidgetForIndex(inlet_index)
 
     def handleOutletsRemoved(self, outlet_indexes:List[QPersistentModelIndex]):
         for outlet_index in outlet_indexes:
-            self.removeOutletWidgetForIndex(outlet_index)
+            self._removeOutletWidgetForIndex(outlet_index)
 
     def handleLinksRemoved(self, link_indexes:List[QPersistentModelIndex]):
         for link_index in link_indexes:
             self.handleAttributesRemoved(self._controller.attributes(link_index))
-            self.removeLinkWidgetForIndex(link_index)
+            self._removeLinkWidgetForIndex(link_index)
 
     def handleAttributesRemoved(self, attributes:List[QPersistentModelIndex]):
         for attribute in reversed(attributes):
-            self.removeCellWidgetForIndex(attribute)
+            self._removeCellWidgetForIndex(attribute)
 
+    ## Handle data changes
     def handleAttributeDataChanged(self, attributes:List[QPersistentModelIndex], roles:List[int]):
         for attribute in attributes:
             self._set_cell_data(attribute, roles)
@@ -509,7 +505,7 @@ class QItemModel_GraphView(QGraphicsView):
             return
             
         def onEditingFinished(editor:QLineEdit, cell_widget:CellWidget, index:QModelIndex):
-            self._delegate.setModelData(editor, self._model, index)
+            self._delegate.setModelData(editor, self._controller, index)
             editor.deleteLater()
             self._set_cell_data(index, roles=[Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
 
@@ -521,7 +517,7 @@ class QItemModel_GraphView(QGraphicsView):
             option.rect = rect
             option.state = QStyle.StateFlag.State_Enabled | QStyle.StateFlag.State_Active
             
-            editor = self._delegate.createEditor(self, option, index)
+            editor = self._delegate.createEditor(self, option, self._controller, index)
             if editor:
                 # Ensure the editor is properly positioned and shown
                 editor.setParent(self)
