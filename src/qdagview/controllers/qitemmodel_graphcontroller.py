@@ -66,8 +66,10 @@ class QItemModelGraphController(QObject):
                 signal.connect(slot)
 
         self._model = model
-
         self._link_manager.clear()
+
+        if self._model:
+            self.handleRowsInserted(QModelIndex(), 0, self._model.rowCount() - 1)
 
     def model(self) -> QAbstractItemModel | None:
         return self._model
