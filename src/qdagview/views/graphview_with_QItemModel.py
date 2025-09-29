@@ -241,48 +241,7 @@ class QItemModel_GraphView(QGraphicsView):
             self.addCellWidgetForIndex(attribute_index)
 
         return link_widget
-
-    def removeNodeWidgetForIndex(self, row_index:QPersistentModelIndex):
-        ## Remove cells
-        for attribute_index in reversed(self._controller.attributes(row_index)):
-            self.removeCellWidgetForIndex(attribute_index)
-
-        # inlets and outlets
-        for inlet_index in self._controller.inlets(row_index):
-            self.removeInletWidgetForIndex(inlet_index)
-        for outlet_index in self._controller.outlets(row_index):
-            self.removeOutletWidgetForIndex(outlet_index)
-
-        # widget management
-        row_widget = self._widget_manager.getWidget(row_index)
-        self._factory.destroyNodeWidget(self.scene(), row_widget)
-        self._widget_manager.removeWidget(row_index)
-
-    def removeInletWidgetForIndex(self, row_index:QPersistentModelIndex):    
-        ## Remove cells
-        for attribute_index in reversed(self._controller.attributes(row_index)):
-            self.removeCellWidgetForIndex(attribute_index)
-
-        # widget management
-        row_widget = self._widget_manager.getWidget(row_index)
-        parent_widget = self._widget_manager.getWidget(row_index.parent())
-        self._factory.destroyInletWidget(parent_widget, row_widget)
-        self._widget_manager.removeWidget(row_index)
-
-    def removeOutletWidgetForIndex(self, row_index:QPersistentModelIndex):
-        # widget management
-        row_widget = self._widget_manager.getWidget(row_index)
-        parent_widget = self._widget_manager.getWidget(row_index.parent())
-        self._factory.destroyOutletWidget(parent_widget, row_widget)
-        self._widget_manager.removeWidget(row_index)
     
-    def removeLinkWidgetForIndex(self, link_index:QModelIndex):
-        # widget management
-        link_widget = self._widget_manager.getWidget(link_index)
-        parent_widget = self._widget_manager.getWidget(link_index.parent())
-        self._factory.destroyLinkWidget(self.scene(), link_widget)
-        self._widget_manager.removeWidget(link_index)
-
     def addCellWidgetForIndex(self, cell_index:QModelIndex)->QGraphicsItem:
         row_index = self._controller.attributeOwner(cell_index)
         row_widget = self._widget_manager.getWidget(row_index)
@@ -290,6 +249,33 @@ class QItemModel_GraphView(QGraphicsView):
         self._cell_manager.insertWidget(cell_index, cell_widget)
         self._set_cell_data(cell_index, roles=[Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
         return cell_widget
+
+    def removeNodeWidgetForIndex(self, row_index:QPersistentModelIndex):
+        # widget management
+        if row_widget := self._widget_manager.getWidget(row_index):
+            self._factory.destroyNodeWidget(self.scene(), row_widget)
+            self._widget_manager.removeWidget(row_index)
+
+    def removeInletWidgetForIndex(self, row_index:QPersistentModelIndex):    
+        # widget management
+        if row_widget := self._widget_manager.getWidget(row_index):
+            parent_widget = self._widget_manager.getWidget(row_index.parent())
+            self._factory.destroyInletWidget(parent_widget, row_widget)
+            self._widget_manager.removeWidget(row_index)
+
+    def removeOutletWidgetForIndex(self, row_index:QPersistentModelIndex):
+        # widget management
+        if row_widget := self._widget_manager.getWidget(row_index):
+            parent_widget = self._widget_manager.getWidget(row_index.parent())
+            self._factory.destroyOutletWidget(parent_widget, row_widget)
+            self._widget_manager.removeWidget(row_index)
+    
+    def removeLinkWidgetForIndex(self, link_index:QModelIndex):
+        # widget management
+        if link_widget := self._widget_manager.getWidget(link_index):
+            parent_widget = self._widget_manager.getWidget(link_index.parent())
+            self._factory.destroyLinkWidget(self.scene(), link_widget)
+            self._widget_manager.removeWidget(link_index)
     
     def removeCellWidgetForIndex(self, cell_index:QModelIndex):
         if cell_widget := self._cell_manager.getWidget(cell_index):

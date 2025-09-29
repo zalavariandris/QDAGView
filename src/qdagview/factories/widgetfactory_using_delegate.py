@@ -219,7 +219,7 @@ class WidgetFactoryUsingDelegate(QObject):
         if not isinstance(parent_widget, NodeWidget):
             raise TypeError("Parent widget must be a NodeWidget")
         if not isinstance(widget, PortWidget):
-            raise TypeError("Widget must be an PortWidget")
+            raise TypeError("Widget must be an PortWidget, got:{widget}")
         
         parent_widget.removeInlet(widget)
         # Schedule widget for deletion - this automatically disconnects all signals
