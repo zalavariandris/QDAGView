@@ -8,7 +8,7 @@ from typing import List
 from qdagview.examples.flowgraphmodel import FlowGraphModel
 from qdagview.examples.flowgraph import ExpressionOperator
 from qdagview.views.graphview_with_QItemModel import QItemModel_GraphView
-from qdagview.controllers.qitemmodel_graphcontroller import QItemModelGraphController
+from qdagview.controllers.graphcontroller_for_qtreemodel import GraphController_for_QTreeModel
 
 import logging
 logger = logging.getLogger(__name__)
@@ -19,8 +19,8 @@ class MainWindow(QWidget):
         self.setWindowTitle("DataFlow")
         self.setGeometry(100, 100, 800, 600)
         self.tree_model = FlowGraphModel(self) # ground truth QItemModel
-        self.graph_controller = QItemModelGraphController()
-        self.graph_controller.setModel(self.tree_model)
+        self.graph_controller = GraphController_for_QTreeModel()
+        self.graph_controller.setSourceModel(self.tree_model)
         self.selection = QItemSelectionModel(self.tree_model)
 
         self.toolbar = QMenuBar(self)

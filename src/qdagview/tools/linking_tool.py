@@ -209,7 +209,7 @@ class LinkingTool:
 
         link_widget.setLine(line)
 
-    def finishLinking(self, target_index:QModelIndex)->bool:
+    def finishLinking(self, target_index:QModelIndex|None)->bool:
         """
         Finish linking operation.
         """
@@ -219,7 +219,7 @@ class LinkingTool:
             return False
         
         # Determine the drop target type
-        drop_target_type = self._controller.itemType(target_index)
+        drop_target_type = self._controller.itemType(target_index) if target_index and target_index.isValid() else None # TODO:cleanup
 
         # Determine the drag source type based on the mime data
         payload = self._linking_payload

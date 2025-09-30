@@ -3,7 +3,7 @@ from __future__ import annotations
 from ctypes import alignment
 import logging
 
-from qdagview.controllers.qitemmodel_graphcontroller import QItemModelGraphController
+from qdagview.controllers import GraphController_for_QTreeModel
 logger = logging.getLogger(__name__)
 
 from typing import *
@@ -100,14 +100,14 @@ class GraphDelegate(QObject):
         
         painter.restore()
 
-    def paintCell(self, painter:QPainter, option:QStyleOptionViewItem, controller:QItemModelGraphController, index: QModelIndex|QPersistentModelIndex):
+    def paintCell(self, painter:QPainter, option:QStyleOptionViewItem, controller:GraphController_for_QTreeModel, index: QModelIndex|QPersistentModelIndex):
         # Paint background
         painter.save()
         painter.drawText(option.rect, Qt.AlignmentFlag.AlignCenter, controller.attributeData(index, Qt.ItemDataRole.DisplayRole))
         painter.restore()
 
     ## Editors
-    def createEditor(self, parent:QWidget, option:QStyleOptionViewItem, controller:QItemModelGraphController, index:QModelIndex|QPersistentModelIndex) -> QWidget:
+    def createEditor(self, parent:QWidget, option:QStyleOptionViewItem, controller:GraphController_for_QTreeModel, index:QModelIndex|QPersistentModelIndex) -> QWidget:
         editor = QLineEdit(parent=parent)
         editor.setParent(parent)
         return editor
@@ -116,12 +116,12 @@ class GraphDelegate(QObject):
         print("updateEditorGeometry", option.rect)
         editor.setGeometry(option.rect)
         
-    def setEditorData(self, editor:QWidget, controller:QItemModelGraphController , index:QModelIndex|QPersistentModelIndex):
+    def setEditorData(self, editor:QWidget, controller:GraphController_for_QTreeModel , index:QModelIndex|QPersistentModelIndex):
         if isinstance(editor, QLineEdit):
             text = controller.attributeData(index, Qt.ItemDataRole.DisplayRole)
             editor.setText(text)
     
-    def setModelData(self, editor:QWidget, controller:QItemModelGraphController, index:QModelIndex|QPersistentModelIndex):
+    def setModelData(self, editor:QWidget, controller:GraphController_for_QTreeModel, index:QModelIndex|QPersistentModelIndex):
         if isinstance(editor, QLineEdit):
             text = editor.text()
             controller.setAttributeData(index, text, Qt.ItemDataRole.EditRole)

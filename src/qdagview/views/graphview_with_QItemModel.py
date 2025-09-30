@@ -44,21 +44,24 @@ class OutletWidget(PortWidget):
     pass
 
 from ..delegates.graphview_delegate import GraphDelegate
-from ..controllers.qitemmodel_graphcontroller import QItemModelGraphController
+from ..controllers import GraphController_for_QTreeModel
 # from .factories.widget_factory import WidgetFactory
 from ..factories.widgetfactory_using_delegate import WidgetFactoryUsingDelegate
+
+
+
 
 
 class QItemModel_GraphView(QGraphicsView):
     def __init__(self, delegate:GraphDelegate|None=None, parent: QWidget | None = None):
         super().__init__(parent=parent)
-        self._model:QAbstractItemModel | None = None
+        self._item_model:QAbstractItemModel | None = None
         self._selection:QItemSelectionModel | None = None
         self._selection_connections: list[tuple[Signal, Slot]] = []
 
         assert isinstance(delegate, GraphDelegate) or delegate is None, "Invalid delegate"
         self._delegate = delegate if delegate else GraphDelegate()
-        self._controller = QItemModelGraphController(parent=self)
+        self._controller = GraphController_for_QTreeModel(parent=self)
         self._controller_connections: list[tuple[Signal, Slot]] = []
         self._controller_connections = [
             (self._controller.nodesInserted,           self.handleNodesInserted),
@@ -101,8 +104,8 @@ class QItemModel_GraphView(QGraphicsView):
         self.setScene(scene)
         
     def setModel(self, model:QAbstractItemModel):
-        self._model = model
-        self._controller.setModel(model)
+        self._item_model = model
+        self._controller.setSourceModel(model)
         
         # populate initial scene
         ## clear
@@ -113,10 +116,10 @@ class QItemModel_GraphView(QGraphicsView):
         self._cell_manager.clear()
 
     def model(self) -> QAbstractItemModel | None:
-        return self._model
+        return self._item_model
     
     ## Index lookup
-    def rowAt(self, point:QPoint, filter_type:GraphItemType|None=None) -> QModelIndex|None:
+    def rowAt(self, point:QPoint, filter_type:GraphItemType|None=None) -> QPersistentModelIndex|None:
         all_widgets = set(self._widget_manager.widgets())
         for item in self.items(point):
             if item in all_widgets:
@@ -128,7 +131,7 @@ class QItemModel_GraphView(QGraphicsView):
                         return index
         return None
     
-    def attributeAt(self, point:QPoint) -> QModelIndex|None:
+    def attributeAt(self, point:QPoint) -> QPersistentModelIndex|None:
         """
         Find the index at the given position.
         point is in untransformed viewport coordinates, just like QMouseEvent::pos().
@@ -237,7 +240,7 @@ class QItemModel_GraphView(QGraphicsView):
 
         return link_widget
 
-    def _addCellWidgetForIndex(self, cell_index:QModelIndex)->QGraphicsItem:
+    def _addCellWidgetForIndex(self, cell_index:QPersistentModelIndex)->QGraphicsItem:
         row_index = self._controller.attributeOwner(cell_index)
         row_widget = self._widget_manager.getWidget(row_index)
         cell_widget = self._factory.createCellWidget(row_widget, cell_index, self)
@@ -265,14 +268,14 @@ class QItemModel_GraphView(QGraphicsView):
             self._factory.destroyOutletWidget(parent_widget, row_widget)
             self._widget_manager.removeWidget(row_index)
     
-    def _removeLinkWidgetForIndex(self, link_index:QModelIndex):
+    def _removeLinkWidgetForIndex(self, link_index:QPersistentModelIndex):
         # widget management
         if link_widget := self._widget_manager.getWidget(link_index):
             parent_widget = self._widget_manager.getWidget(link_index.parent())
             self._factory.destroyLinkWidget(self.scene(), link_widget)
             self._widget_manager.removeWidget(link_index)
     
-    def _removeCellWidgetForIndex(self, cell_index:QModelIndex):
+    def _removeCellWidgetForIndex(self, cell_index:QPersistentModelIndex):
         if cell_widget := self._cell_manager.getWidget(cell_index):
             row_index = self._controller.attributeOwner(cell_index)
             row_widget = self._widget_manager.getWidget(row_index)
@@ -330,21 +333,65 @@ class QItemModel_GraphView(QGraphicsView):
         for attribute in reversed(attributes):
             self._removeCellWidgetForIndex(attribute)
 
-    ## Handle data changes
+    ## Handle attributes data changes
     def handleAttributeDataChanged(self, attributes:List[QPersistentModelIndex], roles:List[int]):
         for attribute in attributes:
             self._set_cell_data(attribute, roles)
 
+    def _set_cell_data(self, index:QPersistentModelIndex, roles:list=[]):
+        """Set the data for a cell widget."""
+        assert index.isValid(), "Index must be valid"
+
+        if Qt.ItemDataRole.DisplayRole in roles or Qt.ItemDataRole.DisplayRole in roles or roles == []:
+            if cell_widget:= self._cell_manager.getWidget(index):
+                text = index.data(Qt.ItemDataRole.DisplayRole)
+                cell_widget.setText(text)
+
     ## Selection handling   
+    def setSelectionModel(self, selection: QItemSelectionModel):
+        """
+        Set the selection model for the graph view.
+        This is used to synchronize the selection of nodes in the graph view
+        with the selection model.
+        """
+        assert isinstance(selection, QItemSelectionModel), f"got: {selection}"
+        assert self._item_model, "Model must be set before setting the selection model!"
+        assert selection.model() == self._item_model, "Selection model must be for the same model as the graph view!"
+        if self._selection:
+            for signal, slot in self._selection_connections:
+                signal.disconnect(slot)
+            self._selection_connections = []
+        
+        if selection:
+            self._selection_connections = [
+                (selection.selectionChanged, self._handleSelectionChanged)
+            ]
+            for signal, slot in self._selection_connections:
+                signal.connect(slot)
+
+        self._selection = selection
+        
+        scene = self.scene()
+        assert scene is not None
+        scene.selectionChanged.connect(self._syncSelectionModel)
+
+    def selectionModel(self) -> QItemSelectionModel | None:
+        """
+        Get the current selection model for the graph view.
+        This is used to synchronize the selection of nodes in the graph view
+        with the selection model.
+        """
+        return self._selection
+    
     @Slot(QItemSelection, QItemSelection)
-    def handleSelectionChanged(self, selected:QItemSelection, deselected:QItemSelection):
+    def _handleSelectionChanged(self, selected:QItemSelection, deselected:QItemSelection):
         """
         Handle selection changes in the selection model.
         This updates the selection in the graph view.
         """
         assert self._selection, "Selection model must be set before handling selection changes!"
-        assert self._model, "Model must be set before handling selection changes!"
-        assert self._selection.model() == self._model, "Selection model must be for the same model as the graph view!"
+        assert self._item_model, "Model must be set before handling selection changes!"
+        assert self._selection.model() == self._item_model, "Selection model must be for the same model as the graph view!"
         if not selected or not deselected:
             return
         scene = self.scene()
@@ -371,47 +418,11 @@ class QItemModel_GraphView(QGraphicsView):
                         if widget.scene() and not widget.isSelected():
                             widget.setSelected(True)
 
-    # # Selection
-    def setSelectionModel(self, selection: QItemSelectionModel):
-        """
-        Set the selection model for the graph view.
-        This is used to synchronize the selection of nodes in the graph view
-        with the selection model.
-        """
-        assert isinstance(selection, QItemSelectionModel), f"got: {selection}"
-        assert self._model, "Model must be set before setting the selection model!"
-        assert selection.model() == self._model, "Selection model must be for the same model as the graph view!"
-        if self._selection:
-            for signal, slot in self._selection_connections:
-                signal.disconnect(slot)
-            self._selection_connections = []
-        
-        if selection:
-            self._selection_connections = [
-                (selection.selectionChanged, self.handleSelectionChanged)
-            ]
-            for signal, slot in self._selection_connections:
-                signal.connect(slot)
-
-        self._selection = selection
-        
-        scene = self.scene()
-        assert scene is not None
-        scene.selectionChanged.connect(self.syncSelectionModel)
-
-    def selectionModel(self) -> QItemSelectionModel | None:
-        """
-        Get the current selection model for the graph view.
-        This is used to synchronize the selection of nodes in the graph view
-        with the selection model.
-        """
-        return self._selection
-    
-    def syncSelectionModel(self):
+    def _syncSelectionModel(self):
         """update selection model from scene selection"""
         scene = self.scene()
         assert scene is not None
-        if self._model and self._selection:
+        if self._item_model and self._selection:
             # get currently selected widgets
             selected_widgets = scene.selectedItems()
 
@@ -419,7 +430,7 @@ class QItemModel_GraphView(QGraphicsView):
             selected_indexes = map(self._widget_manager.getIndex, selected_widgets)
             selected_indexes = filter(lambda idx: idx is not None and idx.isValid(), selected_indexes)
             
-            assert self._model
+            assert self._item_model
             def selectionFromIndexes(selected_indexes:Iterable[QModelIndex]) -> QItemSelection:
                 """Create a QItemSelection from a list of selected indexes."""
                 item_selection = QItemSelection()
@@ -441,16 +452,6 @@ class QItemModel_GraphView(QGraphicsView):
             else:
                 self._selection.clearSelection()
                 self._selection.setCurrentIndex(QModelIndex(), QItemSelectionModel.SelectionFlag.Current | QItemSelectionModel.SelectionFlag.Rows)
-
-    ##
-    def _set_cell_data(self, index:QModelIndex|QPersistentModelIndex, roles:list=[]):
-        """Set the data for a cell widget."""
-        assert index.isValid(), "Index must be valid"
-
-        if Qt.ItemDataRole.DisplayRole in roles or Qt.ItemDataRole.DisplayRole in roles or roles == []:
-            if cell_widget:= self._cell_manager.getWidget(index):
-                text = index.data(Qt.ItemDataRole.DisplayRole)
-                cell_widget.setText(text)
 
     ## Handle mouse events
     def mousePressEvent(self, event):
@@ -496,7 +497,7 @@ class QItemModel_GraphView(QGraphicsView):
     def mouseDoubleClickEvent(self, event:QMouseEvent):
         index = self.attributeAt(QPoint(int(event.position().x()), int(event.position().y())))
 
-        if not index.isValid():
+        if index is None or not index.isValid():
             idx = self._controller.addNode(QModelIndex())
             if widget := self._widget_manager.getWidget(idx):
                 center = widget.boundingRect().center()
