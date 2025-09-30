@@ -577,6 +577,10 @@ class GraphController_for_QTreeModel(QObject):
     ## CREATE
     def addNode(self, subgraph:QModelIndex|QPersistentModelIndex=QModelIndex())->QPersistentModelIndex|None:
         position = self._source_model.rowCount(subgraph)
+        if self._source_model.columnCount(subgraph) == 0:
+            # Make sure the parent has at least one column for children, otherwise the treeview won't show them
+            self._source_model.insertColumns(0, 1, subgraph)
+
         if self._source_model.insertRows(position, 1, subgraph):
             new_index = self._source_model.index(position, 0, subgraph)
             assert new_index.isValid(), "Created index is not valid"
@@ -787,6 +791,3 @@ class GraphController_for_QTreeModel(QObject):
                     logger.warning(f"Failed to remove rows {start_row}-{start_row + count - 1} from parent {parent}")
         
         return success
-
-                
-                
