@@ -218,7 +218,7 @@ class GraphController_for_QTreeModel(QObject):
 
         if GraphDataRole.TypeRole in roles or roles == []:
             # if an inlet or outlet type is changed, we need to update the widget
-            raise NotImplementedError("Changing item type is not supported yet.")
+                raise NotImplementedError("Changing item type is not supported yet.")
 
         # collect attribute columns
         parent_index = top_left.parent().siblingAtColumn(0)
@@ -433,7 +433,7 @@ class GraphController_for_QTreeModel(QObject):
                 nodes.append(index)
         return nodes
     
-    def inlets(self, node:QModelIndex|QPersistentModelIndex) -> List[QPersistentModelIndex]:
+    def inlets(self, node_ref:QPersistentModelIndex) -> List[QPersistentModelIndex]:
         """
         Get a list of inlet indexes for a given node.
         Args:
@@ -441,15 +441,16 @@ class GraphController_for_QTreeModel(QObject):
         Returns:
             List[QModelIndex]: A list of inlet indexes for the node.
         """
-        assert self.itemType(node) == GraphItemType.NODE, "Node index must be of type NODE"
+        assert self.itemType(node_ref) == GraphItemType.NODE, "Node index must be of type NODE"
+        node_idx = QModelIndex(node_ref)
         inlets = []
-        for row in range(self._source_model.rowCount(node)):
-            child_index = self._source_model.index(row, 0, node)
+        for row in range(self._source_model.rowCount(node_idx)):
+            child_index = self._source_model.index(row, 0, node_idx)
             if self.itemType(child_index) == GraphItemType.INLET:
                 inlets.append(child_index)
         return [QPersistentModelIndex(inlet) for inlet in inlets]
 
-    def outlets(self, node:QPersistentModelIndex) -> List[QPersistentModelIndex]:
+    def outlets(self, node_ref:QPersistentModelIndex) -> List[QPersistentModelIndex]:
         """
         Get a list of outlet indexes for a given node.
         Args:
@@ -457,10 +458,11 @@ class GraphController_for_QTreeModel(QObject):
         Returns:
             List[QModelIndex]: A list of outlet indexes for the node.
         """
-        assert self.itemType(node) == GraphItemType.NODE, "Node index must be of type NODE"
+        assert self.itemType(node_ref) == GraphItemType.NODE, "Node index must be of type NODE"
+        node_idx = QModelIndex(node_ref)
         outlets = []
-        for row in range(self._source_model.rowCount(node)):
-            child_index = self._source_model.index(row, 0, node)
+        for row in range(self._source_model.rowCount(node_idx)):
+            child_index = self._source_model.index(row, 0, node_idx)
             if self.itemType(child_index) == GraphItemType.OUTLET:
                 outlets.append(child_index)
         return [QPersistentModelIndex(outlet) for outlet in outlets]
@@ -587,18 +589,18 @@ class GraphController_for_QTreeModel(QObject):
             return QPersistentModelIndex(new_index)
         return None
 
-    def addInlet(self, node:QModelIndex|QPersistentModelIndex)->QPersistentModelIndex|None:
-        assert node.isValid(), "Node index must be valid"
-        assert self.itemType(node) == GraphItemType.NODE, "Node index must be of type NODE"
-        
+    def addInlet(self, node_ref:QPersistentModelIndex)->QPersistentModelIndex|None:
+        assert node_ref.isValid(), "Node index must be valid"
+        assert self.itemType(node_ref) == GraphItemType.NODE, "Node index must be of type NODE"
+        node_idx = QModelIndex(node_ref)
         # Make sure the parent has at least one column for children, otherwise the treeview won't show them
-        if self._source_model.columnCount(node) == 0:
-            self._source_model.insertColumns(0, 1, node)
+        if self._source_model.columnCount(node_idx) == 0:
+            self._source_model.insertColumns(0, 1, node_idx)
 
         # Append child to the selected item using generic methods
-        position = self._source_model.rowCount(node)
-        if self._source_model.insertRows(position, 1, node):
-            new_index = self._source_model.index(position, 0, node)
+        position = self._source_model.rowCount(node_idx)
+        if self._source_model.insertRows(position, 1, node_idx):
+            new_index = self._source_model.index(position, 0, node_idx)
             assert new_index.isValid(), "Created index is not valid"
             new_inlet_name = f"{'in'}#{position + 1}"
             success = self._source_model.setData(new_index, new_inlet_name, Qt.ItemDataRole.DisplayRole)
@@ -607,17 +609,18 @@ class GraphController_for_QTreeModel(QObject):
             return QPersistentModelIndex(new_index)
         return None
 
-    def addOutlet(self, model:QAbstractItemModel, node:QModelIndex|QPersistentModelIndex)->QPersistentModelIndex|None:
-        assert node.isValid(), "Node index must be valid"
-        assert self.itemType(node) == GraphItemType.NODE, "Node index must be of type NODE"
-        
-        if self._source_model.columnCount(node) == 0:
-            # Make sure the parent has at least one column for children, otherwise the treeview won't show them
-            self._source_model.insertColumns(0, 1, node)
+    def addOutlet(self, node_ref:QPersistentModelIndex)->QPersistentModelIndex|None:
+        assert node_ref.isValid(), "Node index must be valid"
+        assert self.itemType(node_ref) == GraphItemType.NODE, "Node index must be of type NODE"
+        node_idx = QModelIndex(node_ref)
 
-        position = self._source_model.rowCount(node)
-        if self._source_model.insertRows(position, 1, node):
-            new_index = self._source_model.index(position, 0, node)
+        if self._source_model.columnCount(node_idx) == 0:
+            # Make sure the parent has at least one column for children, otherwise the treeview won't show them
+            self._source_model.insertColumns(0, 1, node_idx)
+
+        position = self._source_model.rowCount(node_idx)
+        if self._source_model.insertRows(position, 1, node_idx):
+            new_index = self._source_model.index(position, 0, node_idx)
             assert new_index.isValid(), "Created index is not valid"
             new_outlet_name = f"{'out'}#{position + 1}"
             success = self._source_model.setData(new_index, new_outlet_name, Qt.ItemDataRole.DisplayRole)
@@ -626,7 +629,7 @@ class GraphController_for_QTreeModel(QObject):
             return QPersistentModelIndex(new_index)
         return None
 
-    def addLink(self, outlet:QModelIndex|QPersistentModelIndex, inlet:QModelIndex|QPersistentModelIndex)->QPersistentModelIndex|None:
+    def addLink(self, outlet:QPersistentModelIndex, inlet:QPersistentModelIndex)->QPersistentModelIndex|None:
         """Add a child item to the currently selected item."""
         assert self._source_model is not None, "Source model must be set before adding child items"
         assert isinstance(outlet, (QModelIndex, QPersistentModelIndex)), f"outlet must be a QModelIndex got: {outlet}"
@@ -658,7 +661,7 @@ class GraphController_for_QTreeModel(QObject):
         return None
 
     ## UPDATE
-    def setLinkSource(self, link:QModelIndex|QPersistentModelIndex, source:QModelIndex|QPersistentModelIndex)->bool:
+    def setLinkSource(self, link:QPersistentModelIndex, source:QPersistentModelIndex)->bool:
         """
         Set the source of a link.
         This sets the source of the link at the specified index to the given source index.
@@ -670,7 +673,7 @@ class GraphController_for_QTreeModel(QObject):
         return self._source_model.setData(link, persistent_source, role=GraphDataRole.SourceRole)
 
     ## DELETE
-    def removeNode(self, node:QModelIndex|QPersistentModelIndex)->bool:
+    def removeNode(self, node:QPersistentModelIndex)->bool:
         """
         Remove a node from the graph.
         This removes the node at the specified index from the model.
@@ -684,7 +687,7 @@ class GraphController_for_QTreeModel(QObject):
         # Simply remove the node - handleRowsAboutToBeRemoved will handle connected links
         return self._source_model.removeRows(node.row(), 1, node.parent())
     
-    def removeLink(self, link:QModelIndex|QPersistentModelIndex)->bool:
+    def removeLink(self, link:QPersistentModelIndex)->bool:
         """
         Remove a link from the graph.
         This removes the link at the specified index from the model.
@@ -694,7 +697,7 @@ class GraphController_for_QTreeModel(QObject):
         assert link.isValid(), "Link index must be valid"
         return self._source_model.removeRows(link.row(), 1, link.parent())
 
-    def batchRemove(self, indexes: List[QModelIndex|QPersistentModelIndex])->bool:
+    def batchRemove(self, indexes: List[QPersistentModelIndex])->bool:
         """
         Batch remove multiple items from the graph.
         

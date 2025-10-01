@@ -25,10 +25,22 @@ def test_model_in_sync(graph_controller_setup: tuple[QStandardItemModel, GraphCo
     model, controller = graph_controller_setup
 
     ## Add a node first
-    node_ref = controller.addNode()
-    assert model.rowCount() == 1
-    assert controller.nodes() == [node_ref]
+    node_ref1 = controller.addNode()
+    node_idx = QPersistentModelIndex(node_ref1)
+    assert node_idx.isValid()
+    assert controller.nodes() == [node_idx]
 
+    ## add inlet to the node
+    inlet_ref1 = controller.addInlet(node_ref1)
+    inlet_idx = QPersistentModelIndex(inlet_ref1)
+    assert inlet_idx.isValid()
+    assert controller.inlets(node_ref1) == [inlet_idx]
+
+    ## add outlet to the node
+    outlet_ref1 = controller.addOutlet(node_ref1)
+    outlet_idx = QPersistentModelIndex(outlet_ref1)
+    assert outlet_idx.isValid()
+    assert controller.outlets(node_ref1) == [outlet_idx]
 
 def test_controller_in_sync(graph_controller_setup: tuple[QStandardItemModel, GraphController_for_QTreeModel]):
     """Test adding an inlet to a node."""
