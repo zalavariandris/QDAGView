@@ -1,8 +1,8 @@
 # Views package - visual components and widgets
 
-from .graphview_with_QItemModel import QItemModel_GraphView
+from .graphview_with_BaseGraphController import QDagView
 
 __all__ = [
     # Main view components
-    'QItemModel_GraphView',
+    'QDagView',
 ]

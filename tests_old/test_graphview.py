@@ -30,7 +30,7 @@ from qtpy.QtWidgets import *
 
 # model
 from core import GraphDataRole
-from qdagview.examples.flowgraphmodel import FlowGraphModel
+from app.dataflow_app.flowgraphmodel import FlowGraphModel
 from qdagview.models.graphhelper import ItemGraphHelper
 
 # view

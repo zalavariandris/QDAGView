@@ -9,9 +9,9 @@ logger = logging.getLogger(__name__)
 
 
 from ..core import indexToPath, indexFromPath
-from . import WidgetIndexManagerProtocol
+from . import WidgetManagerProtocol
 
-class TreeWidgetIndexManager(WidgetIndexManagerProtocol):
+class TreeWidgetIndexManager(WidgetManagerProtocol):
     """Handles widgets mapping to model indexes."""
     def __init__(self):
         # Root container for the tree structure - can have arbitrary depth

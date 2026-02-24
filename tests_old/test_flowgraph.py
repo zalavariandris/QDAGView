@@ -6,7 +6,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from qdagview.utils.code_analyzer import CodeAnalyzer
-from qdagview.examples.flowgraph import (
+from app.dataflow_app.flowgraph import (
     FlowGraph,
     ExpressionOperator,
     Inlet,

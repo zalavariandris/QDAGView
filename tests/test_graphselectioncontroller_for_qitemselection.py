@@ -9,22 +9,22 @@ from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 
 
-from qdagview.controllers import GraphController_for_QTreeModel
-from qdagview.controllers import GraphSelectionController_for_QItemSelectionModel
+from qdagview.controllers import QTreeModel_GraphController
+from qdagview.controllers import QTreeModel_GraphSelectionController
 
 
 
 
 @pytest.fixture
-def graph_view_setup(qtbot)->tuple[QStandardItemModel, QItemSelectionModel, GraphController_for_QTreeModel, GraphSelectionController_for_QItemSelectionModel]:
+def graph_view_setup(qtbot)->tuple[QStandardItemModel, QItemSelectionModel, QTreeModel_GraphController, QTreeModel_GraphSelectionController]:
     """Setup graph components for testing."""
     item_model = QStandardItemModel()
     item_selection = QItemSelectionModel(item_model)
 
-    graph_controller = GraphController_for_QTreeModel()
+    graph_controller = QTreeModel_GraphController()
     graph_controller.setSourceModel(item_model)
     
-    graph_selection = GraphSelectionController_for_QItemSelectionModel(graph_controller, item_selection)
+    graph_selection = QTreeModel_GraphSelectionController(graph_controller, item_selection)
 
     return item_model, item_selection, graph_controller, graph_selection
 

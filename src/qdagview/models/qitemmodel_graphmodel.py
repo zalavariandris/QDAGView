@@ -19,6 +19,7 @@ from ..managers import LinkingManager
 
 from .abstract_graphmodel import AbstractGraphModel
 
+
 class QItemModelGraphModel(AbstractGraphModel):
     """
     Controller for a graph backed by a QAbstractItemModel.

@@ -7,14 +7,13 @@ from qtpy.QtGui import *
 
 from collections import defaultdict
 
-from ..core import GraphDataRole, GraphItemType
+from qdagview.core import GraphDataRole, GraphItemType
 
-
-from .flowgraph import FlowGraph, ExpressionOperator, Inlet, Outlet, Link
+from flowgraph import FlowGraph, ExpressionOperator, Inlet, Outlet, Link
 import logging
 logger = logging.getLogger(__name__)
 
-from ..utils import make_unique_name
+from qdagview.utils import make_unique_name
 
 
 class FlowGraphModel(QAbstractItemModel):

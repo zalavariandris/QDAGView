@@ -89,11 +89,12 @@ class NodeWidget(QGraphicsItem):
     def boundingRect(self):
         return QRectF(0, 0, 64, 20)
     
-    def paint(self, painter: QPainter, option: QStyleOption, widget=None):
+    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget=None):
         rect = option.rect
         
         palette = self.scene().palette()
         painter.setBrush(palette.alternateBase())
+
         if self.isSelected():
             painter.setBrush(palette.highlight())
 

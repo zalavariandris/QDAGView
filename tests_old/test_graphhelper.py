@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core import (
     GraphDataRole
 )
-from qdagview.examples.flowgraphmodel import (
+from app.dataflow_app.flowgraphmodel import (
     FlowGraphModel
 )
 

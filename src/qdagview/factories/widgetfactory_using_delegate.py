@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import weakref
+
+from qdagview.core.base_types import PortT
 logger = logging.getLogger(__name__)
 
 from typing import *
@@ -17,14 +19,14 @@ from ..widgets import (
 import weakref
 
 if TYPE_CHECKING:
-    from ..views.graphview_with_QItemModel import QItemModel_GraphView
+    from ..views.graphview_with_BaseGraphController import QDagView
 
-def makeViewOption(option_graphics:QStyleOptionGraphicsItem, index:QModelIndex, widget=None):
+def makeViewOption(option_graphics:QStyleOptionGraphicsItem, index:QModelIndex, widget=None)->QStyleOptionViewItem:
     """
     Convert a QStyleOptionGraphicsItem + QModelIndex into a QStyleOptionViewItem.
     """
     assert isinstance(option_graphics, QStyleOptionGraphicsItem)
-    assert isinstance(index, QModelIndex), f"Expected QModelIndex, got {type(index)}"
+    # assert isinstance(index, QPersistentModelIndex), f"Expected QPersistentModelIndex, got {type(index)}"
     opt = QStyleOptionViewItem()
 
     # Geometry
@@ -41,21 +43,22 @@ def makeViewOption(option_graphics:QStyleOptionGraphicsItem, index:QModelIndex, 
         opt.palette = QApplication.palette()
         opt.font = QApplication.font()
 
-    # Text & icon (from model data)
-    opt.text = str(index.data(Qt.DisplayRole)) if index.isValid() else ""
-    icon_data = index.data(Qt.DecorationRole) if index.isValid() else None
-    opt.icon = icon_data if icon_data is not None else QIcon()
+    # TODO: Note. we used to use this function, to provide data for the QGraphicsItem paint method? REview its usage.
+    # # Text & icon (from model data)
+    # opt.text = str(index.data(Qt.DisplayRole)) if index.isValid() else ""
+    # icon_data = index.data(Qt.DecorationRole) if index.isValid() else None
+    # opt.icon = icon_data if icon_data is not None else QIcon()
 
-    # Alignment (from model or default)
-    alignment = index.data(Qt.TextAlignmentRole)
-    opt.displayAlignment = alignment if alignment is not None else Qt.AlignLeft | Qt.AlignVCenter
+    # # Alignment (from model or default)
+    # alignment = index.data(Qt.TextAlignmentRole)
+    # opt.displayAlignment = alignment if alignment is not None else Qt.AlignLeft | Qt.AlignVCenter
 
-    # Check state (for checkboxes, if provided by model)
-    check_state = index.data(Qt.CheckStateRole)
-    if check_state is not None:
-        opt.checkState = check_state
-    else:
-        opt.checkState = Qt.Unchecked
+    # # Check state (for checkboxes, if provided by model)
+    # check_state = index.data(Qt.CheckStateRole)
+    # if check_state is not None:
+    #     opt.checkState = check_state
+    # else:
+    #     opt.checkState = Qt.Unchecked
 
     # Features (optional: mark if it has checkboxes, etc.)
     # TODO: Set features based on model data if needed
@@ -63,8 +66,9 @@ def makeViewOption(option_graphics:QStyleOptionGraphicsItem, index:QModelIndex, 
 
     return opt
 
+
 class NodeWidgetWithDelegate(NodeWidget):
-    def __init__(self, graphview: QItemModel_GraphView, parent: QGraphicsItem | None = None):
+    def __init__(self, graphview: QDagView, parent: QGraphicsItem | None = None):
         super().__init__(parent)
         self._graphview = weakref.ref(graphview)
 
@@ -74,17 +78,18 @@ class NodeWidgetWithDelegate(NodeWidget):
             if index is None:
                 return # If index is None, the widget is being removed - skip painting
             opt = makeViewOption(option, index, graphview)
-            graphview._delegate.paintNode(painter, opt, index)
+            graphview._delegate.paintNode(painter, opt, index, self._graphview()._graph_controller)
         else:
             super().paint(painter, option, widget)
 
 
 class InletWidgetWithDelegate(PortWidget):
-    def __init__(self, graphview: QItemModel_GraphView, parent: QGraphicsItem | None = None):
+    def __init__(self, graphview: QDagView, parent: QGraphicsItem | None = None):
         super().__init__(parent)
         self._graphview = weakref.ref(graphview)
 
     def paint(self, painter: QPainter, option: QStyleOption, widget=None):
+        painter.drawRect(self.boundingRect()) # for debugging
         if graphview:=self._graphview():
             index = graphview._widget_manager.getIndex(self)
             if index is None:
@@ -92,13 +97,30 @@ class InletWidgetWithDelegate(PortWidget):
                 # no painting should be invoked after it has been removed from the scene right?
                 return # If index is None, the widget is being removed - skip painting
             opt = makeViewOption(option, index, graphview)
-            graphview._delegate.paintInlet(painter, opt, index)
+            opt.rect = QRect(0, 0, 18, 18) # Inlets and outlets have a fixed size
+            graphview._delegate.paintInlet(painter, opt, index, self._graphview()._graph_controller)
         else:
             super().paint(painter, option, widget)
 
+    def boundingRect(self):
+        if graphview:=self._graphview():
+            index = graphview._widget_manager.getIndex(self)
+            if index is None:
+                # TODO: revisit this logic. 
+                # no painting should be invoked after it has been removed from the scene right?
+                return QRectF() # If index is None, the widget is being removed - skip painting
+            
+            opt = makeViewOption(QStyleOptionGraphicsItem(), index, graphview)
+            rect = graphview._delegate.boundingRectInlet(opt, index, self._graphview()._graph_controller)
+            print("InletWidgetWithDelegate.boundingRect", rect)
+            return rect
+        
+        else:
+            return super().boundingRect()
+
 
 class OutletWidgetWithDelegate(PortWidget):
-    def __init__(self, graphview: QItemModel_GraphView, parent: QGraphicsItem | None = None):
+    def __init__(self, graphview: QDagView, parent: QGraphicsItem | None = None):
         super().__init__(parent)
         self._graphview = weakref.ref(graphview)
 
@@ -108,13 +130,13 @@ class OutletWidgetWithDelegate(PortWidget):
             if index is None:
                 return # If index is None, the widget is being removed - skip painting
             opt = makeViewOption(option, index, graphview)
-            graphview._delegate.paintInlet(painter, opt, index)
+            graphview._delegate.paintInlet(painter, opt, index, self._graphview()._graph_controller)
         else:
             super().paint(painter, option, widget)
 
 
 class LinkWidgetWithDelegate(LinkWidget):
-    def __init__(self, graphview: QItemModel_GraphView, parent: QGraphicsItem | None = None):
+    def __init__(self, graphview: QDagView, parent: QGraphicsItem | None = None):
         super().__init__(parent)
         self._graphview = weakref.ref(graphview)
 
@@ -124,8 +146,8 @@ class LinkWidgetWithDelegate(LinkWidget):
             if index is None:
                 return # If index is None, the widget is being removed - skip painting
             opt = makeViewOption(option, index, graphview)
-            outlet_index = graphview._controller.linkSource(index)
-            inlet_index = graphview._controller.linkTarget(index)
+            outlet_index = graphview._graph_controller.linkSource(index)
+            inlet_index = graphview._graph_controller.linkTarget(index)
             if outlet_index is None or inlet_index is None:
                 return
             outlet_widget = graphview._widget_manager.getWidget(outlet_index)
@@ -146,14 +168,14 @@ class LinkWidgetWithDelegate(LinkWidget):
                 else:  # Target is top-left
                     opt.decorationAlignment = Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
 
-            graphview._delegate.paintLink(painter, opt, index)
+            graphview._delegate.paintLink(painter, opt, index, self._graphview()._graph_controller)
         
         else:
             super().paint(painter, option, widget)
 
 
 class CellWidgetWithDelegate(CellWidget):
-    def __init__(self, graphview: QItemModel_GraphView, parent: QGraphicsItem | None = None):
+    def __init__(self, graphview: QDagView, parent: QGraphicsItem | None = None):
         super().__init__(parent)
         self._graphview = weakref.ref(graphview)
 
@@ -162,117 +184,123 @@ class CellWidgetWithDelegate(CellWidget):
             index = graphview._cell_manager.getIndex(self)
             if index is not None:
                 opt = makeViewOption(option, index, graphview)
-                graphview._delegate.paintCell(painter, opt, graphview._controller, index)
+                graphview._delegate.paintCell(painter, opt, graphview._graph_controller, index)
             # If index is None, the widget is being removed - skip painting
         else:
             super().paint(painter, option, widget)
 
 
 class WidgetFactoryUsingDelegate(QObject):
-    portPositionChanged = Signal(QPersistentModelIndex)
+    portPositionChanged = Signal(object) #(QPersistentModelIndex) TODO: this might become a NodeRef object latyer
 
     ## Widget Factory
-    @override
     def createNodeWidget(self, parent_widget: QGraphicsScene, index: QModelIndex, graphview) -> 'NodeWidget':
         if not isinstance(parent_widget, QGraphicsScene):
             raise TypeError("Parent widget must be a QGraphicsScene")
-        if not index.isValid():
-            raise ValueError("Index must be valid")
+        # if not index.isValid():
+        #     raise ValueError("Index must be valid")
 
         widget = NodeWidgetWithDelegate(graphview)
         parent_widget.addItem(widget)
         return widget
 
-    @override
     def destroyNodeWidget(self, parent_widget: QGraphicsScene, widget: NodeWidgetWithDelegate):
         if not isinstance(parent_widget, QGraphicsScene):
-            raise TypeError("Parent widget must be a QGraphicsScene")
+            raise TypeError(f"Parent widget must be a QGraphicsScene, got {type(parent_widget)}")
         if not isinstance(widget, NodeWidgetWithDelegate):
-            raise TypeError("Widget must be a NodeWidgetWithDelegate")
+            raise TypeError(f"Widget must be a NodeWidgetWithDelegate, got {type(widget)}")
 
         parent_widget.removeItem(widget)
 
-    @override
-    def createInletWidget(self, parent_widget: NodeWidgetWithDelegate, index: QModelIndex, graphview) -> PortWidget:
+    def createInletWidget(self, parent_widget: NodeWidgetWithDelegate, index: PortT, graphview) -> PortWidget:
         if not isinstance(parent_widget, NodeWidgetWithDelegate):
-            raise TypeError("Parent widget must be a NodeWidget")
-        if not index.isValid():
-            raise ValueError("Index must be valid")
+            raise TypeError(f"Parent widget must be a NodeWidgetWithDelegate, got {type(parent_widget)}")
+        
+        # if not index.isValid():
+        #     raise ValueError("Index must be valid")
 
+        # get inlet position from graph controller TODO: this is a bit hacky, we should have a cleaner way to get the port position without relying on the graph controller
+        graph_controller = graphview._graph_controller
+        node_ref = graph_controller.inletNode(index)
+        inlets = graph_controller.inlets(node_ref) # Ensure inlets are loaded for the node
+        pos = inlets.index(index)
+        if pos == -1:
+            raise ValueError(f"Port {index} is not an inlet of node {node_ref}")
+        
         widget = InletWidgetWithDelegate(graphview)
-        parent_widget.insertInlet(index.row(), widget)
+        parent_widget.insertInlet(pos, widget)
         
         # Store the persistent index directly on the widget
         # This avoids closure issues entirely
-        persistent_index = QPersistentModelIndex(index)
-        widget.setProperty("modelIndex", persistent_index)
+        # persistent_index = QPersistentModelIndex(index)
+        widget.setProperty("modelIndex", index)
         
         # Connect using a simple lambda that gets the property
         widget.scenePositionChanged.connect(
             lambda: self.portPositionChanged.emit(widget.property("modelIndex")) 
-            if widget.property("modelIndex").isValid() else None
+            # if widget.property("modelIndex").isValid() else None
         )
         return widget
     
-    @override
     def destroyInletWidget(self, parent_widget: NodeWidget, widget: PortWidget):
         if not isinstance(parent_widget, NodeWidget):
-            raise TypeError("Parent widget must be a NodeWidget")
+            raise TypeError(f"Parent widget must be a NodeWidget, got {type(parent_widget)}")
         if not isinstance(widget, PortWidget):
-            raise TypeError("Widget must be an PortWidget, got:{widget}")
+            raise TypeError(f"Widget must be a PortWidget, got {type(widget)}")
         
         parent_widget.removeInlet(widget)
         # Schedule widget for deletion - this automatically disconnects all signals
         widget.deleteLater()
     
-    @override
     def createOutletWidget(self, parent_widget: NodeWidget, index: QModelIndex, graphview) -> PortWidget:
         if not isinstance(parent_widget, NodeWidget):
-            raise TypeError("Parent widget must be a NodeWidget")
-        if not index.isValid():
-            raise ValueError("Index must be valid")
+            raise TypeError(f"Parent widget must be a NodeWidget, got {type(parent_widget)}")
+        # if not index.isValid():
+        #     raise ValueError("Index must be valid")
+        
+        # get outlet position from graph controller TODO: this is a bit hacky, we should have a cleaner way to get the port position without relying on the graph controller
+        graph_controller = graphview._graph_controller
+        node_ref = graph_controller.outletNode(index)
+        outlets = graph_controller.outlets(node_ref) # Ensure outlets are loaded for the node
+        pos = outlets.index(index)
+        if pos == -1:
+            raise ValueError(f"Port {index} is not an outlet of node {node_ref}")
 
         widget = OutletWidgetWithDelegate(graphview)
-        # Fix: Use actual row position instead of hardcoded 0
-        outlet_position = index.row()
-        parent_widget.insertOutlet(outlet_position, widget)
+        parent_widget.insertOutlet(pos, widget)
         
         # Store the persistent index directly on the widget
         # This avoids closure issues entirely
-        persistent_index = QPersistentModelIndex(index)
-        widget.setProperty("modelIndex", persistent_index)
+        widget.setProperty("modelIndex", index)
         
         # Connect using a simple lambda that gets the property
         widget.scenePositionChanged.connect(
             lambda: self.portPositionChanged.emit(widget.property("modelIndex")) 
-            if widget.property("modelIndex").isValid() else None
+            # if widget.property("modelIndex").isValid() else None
         )
         return widget
     
-    @override
     def destroyOutletWidget(self, parent_widget: NodeWidget, widget: PortWidget):
         if not isinstance(parent_widget, NodeWidget):
-            raise TypeError("Parent widget must be a NodeWidget")
+            raise TypeError(f"Parent widget must be a NodeWidget, got {type(parent_widget)}")
         if not isinstance(widget, PortWidget):
-            raise TypeError("Widget must be a PortWidget")
+            raise TypeError(f"Widget must be a PortWidget, got {type(widget)}")
 
         parent_widget.removeOutlet(widget)
         # Schedule widget for deletion - this automatically disconnects all signals
         widget.deleteLater()
         
-    @override
     def createLinkWidget(self, scene: QGraphicsScene, index: QModelIndex, graphview) -> LinkWidget:
         """Create a link widget. Links are added directly to the scene."""
         if not isinstance(scene, QGraphicsScene):
             raise TypeError("Scene must be a QGraphicsScene")
-        if not index.isValid():
-            raise ValueError("Index must be valid")
+        # if not index.isValid():
+        #     raise ValueError("Index must be valid")
 
         link_widget = LinkWidgetWithDelegate(graphview)
         scene.addItem(link_widget)  # Links are added to the scene, not to the inlet widget
         return link_widget
     
-    @override
     def destroyLinkWidget(self, scene: QGraphicsScene, widget: LinkWidget):
         if not isinstance(scene, QGraphicsScene):
             raise TypeError("Scene must be a QGraphicsScene")
@@ -283,18 +311,17 @@ class WidgetFactoryUsingDelegate(QObject):
         # Schedule widget for deletion to prevent memory leaks
         widget.deleteLater()
 
-    @override
     def createCellWidget(self, parent_widget: NodeWidget|PortWidget|LinkWidget, index: QModelIndex, graphview) -> CellWidget:
         if not isinstance(parent_widget, (NodeWidget, PortWidget, LinkWidget)):
             raise TypeError(f"Parent widget must be a NodeWidget, PortWidget, or LinkWidget, got {parent_widget}")
-        if not index.isValid():
-            raise ValueError("Index must be valid")
+        # if not index.isValid():
+        #     raise ValueError("Index must be valid")
 
         cell = CellWidgetWithDelegate(graphview)
-        parent_widget.insertCell(index.column(), cell)
+        pos = len(parent_widget.cells()) # TODO: this is a workaround until we implement proper cell positioning logic
+        parent_widget.insertCell(pos, cell)
         return cell
 
-    @override
     def destroyCellWidget(self, parent_widget: NodeWidget|PortWidget|LinkWidget, widget: CellWidget):
         if not isinstance(parent_widget, (NodeWidget, PortWidget, LinkWidget)):
             raise TypeError("Parent widget must be a NodeWidget, PortWidget, or LinkWidget")

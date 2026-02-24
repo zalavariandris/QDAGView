@@ -5,8 +5,8 @@ from qtpy.QtWidgets import *
 from typing import List
 
 # from qdagview.models import FlowGraphModel, ExpressionOperator
-from qdagview.examples.flowgraphmodel import FlowGraphModel
-from qdagview.examples.flowgraph import ExpressionOperator
+from app.dataflow_app.flowgraphmodel import FlowGraphModel
+from app.dataflow_app.flowgraph import ExpressionOperator
 from qdagview.views import GraphModel_GraphView
 from qdagview.models import QItemModelGraphModel
 

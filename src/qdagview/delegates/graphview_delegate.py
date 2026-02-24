@@ -3,7 +3,7 @@ from __future__ import annotations
 from ctypes import alignment
 import logging
 
-from qdagview.controllers import GraphController_for_QTreeModel
+from qdagview.controllers import QTreeModel_GraphController
 logger = logging.getLogger(__name__)
 
 from typing import *
@@ -17,7 +17,7 @@ from ..utils import makeArrowShape
 
 class GraphDelegate(QObject):
     ## Painting
-    def paintNode(self, painter:QPainter, option:QStyleOptionViewItem, index: QModelIndex|QPersistentModelIndex):
+    def paintNode(self, painter:QPainter, option:QStyleOptionViewItem, index: QModelIndex|QPersistentModelIndex, controller:QTreeModel_GraphController):
         # Access palette from the option (preferred)
         palette = option.palette
 
@@ -26,15 +26,49 @@ class GraphDelegate(QObject):
             bg_color = palette.highlight()
         else:
             bg_color = palette.alternateBase()
-        
+
         # Paint background
         painter.save()
         painter.setBrush(bg_color)
         painter.drawRoundedRect(option.rect, 6, 6)
+        # draw text
+        painter.setPen(palette.text().color())
+        text  = controller.data(index, Qt.ItemDataRole.DisplayRole)
+        if text:
+            painter.drawText(option.rect, Qt.AlignmentFlag.AlignCenter, text)
         painter.restore()
 
-    def paintInlet(self, painter:QPainter, option:QStyleOptionViewItem, index: QModelIndex|QPersistentModelIndex):
+    def paintInlet(self, painter:QPainter, option:QStyleOptionViewItem, index: QModelIndex|QPersistentModelIndex, controller:QTreeModel_GraphController):
         palette = option.palette
+
+        if option.state & QStyle.State_MouseOver:
+            bg_color = palette.highlight()
+        else:
+            bg_color = palette.alternateBase()
+
+        painter.setBrush(bg_color)
+        painter.drawEllipse(option.rect)
+
+        text = controller.data(index, Qt.ItemDataRole.DisplayRole)
+        if text:
+            painter.setPen(palette.text().color())
+            painter.drawText(option.rect, Qt.AlignmentFlag.AlignLeft, text)
+    
+    def boundingRectInlet(self, option:QStyleOptionViewItem, index: QModelIndex|QPersistentModelIndex, controller:QTreeModel_GraphController) -> QRectF:
+        # Get the size hint from the controller
+        bbox = QRectF(option.rect)
+
+        if text := controller.data(index, Qt.ItemDataRole.DisplayRole):
+            font_metrics = option.fontMetrics
+            text_bbox = font_metrics.boundingRect(text)
+            text_bbox = text_bbox.adjusted(-4, -4, 4, 4) # add some padding
+            bbox = bbox.united(QRectF(text_bbox))
+
+        return bbox
+
+    def paintOutlet(self, painter:QPainter, option:QStyleOptionViewItem, index: QModelIndex|QPersistentModelIndex, controller:QTreeModel_GraphController):
+        palette = option.palette
+
         if option.state & QStyle.State_MouseOver:
             bg_color = palette.highlight()
         else:
@@ -42,16 +76,12 @@ class GraphDelegate(QObject):
         painter.setBrush(bg_color)
         painter.drawEllipse(option.rect)
 
-    def paintOutlet(self, painter:QPainter, option:QStyleOptionViewItem, index: QModelIndex|QPersistentModelIndex):
-        palette = option.palette
-        if option.state & QStyle.State_MouseOver:
-            bg_color = palette.highlight()
-        else:
-            bg_color = palette.alternateBase()
-        painter.setBrush(bg_color)
-        painter.drawEllipse(option.rect)
+        text = controller.data(index, Qt.ItemDataRole.DisplayRole)
+        if text:
+            painter.setPen(palette.text().color())
+            painter.drawText(option.rect, Qt.AlignmentFlag.AlignCenter, text)
 
-    def paintLink(self, painter:QPainter, option:QStyleOptionViewItem, index: QModelIndex|QPersistentModelIndex):
+    def paintLink(self, painter:QPainter, option:QStyleOptionViewItem, index: QModelIndex|QPersistentModelIndex, controller:QTreeModel_GraphController):
         # Get the rectangle to draw in
 
         # TODO: Mimicing the QItemDelegate currently has issues when drawing the link.
@@ -83,31 +113,36 @@ class GraphDelegate(QObject):
         # Pick color based on state
         palette = option.palette
         if option.state & QStyle.StateFlag.State_Selected:
-            color = palette.highlight()
+            brush = palette.highlight()
         elif option.state & QStyle.StateFlag.State_MouseOver:
-            color = palette.brightText()
+            brush = palette.brightText()
         else:
-            color = palette.text()
+            brush = palette.text()
         
         # Paint the arrow
         painter.save()
-        painter.setBrush(color)
+        painter.setBrush(brush)
         painter.setPen(Qt.PenStyle.NoPen)
         
         # Use the existing makeArrowShape utility
         arrow_path = makeArrowShape(line, width=2.0)
         painter.drawPath(arrow_path)
+
+        text  = controller.data(index, Qt.ItemDataRole.DisplayRole)
+        if text:
+            painter.setPen(brush.color())
+            painter.drawText(option.rect, Qt.AlignmentFlag.AlignCenter, text)
         
         painter.restore()
 
-    def paintCell(self, painter:QPainter, option:QStyleOptionViewItem, controller:GraphController_for_QTreeModel, index: QModelIndex|QPersistentModelIndex):
+    def paintCell(self, painter:QPainter, option:QStyleOptionViewItem, controller:QTreeModel_GraphController, index: QModelIndex|QPersistentModelIndex):
         # Paint background
         painter.save()
         painter.drawText(option.rect, Qt.AlignmentFlag.AlignCenter, controller.attributeData(index, Qt.ItemDataRole.DisplayRole))
         painter.restore()
 
     ## Editors
-    def createEditor(self, parent:QWidget, option:QStyleOptionViewItem, controller:GraphController_for_QTreeModel, index:QModelIndex|QPersistentModelIndex) -> QWidget:
+    def createEditor(self, parent:QWidget, option:QStyleOptionViewItem, controller:QTreeModel_GraphController, index:QModelIndex|QPersistentModelIndex) -> QWidget:
         editor = QLineEdit(parent=parent)
         editor.setParent(parent)
         return editor
@@ -116,12 +151,12 @@ class GraphDelegate(QObject):
         print("updateEditorGeometry", option.rect)
         editor.setGeometry(option.rect)
         
-    def setEditorData(self, editor:QWidget, controller:GraphController_for_QTreeModel , index:QModelIndex|QPersistentModelIndex):
+    def setEditorData(self, editor:QWidget, controller:QTreeModel_GraphController , index:QModelIndex|QPersistentModelIndex):
         if isinstance(editor, QLineEdit):
             text = controller.attributeData(index, Qt.ItemDataRole.DisplayRole)
             editor.setText(text)
     
-    def setModelData(self, editor:QWidget, controller:GraphController_for_QTreeModel, index:QModelIndex|QPersistentModelIndex):
+    def setModelData(self, editor:QWidget, controller:QTreeModel_GraphController, index:QModelIndex|QPersistentModelIndex):
         if isinstance(editor, QLineEdit):
             text = editor.text()
             controller.setAttributeData(index, text, Qt.ItemDataRole.EditRole)

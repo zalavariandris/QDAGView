@@ -11,10 +11,10 @@ logger = logging.getLogger(__name__)
 from bidict import bidict
 
 from ..core import indexToPath, indexFromPath
-from . import WidgetIndexManagerProtocol
+from . import WidgetManagerProtocol
 
 
-class PersistentWidgetIndexManager(WidgetIndexManagerProtocol):
+class QModelIndexWidgetManager(WidgetManagerProtocol):
     """Handles widgets mapping to model indexes."""
     def __init__(self):
         self._widgets: bidict[QPersistentModelIndex, QGraphicsItem] = bidict()

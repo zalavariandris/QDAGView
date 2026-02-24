@@ -18,7 +18,7 @@ from ..core import GraphItemType
 
 
 if TYPE_CHECKING:
-    from ..views.graphview_with_QItemModel import QItemModel_GraphView
+    from ..views.graphview_with_BaseGraphController import QDagView
 
 
 class ControllerProtocol(Protocol):
@@ -33,7 +33,7 @@ class ControllerProtocol(Protocol):
 
 class LinkingTool:
     """A tool to handle linking operations in the graph view."""
-    def __init__(self, view: QItemModel_GraphView, controller: ControllerProtocol | None):
+    def __init__(self, view: QDagView, controller: ControllerProtocol | None=None):
         self._view = view
         self._controller = controller
         self._is_active = False
@@ -219,7 +219,8 @@ class LinkingTool:
             return False
         
         # Determine the drop target type
-        drop_target_type = self._controller.itemType(target_index) if target_index and target_index.isValid() else None # TODO:cleanup
+        # drop_target_type = self._controller.itemType(target_index) if target_index and target_index.isValid() else None # TODO:cleanup
+        drop_target_type = self._controller.itemType(target_index) if target_index else None # TODO:cleanup
 
         # Determine the drag source type based on the mime data
         payload = self._linking_payload
@@ -232,7 +233,7 @@ class LinkingTool:
             case "outlet", GraphItemType.INLET:
                 # outlet dropped on inlet
                 outlet_index = payload.index
-                assert outlet_index.isValid(), "Outlet index must be valid"
+                # assert outlet_index.isValid(), "Outlet index must be valid"
                 inlet_index = target_index
                 if self._controller.addLink(outlet_index, inlet_index):
                     success = True
@@ -240,7 +241,7 @@ class LinkingTool:
             case "inlet", GraphItemType.OUTLET:
                 # inlet dropped on outlet
                 inlet_index = payload.index
-                assert inlet_index.isValid(), "Inlet index must be valid"
+                # assert inlet_index.isValid(), "Inlet index must be valid"
                 outlet_index = target_index
                 if self._controller.addLink(outlet_index, inlet_index):
                     success = True

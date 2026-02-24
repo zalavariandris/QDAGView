@@ -4,10 +4,10 @@ from typing import List, DefaultDict, Iterable
 from dataclasses import dataclass
 from collections import defaultdict
 
-from ..utils import bfs
-from ..utils.unique import make_unique_id
+from qdagview.utils import bfs
+from qdagview.utils.unique import make_unique_id
 
-from ..utils.code_analyzer import CodeAnalyzer
+from qdagview.utils.code_analyzer import CodeAnalyzer
 
 
 class ExpressionOperator:

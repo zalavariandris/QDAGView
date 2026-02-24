@@ -1,7 +1,7 @@
-from .graphcontroller_for_qtreemodel import GraphController_for_QTreeModel
-from .graphselectioncontroller_for_qitemselectionmodel import GraphSelectionController_for_QItemSelectionModel
+from .qtreemodel_graphcontroller import QTreeModel_GraphController
+from .qtreemodel_graphselectioncontroller import QTreeModel_GraphSelectionController
 
 __all__ = [
-    "GraphController_for_QTreeModel",
-    "GraphSelectionController_for_QItemSelectionModel"
+    "QTreeModel_GraphController",
+    "QTreeModel_GraphSelectionController"
 ]
