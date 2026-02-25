@@ -13,7 +13,7 @@ from qtpy.QtCore import *
 from qtpy.QtWidgets import *
 
 from ..widgets import (
-    NodeWidget, PortWidget, LinkWidget, CellWidget
+    NodeWidget, PortWidget, LinkWidgetStraight, CellWidget
 )
 
 import weakref
@@ -135,7 +135,7 @@ class OutletWidgetWithDelegate(PortWidget):
             super().paint(painter, option, widget)
 
 
-class LinkWidgetWithDelegate(LinkWidget):
+class LinkWidgetWithDelegate(LinkWidgetStraight):
     def __init__(self, graphview: QDagView, parent: QGraphicsItem | None = None):
         super().__init__(parent)
         self._graphview = weakref.ref(graphview)
@@ -290,7 +290,7 @@ class WidgetFactoryUsingDelegate(QObject):
         # Schedule widget for deletion - this automatically disconnects all signals
         widget.deleteLater()
         
-    def createLinkWidget(self, scene: QGraphicsScene, index: QModelIndex, graphview) -> LinkWidget:
+    def createLinkWidget(self, scene: QGraphicsScene, index: QModelIndex, graphview) -> LinkWidgetStraight:
         """Create a link widget. Links are added directly to the scene."""
         if not isinstance(scene, QGraphicsScene):
             raise TypeError("Scene must be a QGraphicsScene")
@@ -301,18 +301,18 @@ class WidgetFactoryUsingDelegate(QObject):
         scene.addItem(link_widget)  # Links are added to the scene, not to the inlet widget
         return link_widget
     
-    def destroyLinkWidget(self, scene: QGraphicsScene, widget: LinkWidget):
+    def destroyLinkWidget(self, scene: QGraphicsScene, widget: LinkWidgetStraight):
         if not isinstance(scene, QGraphicsScene):
             raise TypeError("Scene must be a QGraphicsScene")
-        if not isinstance(widget, LinkWidget):
+        if not isinstance(widget, LinkWidgetStraight):
             raise TypeError(f"Widget must be a LinkWidget, got {widget}")
                 
         scene.removeItem(widget)
         # Schedule widget for deletion to prevent memory leaks
         widget.deleteLater()
 
-    def createCellWidget(self, parent_widget: NodeWidget|PortWidget|LinkWidget, index: QModelIndex, graphview) -> CellWidget:
-        if not isinstance(parent_widget, (NodeWidget, PortWidget, LinkWidget)):
+    def createCellWidget(self, parent_widget: NodeWidget|PortWidget|LinkWidgetStraight, index: QModelIndex, graphview) -> CellWidget:
+        if not isinstance(parent_widget, (NodeWidget, PortWidget, LinkWidgetStraight)):
             raise TypeError(f"Parent widget must be a NodeWidget, PortWidget, or LinkWidget, got {parent_widget}")
         # if not index.isValid():
         #     raise ValueError("Index must be valid")
@@ -322,8 +322,8 @@ class WidgetFactoryUsingDelegate(QObject):
         parent_widget.insertCell(pos, cell)
         return cell
 
-    def destroyCellWidget(self, parent_widget: NodeWidget|PortWidget|LinkWidget, widget: CellWidget):
-        if not isinstance(parent_widget, (NodeWidget, PortWidget, LinkWidget)):
+    def destroyCellWidget(self, parent_widget: NodeWidget|PortWidget|LinkWidgetStraight, widget: CellWidget):
+        if not isinstance(parent_widget, (NodeWidget, PortWidget, LinkWidgetStraight)):
             raise TypeError("Parent widget must be a NodeWidget, PortWidget, or LinkWidget")
         if not isinstance(widget, CellWidget):
             raise TypeError("Widget must be a CellWidget")

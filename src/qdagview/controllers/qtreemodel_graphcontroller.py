@@ -5,6 +5,15 @@ from collections import defaultdict
 from itertools import groupby
 from operator import attrgetter
 
+# TODO: Naming Conventions
+# - AbstractGraphModel                   // Base interface
+#   eg.: GraphModel, DirectedGraphModel  // Concrete implementation
+# - QItemModelGraphAdapter               // Wraps QAbstractItemModel as GraphModel
+#   QAbstractItemModel -> GraphModel
+# - GraphItemModel                        // Exposes GraphModel as QAbstractItemModel
+#   GraphModel -> QAbstractItemModel
+# - GraphProxyModel                       // Proxy model for GraphModel that can be used for filtering/sorting/etc.
+#   GraphModel->GraphModel
 
 logger = logging.getLogger(__name__)
 
@@ -18,11 +27,12 @@ from ..core import GraphDataRole, GraphItemType
 from ..managers import LinkingManager
 
 
-from .base_graphcontroller import BaseGraphController
+from .base_graphcontroller import (
+    BaseGraphController, 
+    NodeRef, OutletRef, InletRef, LinkRef
+)
 
-class QTreeModel_GraphController(
-    BaseGraphController[QPersistentModelIndex, QPersistentModelIndex, QPersistentModelIndex, QPersistentModelIndex]
-):
+class QTreeModel_GraphController(BaseGraphController):
     """
     Controller for a graph backed by a QAbstractItemModel.
     the model must represent a graph structure using a specific tree hierarchy:
@@ -39,7 +49,22 @@ class QTreeModel_GraphController(
         super().__init__(parent)
         self._source_model: QAbstractItemModel | None = None
         self._source_model_connections: list[tuple[Signal, Slot]] = []
-        self._link_manager = LinkingManager[QPersistentModelIndex, QPersistentModelIndex, QPersistentModelIndex]()
+
+        # Note: link sources are handled by the GraphDataRole.SourceRole data
+        #       Here we store link indexes that are not fully connected yet.
+        #       ! Right after inserting inlet children (the link), _GraphDataRole.SourceRole data_ might not be available yet.
+        #       we store these dangling links here. when data is actually set, we emit the linksInserted signal.
+        # Note: if the link is removed before data is set, we have to remove it from this list, but this should be a rare case.
+        #       in a well-behaved  this should never happen, because the modelshould set the source role data immediately after inserting the link row.)
+        # TODO: It should never happen, but cleanup invalid links, for safety.
+        self._dangling_link_indexes: list[QPersistentModelIndex] = []
+
+        # Note: When the dataChanged signal indicates source outlet change, we have no access to the old value.
+        #       so we keep track of the current value, to compare with the new value when dataChanged is emitted.
+        self._link_sources: Dict[QPersistentModelIndex, QPersistentModelIndex] = {} # link index -> source outlet index
+        
+        # TODO: old code
+        # self._link_manager = LinkingManager[QPersistentModelIndex, QPersistentModelIndex, QPersistentModelIndex]()
 
     def setSourceModel(self, source_model:QAbstractItemModel):
         self._source_model = source_model
@@ -62,7 +87,7 @@ class QTreeModel_GraphController(
                 signal.connect(slot)
 
         self._source_model = source_model
-        self._link_manager.clear()
+        # self._link_manager.clear()
 
         if self._source_model:
             self.handleRowsInserted(QPersistentModelIndex(), 0, self._source_model.rowCount() - 1)
@@ -76,44 +101,48 @@ class QTreeModel_GraphController(
 
         match self.itemType(parent):
             case GraphItemType.SUBGRAPH | None:
-                node_refs = [QPersistentModelIndex(self._source_model.index(row, 0, parent)) for row in range(start, end + 1)]
-                if node_refs:
-                    self.nodesInserted.emit(node_refs)
+                node_indexes = [QPersistentModelIndex(self._source_model.index(row, 0, parent)) for row in range(start, end + 1)]
+                if node_indexes:
+                    self.nodesInserted.emit([NodeRef(name=str(index)) for index in node_indexes])
                 
             case GraphItemType.NODE:
-                inlet_refs = []
-                outlet_refs = []
+                inlet_indexes = []
+                outlet_indexes = []
                 for row in range(start, end + 1):
                     inlet_index = self._source_model.index(row, 0, parent)
                     match self.itemType(inlet_index):
                         case GraphItemType.OUTLET:
-                            outlet_refs.append(QPersistentModelIndex(inlet_index))
+                            outlet_indexes.append(QPersistentModelIndex(inlet_index))
                         case GraphItemType.INLET | None:
-                            inlet_refs.append(QPersistentModelIndex(inlet_index))
+                            inlet_indexes.append(QPersistentModelIndex(inlet_index))
                         case _:
                             raise ValueError(f"Invalid item type for child of NODE: {self.itemType(inlet_index)}")
 
-                if inlet_refs:
-                    self.inletsInserted.emit(inlet_refs)
-                if outlet_refs:
-                    self.outletsInserted.emit(outlet_refs)
+                if inlet_indexes:
+                    self.inletsInserted.emit([InletRef(node=NodeRef(name=str(parent)), name=str(index)) for index in inlet_indexes])
+                if outlet_indexes:
+                    self.outletsInserted.emit([OutletRef(node=NodeRef(name=str(parent)), name=str(index)) for index in outlet_indexes])
 
             case GraphItemType.INLET:
-                added_links: list[QPersistentModelIndex] = []
-
+                connected_link_refs:List[LinkRef] = []
+                target_inlet_index = QPersistentModelIndex(parent)
+                target_node_index = target_inlet_index.parent()
                 for row in range(start, end + 1):
                     link_index = self._source_model.index(row, 0, parent)
-                    persistent_link_index = QPersistentModelIndex(link_index)
-                    link_source_index = self.linkSource(persistent_link_index)
-                    source_key = QPersistentModelIndex(link_source_index) if link_source_index else None
-                    target_key = QPersistentModelIndex(self.linkTarget(link_index)) if self.linkTarget(link_index) else None
+                    source_outlet_index = QPersistentModelIndex(self._source_model.data(link_index, GraphDataRole.SourceRole))
+                    if source_outlet_index and source_outlet_index.isValid():
+                        source_node_index = source_outlet_index.parent()
 
-                    added_links.append((persistent_link_index, source_key, target_key))
+                        link_ref = LinkRef(
+                            source=OutletRef(node=NodeRef(name=str(source_node_index)), name=str(source_outlet_index)),
+                            target=InletRef(node=NodeRef(name=str(target_node_index)), name=str(target_inlet_index)),
+                            name=str(link_index)
+                        )
+                    else:
+                        self._dangling_link_indexes.append(QPersistentModelIndex(link_index))
                 
-                if added_links:
-                    for link_index, source_index, target_index in added_links:
-                        self._link_manager.link(link_index, source_index, target_index)
-                    self.linksInserted.emit([link_index for link_index, _, _ in added_links])
+                if connected_link_refs:
+                    self.linksInserted.emit(connected_link_refs)
 
     def handleRowsAboutToBeRemoved(self, parent:QModelIndex, start:int, end:int):
         """Map QAbstractItemModel.rowsAboutToBeRemoved to graph signals.

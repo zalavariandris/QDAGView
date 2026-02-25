@@ -16,6 +16,7 @@ from nx_graph_controller import NXGraphController
 
 from qdagview.factories.widgetfactory_with_default_widgets import WidgetFactory
 
+
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -41,38 +42,82 @@ class MainWindow(QWidget):
         self.graph_controller.outletsRemoved.connect(self.update_label)
         self.graph_controller.linksRemoved.connect(self.update_label)
 
+        # setup selection controller
+        self.selection_controller = BaseGraphSelectionController(parent=self)
+        self.selection_controller.setGraphController(self.graph_controller)
+        self.selection_controller.currentChanged.connect(self.update_label)
+        self.selection_controller.selectionChanged.connect(self.update_label)
+        self.selection_controller.selectionChanged.connect(self.onSelectionChanged)
+
+        # log signals
+        self.graph_controller.nodesAboutToBeInserted.connect(lambda node_refs: self.appendLog(f"Nodes about to be inserted: {node_refs}"))
+        self.graph_controller.nodesInserted.connect(lambda node_refs: self.appendLog(f"Nodes inserted: {node_refs}"))
+        self.graph_controller.inletsAboutToBeInserted.connect(lambda inlet_refs: self.appendLog(f"Inlets about to be inserted: {inlet_refs}"))
+        self.graph_controller.linksInserted.connect(lambda link_refs: self.appendLog(f"Links inserted: {link_refs}"))
+        self.graph_controller.nodesAboutToBeRemoved.connect(lambda node_refs: self.appendLog(f"Nodes about to be removed: {node_refs}"))
+        self.graph_controller.linksAboutToBeRemoved.connect(lambda link_refs: self.appendLog(f"Links about to be removed: {link_refs}"))
+        self.graph_controller.nodesRemoved.connect(lambda node_refs: self.appendLog(f"Nodes removed: {node_refs}"))
+        self.graph_controller.linksRemoved.connect(lambda link_refs: self.appendLog(f"Links removed: {link_refs}"))
+
+        self.selection_controller.selectionChanged.connect(lambda selected, deselected: self.appendLog(f"Selection changed. Selected: {selected}, Deselected: {deselected}"))
+        self.selection_controller.currentChanged.connect(lambda current, previous: self.appendLog(f"Current changed: {current}, Previous: {previous}"))
+
         # # setup graph view
-        self.graphview = QDagView(parent=self, factory=WidgetFactory())
-        self.graphview.setController(self.graph_controller)
+        self.graphview1 = QDagView(parent=self, factory=WidgetFactory())
+        self.graphview1.setController(self.graph_controller)
+        self.graphview1.setSelectionController(self.selection_controller)
+        self.graphview2 = QDagView(parent=self, factory=WidgetFactory())
+        self.graphview2.setController(self.graph_controller)
+        self.graphview2.setSelectionController(self.selection_controller)
 
         # label
         self.label = QLabel("Graph View")
+        self.log = QPlainTextEdit("Log:")
+        self.log.setReadOnly(True)
 
         # setup layout
         layout = QVBoxLayout(self)
         layout.setMenuBar(self.toolbar)
-        layout.addWidget(self.graphview)
+        layout.addWidget(self.graphview1)
+        layout.addWidget(self.graphview2)
         layout.addWidget(self.label)
-        
+        layout.addWidget(self.log)
         self.setLayout(layout)
 
         # init
         self.update_label()
 
+    def appendLog(self, message:str):
+        self.log.appendPlainText(f"Log: {message}")
+
+    def onSelectionChanged(self, selected, deselected):
+        print("Selection changed:")
+        print("- Selected:", selected)
+        print("- Deselected:", deselected)
+        print("- Selection:", self.selection_controller.selectedIndexes())
+        print("- Current:", self.selection_controller.currentIndex())
+
     def update_label(self):
+        print("Updating label...")
         node_count = self.graph_controller.nodeCount()
         link_count = self.graph_controller.linkCount()
         node_list = ""
         for n in self.graph_controller.nodes():
-            
-            inlets = [self.graph_controller.data(i, role=Qt.ItemDataRole.DisplayRole) for i in self.graph_controller.inlets(n)]
-            outlets = [self.graph_controller.data(o, role=Qt.ItemDataRole.DisplayRole) for o in self.graph_controller.outlets(n)]
-            node_list += f"- {n} (Inlets: {', '.join(inlets)}, Outlets: {', '.join(outlets)})\n"
+            inlet_attributes = [self.graph_controller.attributes(i) for i in self.graph_controller.inlets(n)]
+            outlet_attributes = [self.graph_controller.attributes(o) for o in self.graph_controller.outlets(n)]
+
+            inlets =  [self.graph_controller.attributeData(a, role=Qt.ItemDataRole.DisplayRole) for attrs in inlet_attributes for a in attrs]
+            outlets = [self.graph_controller.attributeData(a, role=Qt.ItemDataRole.DisplayRole) for attrs in outlet_attributes for a in attrs]
+
+            is_selected = self.selection_controller.isSelected(n)
+
+            node_list += f"- [{'x' if is_selected else ' '}] {n} (Inlets: {', '.join(inlets)}, Outlets: {', '.join(outlets)})\n"
         link_list = ""
         for link in self.graph_controller.links():
             source_port = self.graph_controller.linkSource(link)
             target_port = self.graph_controller.linkTarget(link)
-            link_list += f"- {source_port} -> {target_port}\n"
+            is_selected = self.selection_controller.isSelected(link)
+            link_list += f"- [{'x' if is_selected else ' '}] {source_port} -> {target_port}\n"
 
         from textwrap import dedent
         self.label.setText(dedent(f"""
@@ -87,7 +132,15 @@ Links: {link_count}
         new_node_ref = self.graph_controller.addNode()
 
     def removeSelectedItems(self):
-        ...
+        selected_refs= self.selection_controller.selectedIndexes()
+        self.graph_controller.remove_batch(selected_refs)
+
+        # for item in selected_items:
+        #     match item:
+        #         case QGraphicsWidget() if isinstance(item, QGraphicsWidget):
+        #             self.graphview._widget_manager.removeWidget(item)
+        #         case _:
+        #             print(f"Unknown item type: {type(item)}")
 
 
 if __name__ == "__main__":

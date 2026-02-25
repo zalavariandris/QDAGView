@@ -323,7 +323,7 @@ def makeLineToShape(
 def makeLineBetweenShapes(
     A: QPointF | QRectF | QPainterPath | QGraphicsItem,
     B: QPointF | QRectF | QPainterPath | QGraphicsItem,
-    distance:float=10
+    distance:float=0
 ) -> QLineF:
     """
     Make a line (in scene coordinates) between two shapes, offset by a specified distance.
@@ -436,7 +436,7 @@ def create_rightward_path(path: QPainterPath, A: QPointF, B: QPointF, r1: float,
         path.arcTo(A.x() + r1, B.y() + r2 * 2, r2 * 2, -r2 * 2, 180, 90)
 
 
-def makeVerticalRoundedPath(line: QLineF, width=1.0)->QPainterPath:
+def makeVerticalRoundedPath(line: QLineF, width=1.0, radius=27)->QPainterPath:
     """Creates a rounded path between two points with automatic radius adjustment.
     
     Args:
@@ -454,7 +454,7 @@ def makeVerticalRoundedPath(line: QLineF, width=1.0)->QPainterPath:
     path.moveTo(A)
     
     # Base radius with constraints
-    r = 27
+    r = radius
     is_upward = dy < 0
     
     if is_upward:

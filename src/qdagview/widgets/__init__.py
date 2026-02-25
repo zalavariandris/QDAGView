@@ -7,12 +7,13 @@ Provides graph models, views, and interaction components for building graph-base
 # Import main public API components
 from .cell_widget import CellWidget
 from .port_widget import PortWidget
-from .link_widget import LinkWidget
+from .link_widget import LinkWidgetStraight, LinkWidgetRounded
 from .node_widget import NodeWidget
 
 __all__ = [
     'NodeWidget',
     'CellWidget',
     'PortWidget',
-    'LinkWidget'
+    'LinkWidgetStraight',
+    'LinkWidgetRounded',
 ]

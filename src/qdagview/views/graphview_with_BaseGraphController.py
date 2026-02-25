@@ -39,7 +39,7 @@ from ..managers import BiDictWidgetManager
 from ..managers import LinkingManager
 
 from ..widgets import (
-    NodeWidget, PortWidget, LinkWidget, CellWidget
+    NodeWidget, PortWidget, LinkWidgetStraight, CellWidget
 )
 class InletWidget(PortWidget):
     pass
@@ -188,7 +188,7 @@ class QDagView(QGraphicsView):
                 if source_widget and target_widget:
                     self._update_link_position(link_widget, source_widget, target_widget)
 
-    def _update_link_position(self, link_widget:LinkWidget, source_widget:QGraphicsItem|None=None, target_widget:QGraphicsItem|None=None):
+    def _update_link_position(self, link_widget:LinkWidgetStraight, source_widget:QGraphicsItem|None=None, target_widget:QGraphicsItem|None=None):
         # Compute the link geometry in the link widget's local coordinates.
         if source_widget and target_widget:
             line = makeLineBetweenShapes(source_widget, target_widget)
@@ -443,25 +443,36 @@ class QDagView(QGraphicsView):
         assert scene is not None
 
         with blockingSignals(scene):           
-            selected_indexes = sorted([idx for idx in selected], 
-                                    key= lambda idx: idx.row(), 
-                                    reverse= True)
-            
-            deselected_indexes = sorted([idx for idx in deselected], 
-                                        key= lambda idx: idx.row(), 
-                                        reverse= True)
-            
-            for index in deselected_indexes:
-                if index.isValid() and index.column() == 0:
+            for index in deselected:
+                if index.isValid():
                     if widget:=self._widget_manager.getWidget(index):
                         if widget.scene() and widget.isSelected():
                             widget.setSelected(False)
-
-            for index in selected_indexes:
-                if index.isValid() and index.column() == 0:
+                            
+            for index in selected:
+                if index.isValid():
                     if widget:=self._widget_manager.getWidget(index):
                         if widget.scene() and not widget.isSelected():
                             widget.setSelected(True)
+            # selected_indexes = sorted([idx for idx in selected], 
+            #                         key= lambda idx: idx.row(), 
+            #                         reverse= True)
+            
+            # deselected_indexes = sorted([idx for idx in deselected], 
+            #                             key= lambda idx: idx.row(), 
+            #                             reverse= True)
+            
+            # for index in deselected_indexes:
+            #     if index.isValid() and index.column() == 0:
+            #         if widget:=self._widget_manager.getWidget(index):
+            #             if widget.scene() and widget.isSelected():
+            #                 widget.setSelected(False)
+
+            # for index in selected_indexes:
+            #     if index.isValid() and index.column() == 0:
+            #         if widget:=self._widget_manager.getWidget(index):
+            #             if widget.scene() and not widget.isSelected():
+            #                 widget.setSelected(True)
 
     def _handleCurrentChanged(self, current:NodeT|LinkT, previous:NodeT|LinkT):
         ...

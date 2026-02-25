@@ -12,7 +12,7 @@ from qtpy.QtCore import *
 from qtpy.QtWidgets import *
 
 from .payload import Payload
-from ..widgets.link_widget import LinkWidget
+from ..widgets.link_widget import LinkWidgetStraight
 from ..utils import makeLineBetweenShapes
 from ..core import GraphItemType 
 
@@ -67,7 +67,7 @@ class LinkingTool:
             case GraphItemType.INLET:
                 # create a draft link line
                 if not self._draft_link:
-                    self._draft_link = LinkWidget()
+                    self._draft_link = LinkWidgetStraight()
                     self._view.scene().addItem(self._draft_link)
                 self._linking_payload = Payload(index, 'inlet')
                 self._is_active = True
@@ -76,7 +76,7 @@ class LinkingTool:
             case GraphItemType.OUTLET:
                 # create a draft link line
                 if not self._draft_link:
-                    self._draft_link = LinkWidget()
+                    self._draft_link = LinkWidgetStraight()
                     self._view.scene().addItem(self._draft_link)
                 self._linking_payload = Payload(index, 'outlet')
                 self._is_active = True
@@ -88,7 +88,7 @@ class LinkingTool:
                     source_index = self._controller.linkSource(link_index)
                     target_index = self._controller.linkTarget(link_index)
                     if source_index and source_index.isValid() and target_index and target_index.isValid():
-                        link_widget = cast(LinkWidget, self._view._widget_manager.getWidget(link_index))
+                        link_widget = cast(LinkWidgetStraight, self._view._widget_manager.getWidget(link_index))
                         local_pos = link_widget.mapFromScene(scene_pos)  # Ensure scene_pos is in the correct coordinate system
                         tail_distance = (local_pos-link_widget.line().p1()).manhattanLength()
                         head_distance = (local_pos-link_widget.line().p2()).manhattanLength()
@@ -302,7 +302,7 @@ class LinkingTool:
         if self._is_active:
 
             if self._controller.itemType(self._linking_payload.index) == GraphItemType.LINK:
-                link_widget = cast(LinkWidget, self._view._widget_manager.getWidget(self._linking_payload.index))
+                link_widget = cast(LinkWidgetStraight, self._view._widget_manager.getWidget(self._linking_payload.index))
                 assert link_widget is not None, "Link widget must not be None"
                 source_widget = self._view._link_manager.getLinkSource(link_widget)
                 target_widget = self._view._link_manager.getLinkTarget(link_widget)

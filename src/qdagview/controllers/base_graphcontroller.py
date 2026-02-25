@@ -14,7 +14,48 @@ from qtpy.QtGui import *
 from qtpy.QtCore import *
 
 
-from ..core.base_types import GraphT, NodeT, LinkT, PortT
+from ..core.base_types import GraphT
+
+
+from dataclasses import dataclass
+
+@dataclass(frozen=True, slots=True)
+class NodeRef:
+    name: Hashable
+    def isValid(self):
+        return self.name != ""
+
+@dataclass(frozen=True, slots=True)
+class InletRef:
+    node: NodeRef
+    name: Hashable
+    def isValid(self):
+        return self.node.isValid() and self.name != ""
+
+@dataclass(frozen=True, slots=True)
+class OutletRef:
+    node: NodeRef
+    name: Hashable
+    def isValid(self):
+        return self.node.isValid() and self.name != ""
+
+@dataclass(frozen=True, slots=True)
+class LinkRef:
+    source: OutletRef
+    target: InletRef
+    name: Hashable
+    def isValid(self):
+        return self.source.isValid() and self.target.isValid()
+
+@dataclass(frozen=True, slots=True)
+class AttributeRef:
+    owner: NodeRef|InletRef|OutletRef|LinkRef
+    name: Hashable
+    def isValid(self):
+        return self.owner.isValid() and self.name != ""
+
+
+
 from qdagview.core import GraphDataRole, GraphItemType
 
 
@@ -24,7 +65,7 @@ from abc import ABC, abstractmethod, ABCMeta
 class CombinedMeta(type(QObject), ABCMeta):
     pass
 
-class BaseGraphController(QObject, ABC, Generic[GraphT, NodeT, LinkT, PortT], metaclass=CombinedMeta):
+class BaseGraphController(QObject, ABC, metaclass=CombinedMeta):
     """
     all nodes, links, and ports must be a uniquely identifiable.
     """
@@ -33,6 +74,11 @@ class BaseGraphController(QObject, ABC, Generic[GraphT, NodeT, LinkT, PortT], me
     inletsInserted =  Signal(list) # list of QPersistentModelIndex
     outletsInserted = Signal(list) # list of QPersistentModelIndex
     linksInserted =   Signal(list) # list of QPersistentModelIndex
+
+    nodesAboutToBeInserted =   Signal(list) # list of QPersistentModelIndex
+    inletsAboutToBeInserted =  Signal(list) # list of QPersistentModelIndex
+    outletsAboutToBeInserted = Signal(list) # list of QPersistentModelIndex
+    linksAboutToBeInserted =   Signal(list) # list of QPersistentModelIndex
 
     nodesAboutToBeRemoved =   Signal(list) # list of QPersistentModelIndex
     inletsAboutToBeRemoved =  Signal(list) # list of QPersistentModelIndex
@@ -51,14 +97,14 @@ class BaseGraphController(QObject, ABC, Generic[GraphT, NodeT, LinkT, PortT], me
 
     ## QUERY MODEL
     @abstractmethod
-    def itemType(self, index: QModelIndex) -> GraphItemType:
+    def itemType(self, index: NodeRef|OutletRef|InletRef|LinkRef) -> GraphItemType:
         """
         Return the type of the item at the given index.
         This is used by the graph view to determine how to render the item.
         """
         ...
 
-    def addNode(self, subgraph:GraphT|None)->NodeT:
+    def addNode(self, subgraph:GraphT|None)->NodeRef:
         """
         Add a new node to the graph.
         If subgraph is specified, add the node to the given subgraph.
@@ -66,7 +112,7 @@ class BaseGraphController(QObject, ABC, Generic[GraphT, NodeT, LinkT, PortT], me
         """
         raise NotImplementedError("addNode() method must be implemented by subclass")
 
-    def removeNode(self, node:NodeT)->bool:
+    def removeNode(self, node:NodeRef)->bool:
         """
         Remove a node from the graph.
         This removes the node at the specified index from the model.
@@ -75,7 +121,7 @@ class BaseGraphController(QObject, ABC, Generic[GraphT, NodeT, LinkT, PortT], me
         raise NotImplementedError("removeNode() method must be implemented by subclass")
 
     @abstractmethod
-    def nodes(self, subgraph:GraphT|None=None) -> List[NodeT]:
+    def nodes(self, subgraph:GraphT|None=None) -> List[NodeRef]:
         """Return a list of all _NodeIds_ in the model."""
         ...
 
@@ -83,11 +129,11 @@ class BaseGraphController(QObject, ABC, Generic[GraphT, NodeT, LinkT, PortT], me
         """Return the number of nodes in the model."""
         return len(self.nodes(subgraph))
     
-    def addInlet(self, node:NodeT)->PortT:
+    def addInlet(self, node:NodeRef)->InletRef:
         """Add a new inlet to the given node. Returns the _InletId_ of the newly added inlet."""
         raise NotImplementedError("addInlet() method must be implemented by subclass")
 
-    def removeInlet(self, inlet:PortT)->bool:
+    def removeInlet(self, inlet:InletRef)->bool:
         """
         Remove an inlet from the graph.
         This removes the inlet at the specified index from the model.
@@ -96,13 +142,13 @@ class BaseGraphController(QObject, ABC, Generic[GraphT, NodeT, LinkT, PortT], me
         raise NotImplementedError("removeInlet() method must be implemented by subclass")
 
     @abstractmethod
-    def inletNode(self, inlet:PortT) -> NodeT:
+    def inletNode(self, inlet:InletRef) -> NodeRef:
         """Return the node index that the given inlet belongs to.
         If the inlet is invalid or not an inlet, return None. TODO: """
         ...
     
     @abstractmethod
-    def inlets(self, node:NodeT) -> List[PortT]:
+    def inlets(self, node:NodeRef) -> List[InletRef]:
         """
         Get a list of inlet indexes for a given node.
         Args:
@@ -122,12 +168,12 @@ class BaseGraphController(QObject, ABC, Generic[GraphT, NodeT, LinkT, PortT], me
         """
         return len(self.inlets(node))
     
-    def addOutlet(self, node:NodeT)->PortT:
+    def addOutlet(self, node:NodeRef)->OutletRef:
         """Add a new outlet to the given node. Returns the _OutletId_ of the newly added outlet.
         when subclasses implement this method, they should emit the outletsInserted signal with the new outlet index."""
         raise NotImplementedError("addOutlet() method must be implemented by subclass")
 
-    def removeOutlet(self, outlet:PortT)->bool:
+    def removeOutlet(self, outlet:OutletRef)->bool:
         """
         Remove an outlet from the graph.
         This removes the outlet at the specified index from the model.
@@ -136,13 +182,13 @@ class BaseGraphController(QObject, ABC, Generic[GraphT, NodeT, LinkT, PortT], me
         raise NotImplementedError("removeOutlet() method must be implemented by subclass")
 
     @abstractmethod
-    def outletNode(self, outlet:PortT) -> NodeT:
+    def outletNode(self, outlet:OutletRef) -> NodeRef:
         """Return the node index that the given outlet belongs to.
         If the outlet is invalid or not an outlet, return None. TODO: """
         ...
 
     @abstractmethod
-    def outlets(self, node:NodeT) -> List[PortT]:
+    def outlets(self, node:NodeRef) -> List[OutletRef]:
         """
         Get a list of outlet indexes for a given node.
         Args:
@@ -162,55 +208,62 @@ class BaseGraphController(QObject, ABC, Generic[GraphT, NodeT, LinkT, PortT], me
         """
         return len(self.outlets(node))
     
-    def addLink(self, outlet:OutletT, inlet:PortT)->LinkT:
+    def addLink(self, outlet:OutletRef, inlet:InletRef)->LinkRef:
         """Add a new link between the given outlet and inlet. Returns the _LinkId_ of the newly added link."""
         raise NotImplementedError("addLink() method must be implemented by subclass")
 
+    def removeLink(self, link:LinkRef)->bool:
+        """
+        Remove a link from the graph.
+        This removes the link at the specified index from the model.
+        """
+        raise NotImplementedError("removeLink() method must be implemented by subclass")
+
     @abstractmethod
-    def linkSource(self, link_index:LinkT) -> OutletT:
+    def linkSource(self, link_index:LinkRef) -> OutletRef:
         """Return the source _OutletId_ of the given link index."""
         ...
 
-    def setLinkSource(self, link:LinkT, source:PortT)->bool:
+    def setLinkSource(self, link:LinkRef, source:OutletRef)->bool:
         """Set the source of the given link to the given outlet. Returns True if successful."""
         raise NotImplementedError("setLinkSource() method must be implemented by subclass")
     
     @abstractmethod
-    def linkTarget(self, link_index:LinkT) -> InletT:
+    def linkTarget(self, link_index:LinkRef) -> InletRef:
         """Return the target _InletId_ of the given link index."""
         ...
 
     @abstractmethod
-    def links(self, port:PortT|None=None) -> List[LinkT]:
+    def links(self, port:InletRef|OutletRef|None=None) -> List[LinkRef]:
         """
         Get a list of link indexes connected to the given port.
         If port is None, return all links in the graph.
         Args:
-            port (PortT, optional): The index of the port. Defaults to None.
+            port (InletRef|OutletRef, optional): The index of the port. Defaults to None.
         Returns:
-            List[LinkT]: A list of link indexes connected to the port, or all links if port is None.
+            List[LinkRef]: A list of link indexes connected to the port, or all links if port is None.
         """
         ...
 
-    def linkCount(self, port:PortT|None=None) -> int:
+    def linkCount(self, port:InletRef|OutletRef|None=None) -> int:
         """
         Get the number of links connected to the given port.
         If port is None, return the total number of links in the graph.
         Args:
-            port (PortT, optional): The index of the port. Defaults to None.
+            port (InletRef|OutletRef, optional): The index of the port. Defaults to None.
         Returns:
             int: The number of links connected to the port, or total number of links if port is None.
         """
         return len(self.links(port))
     
-    def addAttribute(self, owner:NodeT|PortT|LinkT, name:str) -> Hashable:
+    def addAttribute(self, owner:NodeRef|InletRef|OutletRef|LinkRef, name:str) -> AttributeRef:
         """
         Add a new attribute to the given owner (node, port, or link).
         Returns the _AttributeId_ of the newly added attribute.
         """
         raise NotImplementedError("addAttribute() method must be implemented by subclass")
 
-    def removeAttribute(self, attribute:Hashable)->bool:
+    def removeAttribute(self, attribute:AttributeRef)->bool:
         """
         Remove an attribute from the graph.
         This removes the attribute at the specified index from the model.
@@ -218,7 +271,7 @@ class BaseGraphController(QObject, ABC, Generic[GraphT, NodeT, LinkT, PortT], me
         raise NotImplementedError("removeAttribute() method must be implemented by subclass")
 
     @abstractmethod
-    def attributeOwner(self, attribute:'AttributeT') -> NodeT|PortT|LinkT:
+    def attributeOwner(self, attribute:AttributeRef) -> NodeRef|OutletRef|InletRef|LinkRef:
         """
         Get the owner of a given attribute.
         Args:
@@ -229,7 +282,7 @@ class BaseGraphController(QObject, ABC, Generic[GraphT, NodeT, LinkT, PortT], me
         ...
     
     @abstractmethod
-    def attributes(self, owner:NodeT|PortT|LinkT) -> list:
+    def attributes(self, owner:NodeRef|OutletRef|InletRef|LinkRef) -> list:
         """
         Get a list of attributes for a given node, port, or link.
         Args:
@@ -240,7 +293,7 @@ class BaseGraphController(QObject, ABC, Generic[GraphT, NodeT, LinkT, PortT], me
         ...
     
     # behaviour TODO: move to delegate?
-    def canLink(self, source:PortT, target:PortT)->bool:
+    def canLink(self, source:OutletRef, target:InletRef)->bool:
         """
         Check if linking is possible between the source and target indexes.
         """

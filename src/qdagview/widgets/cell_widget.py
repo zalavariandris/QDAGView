@@ -24,6 +24,7 @@ class CellWidget(QGraphicsTextItem):
 
     def setText(self, text:str):
         self.setPlainText(text)
+        self.setHtml(f"<p align='center'>{text}</p>")
 
     def boundingRect(self):
         return super().boundingRect()
